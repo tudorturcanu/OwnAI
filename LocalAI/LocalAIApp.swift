@@ -9,9 +9,18 @@ import SwiftUI
 
 @main
 struct LocalAIApp: App {
+    @State private var llmEngine = LLMEngine()
+    @State private var historyManager = ChatHistoryManager()
+    @State private var modelManager = ModelManager()
+    
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(llmEngine)
+                .environment(historyManager)
+                .environment(modelManager)
+                .environment(SpeechManager())
+                .preferredColorScheme(.light)
         }
     }
 }
