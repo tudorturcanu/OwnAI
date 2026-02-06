@@ -13,6 +13,7 @@
 		8B8A3E0C2F2CCBE90010461E /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E0B2F2CCBE90010461E /* MarkdownUI */; };
 		8B8A3E1A2F2D00010010461E /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E1D2F2D00010010461E /* MLXLMCommon */; };
 		8B8A3E1B2F2D00010010461E /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E1E2F2D00010010461E /* MLXLLM */; };
+		8BA1440A2F36200400EAAC6F /* LocalAIKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8BA144092F36200400EAAC6F /* LocalAIKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -37,6 +38,7 @@
 				8B8A3E092F2CCB980010461E /* Shimmer in Frameworks */,
 				8B8A3DFD2F2B9BF70010461E /* MetalPerformanceShaders.framework in Frameworks */,
 				8B8A3DFE2F2B9BF70010461E /* Metal.framework in Frameworks */,
+				8BA1440A2F36200400EAAC6F /* LocalAIKit in Frameworks */,
 				8B8A3E0C2F2CCBE90010461E /* MarkdownUI in Frameworks */,
 				8B8A3E1A2F2D00010010461E /* MLXLMCommon in Frameworks */,
 				8B8A3E1B2F2D00010010461E /* MLXLLM in Frameworks */,
@@ -96,6 +98,7 @@
 				8B8A3E0B2F2CCBE90010461E /* MarkdownUI */,
 				8B8A3E1D2F2D00010010461E /* MLXLMCommon */,
 				8B8A3E1E2F2D00010010461E /* MLXLLM */,
+				8BA144092F36200400EAAC6F /* LocalAIKit */,
 			);
 			productName = LocalAI;
 			productReference = 8B8A3DBC2F2B75380010461E /* LocalAI.app */;
@@ -129,6 +132,7 @@
 				8B8A3E072F2CCB980010461E /* XCRemoteSwiftPackageReference "SwiftUI-Shimmer" */,
 				8B8A3E0A2F2CCBE90010461E /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 				8B8A3E1C2F2D00010010461E /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
+				8BA144082F36200400EAAC6F /* XCLocalSwiftPackageReference "Packages/LocalAIKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8B8A3DBD2F2B75380010461E /* Products */;
@@ -289,7 +293,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = LocalAI/LocalAI.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 75YTB67VJZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -301,6 +305,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -325,7 +330,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = LocalAI/LocalAI.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 75YTB67VJZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -337,6 +342,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -376,6 +382,13 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		8BA144082F36200400EAAC6F /* XCLocalSwiftPackageReference "Packages/LocalAIKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/LocalAIKit;
+		};
+/* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
 		8B8A3E072F2CCB980010461E /* XCRemoteSwiftPackageReference "SwiftUI-Shimmer" */ = {
@@ -424,6 +437,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8B8A3E1C2F2D00010010461E /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
 			productName = MLXLLM;
+		};
+		8BA144092F36200400EAAC6F /* LocalAIKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8BA144082F36200400EAAC6F /* XCLocalSwiftPackageReference "Packages/LocalAIKit" */;
+			productName = LocalAIKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

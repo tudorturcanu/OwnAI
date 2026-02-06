@@ -10,6 +10,7 @@ import SwiftUI
 struct ModelDownloadView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(ModelManager.self) private var modelManager
+    @Environment(LLMEngine.self) private var llmEngine
     
     var body: some View {
         NavigationStack {
@@ -70,7 +71,10 @@ struct ModelDownloadView: View {
 struct ModelCard: View {
     let model: ModelInfo
     @Environment(ModelManager.self) private var modelManager
+    @Environment(LLMEngine.self) private var llmEngine
     @State private var isHovered = false
+    @State private var isRunningTest = false
+    @State private var testResult: ModelQuickTestResult?
     
     private var isSelected: Bool {
         modelManager.selectedModel?.id == model.id
@@ -132,6 +136,8 @@ struct ModelCard: View {
                 
                 Spacer()
             }
+
+            healthSection
             
             // Action button
             actionButton
@@ -167,6 +173,11 @@ struct ModelCard: View {
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
         .onHover { hovering in
             isHovered = hovering
+        }
+        .onAppear {
+            if testResult == nil {
+                testResult = modelManager.quickTestResult(for: model.id)
+            }
         }
     }
     
@@ -207,6 +218,92 @@ struct ModelCard: View {
                 )
         }
     }
+
+    private var healthSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if model.isAppleFoundation {
+                HStack(spacing: 6) {
+                    Image(systemName: "bolt.shield")
+                        .foregroundStyle(.orange)
+                    Text(modelManager.isAppleIntelligenceAvailable ? "No download required." : "Not available on this device.")
+                        .font(.caption)
+                        .foregroundStyle(Color(white: 0.5))
+                }
+            } else {
+                let freeGB = DiskSpace.availableGB()
+                let hasSpace = freeGB >= model.sizeGB * 1.05
+                HStack(spacing: 6) {
+                    Image(systemName: hasSpace ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                        .foregroundStyle(hasSpace ? .green : .orange)
+                    Text(String(format: "Free space: %.1f GB", freeGB))
+                        .font(.caption)
+                        .foregroundStyle(Color(white: 0.5))
+                }
+                if !hasSpace {
+                    Text("Low storage may prevent downloads or slow performance.")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+            }
+
+            if (model.downloadState.isDownloaded || model.isAppleFoundation) && (model.engine != .appleFoundation || modelManager.isAppleIntelligenceAvailable) {
+                HStack(spacing: 10) {
+                    Button {
+                        runQuickTest()
+                    } label: {
+                        HStack(spacing: 6) {
+                            if isRunningTest {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                            } else {
+                                Image(systemName: "waveform.path.ecg")
+                            }
+                            Text(isRunningTest ? "Testing..." : "Run Quick Test")
+                                .fontWeight(.semibold)
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.blue)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(Color.blue.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isRunningTest || llmEngine.state == .generating || llmEngine.state == .loading)
+
+                    if let result = testResult {
+                        HStack(spacing: 6) {
+                            Image(systemName: result.success ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                                .foregroundStyle(result.success ? .green : .red)
+                            Text(result.success ? "Passed" : "Failed")
+                                .font(.caption)
+                                .foregroundStyle(Color(white: 0.5))
+                        }
+                    }
+                }
+
+                if let result = testResult {
+                    Text("Last test: \(result.durationMs)ms • \(result.responseSnippet)")
+                        .font(.caption2)
+                        .foregroundStyle(Color(white: 0.5))
+                        .lineLimit(1)
+                }
+            }
+        }
+    }
+
+    private func runQuickTest() {
+        guard !isRunningTest else { return }
+        isRunningTest = true
+        Task {
+            let result = await llmEngine.runQuickTest(model: model)
+            await MainActor.run {
+                self.testResult = result
+                modelManager.saveQuickTestResult(result)
+                isRunningTest = false
+            }
+        }
+    }
     
     @ViewBuilder
     private var actionButton: some View {
@@ -217,9 +314,20 @@ struct ModelCard: View {
             }
             
         case .notDownloaded:
-            DownloadButton(action: {
-                modelManager.downloadModel(model.id)
-            })
+            if model.engine == .mlx {
+                HStack(spacing: 12) {
+                    SelectButton(isSelected: isSelected) {
+                        modelManager.selectModel(model.id)
+                    }
+                    DownloadButton(action: {
+                        modelManager.downloadModel(model.id)
+                    })
+                }
+            } else {
+                DownloadButton(action: {
+                    modelManager.downloadModel(model.id)
+                })
+            }
             
         case .downloading(let progress):
             DownloadingButton(progress: progress, action: {
@@ -486,4 +594,5 @@ struct ActionButtonStyle: ButtonStyle {
 #Preview {
     ModelDownloadView()
         .environment(ModelManager())
+        .environment(LLMEngine())
 }

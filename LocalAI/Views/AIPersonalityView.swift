@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import FoundationModels
 
 struct AIPersonalityView: View {
     @Environment(LLMEngine.self) private var llmEngine

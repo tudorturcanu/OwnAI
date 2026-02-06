@@ -6,13 +6,13 @@
 //
 
 import Foundation
+import LocalAIKit
 import FoundationModels
 import SwiftUI
 
 // MLX is disabled for simulator - only available on real devices
 #if !targetEnvironment(simulator)
 import MLXLMCommon
-import MLXLLM
 #endif
 
 /// Manages model downloads and lifecycle
@@ -24,29 +24,39 @@ final class ModelManager {
     
     var models: [ModelInfo] = ModelInfo.allModels
     @ObservationIgnored @AppStorage("selectedModelID") var selectedModelID: String?
+    @ObservationIgnored @AppStorage("autoSelectBestModel") var autoSelectBestModel: Bool = true
+    @ObservationIgnored @AppStorage("downloadNotifications") var downloadNotifications: Bool = true
     
     private var downloadTasks: [String: Task<Void, Never>] = [:]
+    private var downloadNotificationSteps: [String: Int] = [:]
     
     // MARK: - Computed Properties
     
     var hasAvailableModels: Bool {
-        models.contains { $0.downloadState.isDownloaded }
+        !availableModels.isEmpty
     }
     
     var availableModels: [ModelInfo] {
-        models.filter { $0.downloadState.isDownloaded }
+        models.filter { model in
+            isModelUsable(model)
+        }
     }
     
     var selectedModel: ModelInfo? {
-        if let id = selectedModelID {
-            return models.first { $0.id == id }
+        if let id = selectedModelID, let model = models.first(where: { $0.id == id }) {
+            if isModelUsable(model) {
+                return model
+            }
         }
-        // Default to first available model (Apple Foundation is first)
-        return availableModels.first
+        // Prefer Apple Intelligence if available, otherwise best downloaded MLX model.
+        if let best = bestAvailableModel() {
+            return best
+        }
+        return nil
     }
     
     var isAppleIntelligenceAvailable: Bool {
-        if case .available = SystemLanguageModel.default.availability {
+        if case .available = FoundationModels.SystemLanguageModel.default.availability {
             return true
         }
         return false
@@ -55,6 +65,7 @@ final class ModelManager {
     // MARK: - Initialization
     
     init() {
+        ensureSelection()
         Task {
             await checkAvailability()
         }
@@ -67,6 +78,10 @@ final class ModelManager {
         print("[ModelManager] selectModel id=\(modelID)")
         selectedModelID = modelID
     }
+
+    func refreshSelection() {
+        ensureSelection()
+    }
     
     /// Start downloading a model
     func downloadModel(_ modelID: String) {
@@ -77,6 +92,15 @@ final class ModelManager {
         
         print("[ModelManager] download start id=\(modelID)")
         models[index].downloadState = .downloading(progress: 0.02)
+        downloadNotificationSteps[modelID] = 0
+
+        if downloadNotifications {
+            Task { @MainActor in
+                if await NotificationManager.shared.requestAuthorizationIfNeeded() {
+                    NotificationManager.shared.postDownloadStarted(modelName: model.name)
+                }
+            }
+        }
         
         let task = Task { [weak self] in
             guard let self = self else { return }
@@ -96,11 +120,18 @@ final class ModelManager {
                         if let idx = self.models.firstIndex(where: { $0.id == modelID }) {
                             self.models[idx].downloadState = .downloading(progress: fraction)
                         }
+                        self.notifyDownloadProgressIfNeeded(modelID: modelID, modelName: model.name, fraction: fraction)
                     }
                 })
                 await MainActor.run {
                     if let idx = self.models.firstIndex(where: { $0.id == modelID }) {
                         self.models[idx].downloadState = .downloaded
+                    }
+                }
+                self.persistModelIfNeeded(modelID: modelID)
+                if self.downloadNotifications {
+                    await MainActor.run {
+                        NotificationManager.shared.postDownloadCompleted(modelName: model.name)
                     }
                 }
                 print("[ModelManager] download complete id=\(modelID)")
@@ -115,11 +146,17 @@ final class ModelManager {
                         self.models[idx].downloadState = .error(message: error.localizedDescription)
                     }
                 }
+                if self.downloadNotifications {
+                    await MainActor.run {
+                        NotificationManager.shared.postDownloadFailed(modelName: model.name, errorMessage: error.localizedDescription)
+                    }
+                }
                 print("[ModelManager] download failed id=\(modelID) error=\(error.localizedDescription)")
             }
             #endif
             await MainActor.run {
                 self.downloadTasks.removeValue(forKey: modelID)
+                self.downloadNotificationSteps.removeValue(forKey: modelID)
             }
         }
         
@@ -143,8 +180,14 @@ final class ModelManager {
         
         #if !targetEnvironment(simulator)
         // Clear the MLX Hub cache for this model
-        // let hubPath = getModelCachePath(for: modelID)
-        // try? FileManager.default.removeItem(at: hubPath)
+        let persistentPath = MLXStorage.modelDirectory(for: modelID)
+        try? FileManager.default.removeItem(at: persistentPath)
+        let legacyPath = MLXStorage.legacyModelDirectory(for: modelID)
+        try? FileManager.default.removeItem(at: legacyPath)
+        let legacyHubPath = MLXStorage.legacyHubModelDirectory(for: modelID)
+        try? FileManager.default.removeItem(at: legacyHubPath)
+        let legacyDocsPath = MLXStorage.legacyDocumentsModelDirectory(for: modelID)
+        try? FileManager.default.removeItem(at: legacyDocsPath)
         #endif
         
         if let index = models.firstIndex(where: { $0.id == modelID }) {
@@ -155,6 +198,8 @@ final class ModelManager {
         if selectedModelID == modelID {
             selectedModelID = nil
         }
+
+        ensureSelection()
     }
     
     // MARK: - Private Methods
@@ -162,7 +207,7 @@ final class ModelManager {
     private func checkAvailability() async {
         // Check Apple Foundation availability
         if let index = models.firstIndex(where: { $0.engine == .appleFoundation }) {
-            let availability = SystemLanguageModel.default.availability
+            let availability = FoundationModels.SystemLanguageModel.default.availability
             switch availability {
             case .available:
                 models[index].downloadState = .builtin
@@ -193,9 +238,11 @@ final class ModelManager {
         // Check MLX model downloads on real device
         for (index, model) in models.enumerated() {
             if model.engine == .mlx {
-                let hubPath = getModelCachePath(for: model.id)
-                if FileManager.default.fileExists(atPath: hubPath.path) {
+                let hubPath = MLXStorage.modelDirectory(for: model.id)
+                if FileManager.default.fileExists(atPath: hubPath.path) || migrateLegacyModelIfNeeded(modelID: model.id) {
                     models[index].downloadState = .downloaded
+                } else {
+                    models[index].downloadState = .notDownloaded
                 }
             }
         }
@@ -205,27 +252,112 @@ final class ModelManager {
     }
     
     #if !targetEnvironment(simulator)
-    private func getModelCachePath(for modelID: String) -> URL {
-        // MLX stores models in the hub cache directory
-        let libraryPath = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
-        let hubCachePath = libraryPath.appendingPathComponent("Caches/huggingface/hub")
-        let modelDirName = "models--\(modelID.replacingOccurrences(of: "/", with: "--"))"
-        return hubCachePath.appendingPathComponent(modelDirName)
+    private func persistModelIfNeeded(modelID: String) {
+        let persistentPath = MLXStorage.modelDirectory(for: modelID)
+        if FileManager.default.fileExists(atPath: persistentPath.path) { return }
+
+        let legacyCandidates = [
+            MLXStorage.legacyModelDirectory(for: modelID),
+            MLXStorage.legacyHubModelDirectory(for: modelID),
+            MLXStorage.legacyDocumentsModelDirectory(for: modelID)
+        ]
+
+        for legacyPath in legacyCandidates {
+            if FileManager.default.fileExists(atPath: legacyPath.path) {
+                MLXStorage.ensurePersistentDirectories()
+                let parent = persistentPath.deletingLastPathComponent()
+                try? FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+                do {
+                    try FileManager.default.moveItem(at: legacyPath, to: persistentPath)
+                    return
+                } catch {
+                    try? FileManager.default.copyItem(at: legacyPath, to: persistentPath)
+                    if FileManager.default.fileExists(atPath: persistentPath.path) {
+                        return
+                    }
+                }
+            }
+        }
+    }
+
+    private func migrateLegacyModelIfNeeded(modelID: String) -> Bool {
+        let persistentPath = MLXStorage.modelDirectory(for: modelID)
+        if FileManager.default.fileExists(atPath: persistentPath.path) { return true }
+        let legacyCandidates = [
+            MLXStorage.legacyModelDirectory(for: modelID),
+            MLXStorage.legacyHubModelDirectory(for: modelID),
+            MLXStorage.legacyDocumentsModelDirectory(for: modelID)
+        ]
+
+        for legacyPath in legacyCandidates {
+            if FileManager.default.fileExists(atPath: legacyPath.path) {
+                MLXStorage.ensurePersistentDirectories()
+                let parent = persistentPath.deletingLastPathComponent()
+                try? FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+                do {
+                    try FileManager.default.moveItem(at: legacyPath, to: persistentPath)
+                    return true
+                } catch {
+                    try? FileManager.default.copyItem(at: legacyPath, to: persistentPath)
+                    if FileManager.default.fileExists(atPath: persistentPath.path) {
+                        return true
+                    }
+                }
+            }
+        }
+
+        return false
     }
     #endif
 }
 
-private extension ModelManager {
+ extension ModelManager {
     func ensureSelection() {
         if let selectedID = selectedModelID,
-           models.contains(where: { $0.id == selectedID && $0.downloadState.isDownloaded }) {
-            return
+           let selected = models.first(where: { $0.id == selectedID }) {
+            if isModelUsable(selected) { return }
         }
         
-        if let fallback = availableModels.first {
-            selectedModelID = fallback.id
+        if autoSelectBestModel {
+            selectedModelID = bestAvailableModel()?.id
         } else {
-            selectedModelID = nil
+            selectedModelID = availableModels.first?.id
         }
+    }
+
+    func isModelUsable(_ model: ModelInfo) -> Bool {
+        if model.engine == .appleFoundation {
+            return isAppleIntelligenceAvailable
+        }
+        return model.downloadState.isDownloaded
+    }
+
+    func bestAvailableModel() -> ModelInfo? {
+        if let apple = models.first(where: { $0.engine == .appleFoundation && isModelUsable($0) }) {
+            return apple
+        }
+        let downloadedMLX = models
+            .filter { $0.engine == .mlx && isModelUsable($0) }
+            .sorted { $0.sizeGB > $1.sizeGB }
+        return downloadedMLX.first
+    }
+
+    func quickTestResult(for modelID: String) -> ModelQuickTestResult? {
+        ModelHealthStore.shared.loadResults()[modelID]
+    }
+
+    func saveQuickTestResult(_ result: ModelQuickTestResult) {
+        ModelHealthStore.shared.saveResult(result)
+    }
+
+    private func notifyDownloadProgressIfNeeded(modelID: String, modelName: String, fraction: Double) {
+        guard downloadNotifications else { return }
+        let percent = Int(fraction * 100)
+        let step = (percent / 25) * 25
+        guard step >= 25 else { return }
+        let last = downloadNotificationSteps[modelID] ?? 0
+        guard step > last else { return }
+        downloadNotificationSteps[modelID] = step
+        NotificationManager.shared.postDownloadProgress(modelName: modelName, percent: step)
     }
 }

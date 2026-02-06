@@ -7,10 +7,10 @@
 
 import Foundation
 import SwiftUI
+import LocalAIKit
 import FoundationModels
 
 #if !targetEnvironment(simulator)
-import MLXLMCommon
 import MLXLLM
 #endif
 
@@ -38,15 +38,19 @@ final class LLMEngine {
     @ObservationIgnored @AppStorage("temperature") var temperature: Double = 0.7
     @ObservationIgnored @AppStorage("topP") var topP: Double = 1.0
     @ObservationIgnored @AppStorage("maxTokens") var maxTokens: Int = 512
+    @ObservationIgnored @AppStorage("lowPowerMode") var lowPowerMode: Bool = false
+    @ObservationIgnored @AppStorage("warmStartEnabled") var warmStartEnabled: Bool = true
+    
+    private typealias AppleSession = FoundationModels.LanguageModelSession
+    private typealias LocalSession = AnyLanguageModel.LanguageModelSession
     
     // Apple Foundation
-    private var appleSession: LanguageModelSession?
+    private var appleSession: AppleSession?
     
     #if !targetEnvironment(simulator)
     // MLX
-    private var mlxSession: ChatSession?
+    private var mlxSession: LocalSession?
     private var mlxModelID: String?
-    private var mlxContainer: ModelContainer?
     #endif
     
     private var generationTask: Task<Void, Never>?
@@ -54,10 +58,20 @@ final class LLMEngine {
     private var loadingModelID: String?
     private var loadTaskID: UUID?
     private var currentModel: ModelInfo?
+    var streamingTokensPerSecond: Double = 0
+    private var streamingStartTime: Date?
     
     // Throttling
     private var lastUpdate: Date = .distantPast
-    private let throttleInterval: TimeInterval = 0.04 // Fast updates (~25fps) for continuous feel
+    private var throttleInterval: TimeInterval {
+        lowPowerMode ? 0.12 : 0.04
+    } // Fast updates (~25fps) for continuous feel
+
+    struct GenerationOverrides {
+        var temperature: Double?
+        var topP: Double?
+        var maxTokens: Int?
+    }
     
     // MARK: - Public Methods
     
@@ -109,7 +123,6 @@ final class LLMEngine {
         #if !targetEnvironment(simulator)
         mlxSession = nil
         mlxModelID = nil
-        mlxContainer = nil
         #endif
         loadTask?.cancel()
         loadTask = nil
@@ -120,7 +133,11 @@ final class LLMEngine {
     }
     
     /// Generate a response for the given prompt with streaming and throttling
-    func generate(prompt: String, systemPrompt: String = "You are a helpful AI assistant.") async throws {
+    func generate(
+        prompt: String,
+        systemPrompt: String = "You are a helpful AI assistant.",
+        overrides: GenerationOverrides? = nil
+    ) async throws {
         if state == .loading, let task = loadTask {
             _ = try? await task.value
         }
@@ -142,7 +159,19 @@ final class LLMEngine {
         currentResponse = ""
         streamingMessageID = UUID() // New unique ID for this generation session
         lastUpdate = .distantPast
+        streamingStartTime = Date()
+        streamingTokensPerSecond = 0
         print("[LLMEngine] generate start id=\(model.id) engine=\(model.engine.rawValue)")
+        
+        // Capture state on MainActor
+        let currentAppleSession = self.appleSession
+        let currentMlxSession = self.mlxSession
+        let currentTopP = overrides?.topP ?? self.topP
+        let currentTemperature = overrides?.temperature ?? self.temperature
+        let currentMaxTokens = overrides?.maxTokens ?? self.maxTokens
+        let effectiveTopP = lowPowerMode ? min(currentTopP, 0.9) : currentTopP
+        let effectiveTemperature = lowPowerMode ? min(currentTemperature, 0.6) : currentTemperature
+        let effectiveMaxTokens = lowPowerMode ? min(currentMaxTokens, 256) : currentMaxTokens
         
         // Run on detached task to avoid blocking UI
         let task = Task.detached(priority: .userInitiated) { [weak self] in
@@ -157,16 +186,15 @@ final class LLMEngine {
                         ? (UserDefaults.standard.string(forKey: "systemPrompt") ?? systemPrompt)
                         : systemPrompt
                         
-                    let session: LanguageModelSession
-                    if let existingSession = await self.appleSession {
+                    let session: FoundationModels.LanguageModelSession
+                    if let existingSession = currentAppleSession {
                         session = existingSession
                     } else {
-                        session = LanguageModelSession(instructions: effectiveSystemPrompt)
+                        session = FoundationModels.LanguageModelSession(
+                            model: FoundationModels.SystemLanguageModel.default,
+                            instructions: effectiveSystemPrompt
+                        )
                     }
-                    
-                    // Note: Apple Foundation models currently have limited configuration 
-                    // for temperature/topP via LanguageModelSession in the current API version.
-                    // We'll apply them if the API supports it in a future update or via different session params.
                     
                     let stream = session.streamResponse(to: prompt)
                     
@@ -182,25 +210,19 @@ final class LLMEngine {
                     #if targetEnvironment(simulator)
                     throw LLMError.generationFailed("MLX is not available on the simulator.")
                     #else
-                    let effectiveSystemPrompt = systemPrompt == "You are a helpful AI assistant."
-                        ? (UserDefaults.standard.string(forKey: "systemPrompt") ?? systemPrompt)
-                        : systemPrompt
-                    
-                    guard let session = await self.mlxSession else {
+                    guard let session = currentMlxSession else {
                         print("[LLMEngine] MLX session missing id=\(model.id)")
                         throw LLMError.modelNotLoaded
                     }
                     
-                    let combinedPrompt = """
-                    System: \(effectiveSystemPrompt)
+                    let options = AnyLanguageModel.GenerationOptions(
+                        sampling: AnyLanguageModel.GenerationOptions.SamplingMode.random(probabilityThreshold: effectiveTopP),
+                        temperature: effectiveTemperature,
+                        maximumResponseTokens: effectiveMaxTokens
+                    )
                     
-                    User: \(prompt)
-                    
-                    Assistant:
-                    """
-                    
-                    let response = try await session.respond(to: combinedPrompt)
-                    await self.updateResponseIfNeeded(response, force: true)
+                    let response = try await session.respond(to: prompt, options: options)
+                    await self.updateResponseIfNeeded(response.content, force: true)
                     #endif
                 }
                 
@@ -208,12 +230,16 @@ final class LLMEngine {
                 await MainActor.run {
                     self.state = .ready
                     self.generationTask = nil
+                    self.streamingStartTime = nil
+                    self.streamingTokensPerSecond = 0
                 }
             } catch {
                 print("[LLMEngine] generate failed id=\(model.id) error=\(error.localizedDescription)")
                 await MainActor.run {
                     self.state = .error(message: error.localizedDescription)
                     self.generationTask = nil
+                    self.streamingStartTime = nil
+                    self.streamingTokensPerSecond = 0
                 }
             }
         }
@@ -229,6 +255,11 @@ final class LLMEngine {
             await MainActor.run {
                 self.currentResponse = content
                 self.lastUpdate = now
+                if let start = self.streamingStartTime {
+                    let elapsed = max(0.001, now.timeIntervalSince(start))
+                    let tokens = Double(self.approximateTokenCount(content))
+                    self.streamingTokensPerSecond = tokens / elapsed
+                }
             }
         }
     }
@@ -238,6 +269,8 @@ final class LLMEngine {
         generationTask?.cancel()
         generationTask = nil
         state = .ready
+        streamingStartTime = nil
+        streamingTokensPerSecond = 0
         // Note: The UI layer (ChatView) will handle cleaning up the history message 
         // when currentResponse is cleared or via its own observation.
         currentResponse = "" 
@@ -247,13 +280,84 @@ final class LLMEngine {
     var isAvailable: Bool {
         guard let model = currentModel else {
             // If no model selected, check if Apple Intelligence is available as fallback
-            if case .available = SystemLanguageModel.default.availability {
+            if case .available = FoundationModels.SystemLanguageModel.default.availability {
                 return true
             }
             return false
         }
-        
-        return model.downloadState.isDownloaded
+        if model.engine == .appleFoundation {
+            if case .available = FoundationModels.SystemLanguageModel.default.availability {
+                return true
+            }
+            return false
+        }
+        return true
+    }
+}
+
+// MARK: - Quick Test
+
+extension LLMEngine {
+    func runQuickTest(model: ModelInfo) async -> ModelQuickTestResult {
+        let start = Date()
+
+        if state == .generating || state == .loading {
+            return ModelQuickTestResult(
+                modelID: model.id,
+                success: false,
+                responseSnippet: "Engine busy",
+                durationMs: 0,
+                timestamp: Date()
+            )
+        }
+
+        let previousResponse = currentResponse
+        do {
+            try await loadModel(model)
+            try await generate(
+                prompt: "Reply with a single word: OK.",
+                overrides: GenerationOverrides(temperature: 0.2, topP: 1.0, maxTokens: 16)
+            )
+            let response = currentResponse.trimmingCharacters(in: .whitespacesAndNewlines)
+            let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+            let success = response.lowercased().contains("ok")
+            currentResponse = previousResponse
+            return ModelQuickTestResult(
+                modelID: model.id,
+                success: success,
+                responseSnippet: String(response.prefix(60)),
+                durationMs: durationMs,
+                timestamp: Date()
+            )
+        } catch {
+            currentResponse = previousResponse
+            return ModelQuickTestResult(
+                modelID: model.id,
+                success: false,
+                responseSnippet: error.localizedDescription,
+                durationMs: Int(Date().timeIntervalSince(start) * 1000.0),
+                timestamp: Date()
+            )
+        }
+    }
+
+    func prewarmIfNeeded(model: ModelInfo) async {
+        guard warmStartEnabled else { return }
+        if currentModel?.id == model.id {
+            #if !targetEnvironment(simulator)
+            if let session = mlxSession {
+                session.prewarm()
+                return
+            }
+            #endif
+        }
+        try? await loadModel(model)
+    }
+
+    private func approximateTokenCount(_ text: String) -> Int {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return 0 }
+        return trimmed.split { $0.isWhitespace || $0.isNewline }.count
     }
 }
 
@@ -273,10 +377,14 @@ private extension LLMEngine {
         switch model.engine {
         case .appleFoundation:
             // Check availability using SystemLanguageModel
-            let availability = SystemLanguageModel.default.availability
+            let availability = FoundationModels.SystemLanguageModel.default.availability
             switch availability {
             case .available:
-                appleSession = LanguageModelSession()
+                let instructions = UserDefaults.standard.string(forKey: "systemPrompt") ?? "You are a helpful AI assistant."
+                appleSession = AppleSession(
+                    model: FoundationModels.SystemLanguageModel.default,
+                    instructions: instructions
+                )
                 #if !targetEnvironment(simulator)
                 mlxSession = nil
                 mlxModelID = nil
@@ -303,22 +411,28 @@ private extension LLMEngine {
             state = .error(message: "MLX is not available on the simulator.")
             throw LLMError.modelNotAvailable("MLX is not available on the simulator.")
             #else
-            print("[LLMEngine] MLX load requested id=\(model.id) downloaded=\(model.downloadState.isDownloaded)")
             guard model.downloadState.isDownloaded else {
-                state = .error(message: "Model not downloaded. Go to Settings > Models to download it.")
-                throw LLMError.modelNotAvailable("Model not downloaded. Go to Settings > Models to download it.")
+                let message = "This model isn't downloaded yet. Open Settings > Models to download it."
+                state = .error(message: message)
+                throw LLMError.modelNotAvailable(message)
             }
+            print("[LLMEngine] MLX load requested id=\(model.id)")
             do {
                 if mlxModelID != model.id || mlxSession == nil {
                     try Task.checkCancellation()
                     print("[LLMEngine] MLX loading model id=\(model.id)")
-                    let container = try await MLXLMCommon.loadModelContainer(
-                        id: model.id,
-                        progressHandler: { _ in }
+                    let persistentPath = MLXStorage.modelDirectory(for: model.id)
+                    let mlxModel: MLXLanguageModel
+                    if FileManager.default.fileExists(atPath: persistentPath.path) {
+                        mlxModel = MLXLanguageModel(modelId: model.id, directory: persistentPath)
+                    } else {
+                        mlxModel = MLXLanguageModel(modelId: model.id)
+                    }
+                    mlxSession = LocalSession(
+                        model: mlxModel,
+                        instructions: UserDefaults.standard.string(forKey: "systemPrompt") ?? "You are a helpful AI assistant."
                     )
-                    try Task.checkCancellation()
-                    mlxContainer = container
-                    mlxSession = ChatSession(container)
+                    mlxSession?.prewarm()
                     mlxModelID = model.id
                     print("[LLMEngine] MLX session ready id=\(model.id)")
                 }

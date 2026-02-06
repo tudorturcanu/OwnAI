@@ -164,7 +164,7 @@ final class ChatHistoryManager {
     func updateMessage(id: UUID, content: String, isStreaming: Bool) {
         guard let convIndex = conversations.firstIndex(where: { $0.id == currentConversationID }) else { return }
         guard let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == id }) else { return }
-        
+
         conversations[convIndex].messages[msgIndex] = ChatMessage(
             id: id,
             role: conversations[convIndex].messages[msgIndex].role,

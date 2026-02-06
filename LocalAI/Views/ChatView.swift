@@ -78,7 +78,7 @@ struct ChatView: View {
     private func prewarmModel() {
         guard let model = modelManager.selectedModel else { return }
         Task {
-            try? await llmEngine.loadModel(model)
+            await llmEngine.prewarmIfNeeded(model: model)
         }
     }
     
@@ -197,12 +197,12 @@ struct ChatView: View {
                         .font(isInputFocused ? .headline : .title2.bold())
                         .foregroundStyle(Color(white: 0.15))
                     
-                    if llmEngine.isAvailable {
-                        Text("Using Apple Intelligence")
+                    if let model = modelManager.selectedModel {
+                        Text("Using \(model.name)")
                             .font(.caption)
                             .foregroundStyle(Color(white: 0.4))
                     } else {
-                        Text("Enable Apple Intelligence in Settings")
+                        Text("Select or download a model in Settings")
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }
@@ -403,10 +403,9 @@ struct ChatView: View {
     }
     
     private var canSend: Bool {
-        (!messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || attachedDocument != nil) &&
-        llmEngine.isAvailable &&
-        llmEngine.state != .generating &&
-        llmEngine.state != .loading
+        let hasInput = !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || attachedDocument != nil
+        let hasModel = modelManager.selectedModel != nil
+        return hasInput && hasModel && llmEngine.state != .generating && llmEngine.state != .loading
     }
     
     // MARK: - Model Status
@@ -431,7 +430,7 @@ struct ChatView: View {
         switch llmEngine.state {
         case .ready: return .green
         case .loading, .generating: return .orange
-        case .idle: return llmEngine.isAvailable ? .yellow : .red
+        case .idle: return modelManager.selectedModel != nil ? .yellow : .red
         case .error: return .red
         }
     }
@@ -441,7 +440,7 @@ struct ChatView: View {
         case .ready: return "Apple AI"
         case .loading: return "Loading..."
         case .generating: return "Thinking..."
-        case .idle: return llmEngine.isAvailable ? "Offline" : "Unavailable"
+        case .idle: return llmEngine.isAvailable ? "Ready" : "Unavailable"
         case .error: return "Error"
         }
     }
@@ -534,7 +533,14 @@ struct ChatView: View {
                     """
                 }
                 
-                // Add placeholder assistant message
+                // Load model if needed
+                guard let model = modelManager.selectedModel else {
+                    let errorMessage = ChatMessage(role: .assistant, content: "Please select or download a model first (Settings > Models).")
+                    historyManager.addMessage(errorMessage)
+                    return
+                }
+
+                // Add placeholder assistant message after we confirm a usable model.
                 let assistantID = UUID()
                 let assistantPlaceholder = ChatMessage(
                     id: assistantID,
@@ -543,13 +549,6 @@ struct ChatView: View {
                     isStreaming: true
                 )
                 historyManager.addMessage(assistantPlaceholder)
-                
-                // Load model if needed
-                guard let model = modelManager.selectedModel else {
-                    let errorMessage = ChatMessage(role: .assistant, content: "Please select or download a model first (Settings > Models).")
-                    historyManager.addMessage(errorMessage)
-                    return
-                }
                 
                 try await llmEngine.loadModel(model)
                 
@@ -576,6 +575,7 @@ struct ChatView: View {
             }
         }
     }
+
 }
 
 // MARK: - Chat Message Model
@@ -613,6 +613,8 @@ struct SendButtonStyle: ButtonStyle {
     ChatView()
         .environment(LLMEngine())
         .environment(ChatHistoryManager())
+        .environment(ModelManager())
+        .environment(SpeechManager())
 }
 
 struct SparkleView: View {

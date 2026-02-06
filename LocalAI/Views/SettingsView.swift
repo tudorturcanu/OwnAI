@@ -6,12 +6,18 @@
 //
 
 import SwiftUI
+import LocalAIKit
 import FoundationModels
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(LLMEngine.self) private var llmEngine
+    @Environment(ModelManager.self) private var modelManager
     @AppStorage("autoRead") private var autoRead = false
+    @AppStorage("autoSelectBestModel") private var autoSelectBestModel = true
+    @AppStorage("downloadNotifications") private var downloadNotifications = true
+    @AppStorage("lowPowerMode") private var lowPowerMode = false
+    @AppStorage("warmStartEnabled") private var warmStartEnabled = true
     
     var body: some View {
         NavigationStack {
@@ -22,6 +28,9 @@ struct SettingsView: View {
                     
                     // AI Status
                     aiStatusSection
+
+                    // Model & Device
+                    modelDeviceSection
 
                     // AI Personality
                     settingsGroup {
@@ -49,6 +58,9 @@ struct SettingsView: View {
                     
                     // Content Safety
                     contentSafetySection
+
+                    // Performance
+                    performanceSection
                     
                     // Legal Section
                     legalSection
@@ -109,8 +121,8 @@ struct SettingsView: View {
             VStack(spacing: 0) {
                 statusRow(
                     title: "Apple Intelligence",
-                    status: llmEngine.isAvailable ? "Available" : "Unavailable",
-                    isAvailable: llmEngine.isAvailable
+                    status: modelManager.isAppleIntelligenceAvailable ? "Available" : "Unavailable",
+                    isAvailable: modelManager.isAppleIntelligenceAvailable
                 )
                 
                 Divider().padding(.leading, 16)
@@ -125,7 +137,7 @@ struct SettingsView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
             
-            if !llmEngine.isAvailable {
+            if !modelManager.isAppleIntelligenceAvailable {
                 HStack(spacing: 8) {
                     Image(systemName: "info.circle.fill")
                         .foregroundStyle(.orange)
@@ -183,6 +195,40 @@ struct SettingsView: View {
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 
+    // MARK: - Model & Device Section
+
+    private var modelDeviceSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Model & Device")
+                .font(.headline)
+                .foregroundStyle(Color(white: 0.2))
+
+            settingsGroup {
+                Toggle(isOn: $autoSelectBestModel) {
+                    settingsRow(title: "Auto-Select Best Model", icon: "wand.and.stars", iconColor: .blue, trailingIcon: "")
+                }
+                .padding(.trailing, 16)
+                .onChange(of: autoSelectBestModel) {
+                    modelManager.refreshSelection()
+                }
+
+                Divider().padding(.leading, 56)
+
+                Toggle(isOn: $downloadNotifications) {
+                    settingsRow(title: "Download Notifications", icon: "bell.badge.fill", iconColor: .orange, trailingIcon: "")
+                }
+                .padding(.trailing, 16)
+
+                Divider().padding(.leading, 56)
+
+                Toggle(isOn: $warmStartEnabled) {
+                    settingsRow(title: "Warm-Start MLX", icon: "bolt.fill", iconColor: .purple, trailingIcon: "")
+                }
+                .padding(.trailing, 16)
+            }
+        }
+    }
+
 
     // MARK: - Content Safety Section
     
@@ -229,6 +275,23 @@ struct SettingsView: View {
             .background(Color.white)
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        }
+    }
+
+    // MARK: - Performance Section
+
+    private var performanceSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Performance")
+                .font(.headline)
+                .foregroundStyle(Color(white: 0.2))
+
+            settingsGroup {
+                Toggle(isOn: $lowPowerMode) {
+                    settingsRow(title: "Low Power Mode", icon: "battery.25", iconColor: .green, trailingIcon: "")
+                }
+                .padding(.trailing, 16)
+            }
         }
     }
 
@@ -334,4 +397,5 @@ struct SettingsView: View {
 #Preview {
     SettingsView()
         .environment(LLMEngine())
+        .environment(ModelManager())
 }
