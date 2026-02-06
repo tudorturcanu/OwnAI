@@ -67,8 +67,19 @@ extension ModelInfo {
         engine: .appleFoundation,
         downloadState: .builtin
     )
+
+    /// Gemma 2 2B Instruct (4-bit MLX)
+    static let gemma2_2b_4bit = ModelInfo(
+        id: "mlx-community/gemma-2-2b-it-4bit",
+        name: "Gemma 2 2B (MLX)",
+        description: "Gemma 2 2B Instruct, 4-bit MLX quantized weights. Runs fully on-device.",
+        sizeGB: 1.47,
+        engine: .mlx,
+        downloadState: .notDownloaded
+    )
     
     static let allModels: [ModelInfo] = [
-        .appleFoundation  // Default - first in list
+        .appleFoundation,  // Default - first in list
+        .gemma2_2b_4bit
     ]
 }

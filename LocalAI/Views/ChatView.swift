@@ -545,9 +545,13 @@ struct ChatView: View {
                 historyManager.addMessage(assistantPlaceholder)
                 
                 // Load model if needed
-                if let model = modelManager.selectedModel {
-                    try await llmEngine.loadModel(model)
+                guard let model = modelManager.selectedModel else {
+                    let errorMessage = ChatMessage(role: .assistant, content: "Please select or download a model first (Settings > Models).")
+                    historyManager.addMessage(errorMessage)
+                    return
                 }
+                
+                try await llmEngine.loadModel(model)
                 
                 // Generate
                 try await llmEngine.generate(prompt: fullPrompt)

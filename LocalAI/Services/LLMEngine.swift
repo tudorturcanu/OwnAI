@@ -10,8 +10,8 @@ import SwiftUI
 import FoundationModels
 
 #if !targetEnvironment(simulator)
-// import MLXLMCommon
-// import MLXLLM
+import MLXLMCommon
+import MLXLLM
 #endif
 
 /// Engine state for LLM operations
@@ -44,10 +44,15 @@ final class LLMEngine {
     
     #if !targetEnvironment(simulator)
     // MLX
-    // private var mlxContainer: LLMContainer?
+    private var mlxSession: ChatSession?
+    private var mlxModelID: String?
+    private var mlxContainer: ModelContainer?
     #endif
     
     private var generationTask: Task<Void, Never>?
+    private var loadTask: Task<Void, Error>?
+    private var loadingModelID: String?
+    private var loadTaskID: UUID?
     private var currentModel: ModelInfo?
     
     // Throttling
@@ -58,44 +63,43 @@ final class LLMEngine {
     
     /// Load a specific model
     func loadModel(_ model: ModelInfo) async throws {
-        // If already loading or same model is ready, skip
-        if state == .loading || (state == .ready && currentModel?.id == model.id) {
+        // If same model is already ready, skip
+        if state == .ready && currentModel?.id == model.id {
             return
         }
         
-        state = .loading
-        currentModel = model
-        
-        switch model.engine {
-        case .appleFoundation:
-            // Check availability using SystemLanguageModel
-            let availability = SystemLanguageModel.default.availability
-            switch availability {
-            case .available:
-                appleSession = LanguageModelSession()
-                #if !targetEnvironment(simulator)
-                // mlxContainer = nil
-                #endif
-                state = .ready
-            case .unavailable(let reason):
-                let message: String
-                switch reason {
-                case .deviceNotEligible:
-                    message = "This device doesn't support Apple Intelligence."
-                case .modelNotReady:
-                    message = "Apple Intelligence model is not ready. Please check Settings."
-                case .appleIntelligenceNotEnabled:
-                    message = "Apple Intelligence is not enabled. Enable it in Settings > Apple Intelligence."
-                @unknown default:
-                    message = "Apple Intelligence is unavailable."
-                }
-                state = .error(message: message)
-                throw LLMError.modelNotAvailable(message)
+        // If a load is in progress, wait for it if it's the same model,
+        // otherwise cancel and replace with the new model.
+        if let inFlight = loadTask {
+            if loadingModelID == model.id {
+                try await inFlight.value
+                return
             }
-            
-        case .mlx:
-            state = .error(message: "MLX is temporarily disabled")
-            throw LLMError.generationFailed("MLX is temporarily disabled")
+            inFlight.cancel()
+            loadTask = nil
+            loadingModelID = nil
+        }
+        
+        loadingModelID = model.id
+        let taskID = UUID()
+        loadTaskID = taskID
+        let task = Task { [weak self] in
+            guard let self = self else { return }
+            try await self.performLoad(model)
+        }
+        loadTask = task
+        defer {
+            if loadTaskID == taskID {
+                loadTask = nil
+                loadingModelID = nil
+                loadTaskID = nil
+            }
+        }
+        do {
+            try await task.value
+        } catch is CancellationError {
+            // Canceled loads shouldn't surface as errors.
+            return
         }
     }
     
@@ -103,15 +107,30 @@ final class LLMEngine {
     func unloadModel() {
         appleSession = nil
         #if !targetEnvironment(simulator)
-        // mlxContainer = nil
+        mlxSession = nil
+        mlxModelID = nil
+        mlxContainer = nil
         #endif
+        loadTask?.cancel()
+        loadTask = nil
+        loadingModelID = nil
+        loadTaskID = nil
         currentModel = nil
         state = .idle
     }
     
     /// Generate a response for the given prompt with streaming and throttling
     func generate(prompt: String, systemPrompt: String = "You are a helpful AI assistant.") async throws {
-        guard state == .ready else {
+        if state == .loading, let task = loadTask {
+            _ = try? await task.value
+        }
+        
+        switch state {
+        case .ready:
+            break
+        case .error(let message):
+            throw LLMError.generationFailed(message)
+        default:
             throw LLMError.engineBusy
         }
         
@@ -123,6 +142,7 @@ final class LLMEngine {
         currentResponse = ""
         streamingMessageID = UUID() // New unique ID for this generation session
         lastUpdate = .distantPast
+        print("[LLMEngine] generate start id=\(model.id) engine=\(model.engine.rawValue)")
         
         // Run on detached task to avoid blocking UI
         let task = Task.detached(priority: .userInitiated) { [weak self] in
@@ -159,7 +179,29 @@ final class LLMEngine {
                         self.appleSession = session
                     }
                 } else if model.engine == .mlx {
-                    // MLX disabled
+                    #if targetEnvironment(simulator)
+                    throw LLMError.generationFailed("MLX is not available on the simulator.")
+                    #else
+                    let effectiveSystemPrompt = systemPrompt == "You are a helpful AI assistant."
+                        ? (UserDefaults.standard.string(forKey: "systemPrompt") ?? systemPrompt)
+                        : systemPrompt
+                    
+                    guard let session = await self.mlxSession else {
+                        print("[LLMEngine] MLX session missing id=\(model.id)")
+                        throw LLMError.modelNotLoaded
+                    }
+                    
+                    let combinedPrompt = """
+                    System: \(effectiveSystemPrompt)
+                    
+                    User: \(prompt)
+                    
+                    Assistant:
+                    """
+                    
+                    let response = try await session.respond(to: combinedPrompt)
+                    await self.updateResponseIfNeeded(response, force: true)
+                    #endif
                 }
                 
                 // Finalize state
@@ -168,6 +210,7 @@ final class LLMEngine {
                     self.generationTask = nil
                 }
             } catch {
+                print("[LLMEngine] generate failed id=\(model.id) error=\(error.localizedDescription)")
                 await MainActor.run {
                     self.state = .error(message: error.localizedDescription)
                     self.generationTask = nil
@@ -213,6 +256,88 @@ final class LLMEngine {
         return model.downloadState.isDownloaded
     }
 }
+
+// MARK: - Private Load
+
+private extension LLMEngine {
+    func performLoad(_ model: ModelInfo) async throws {
+        if Task.isCancelled {
+            state = .idle
+            throw CancellationError()
+        }
+        
+        print("[LLMEngine] loadModel start id=\(model.id) engine=\(model.engine.rawValue) state=\(state)")
+        state = .loading
+        currentModel = model
+        
+        switch model.engine {
+        case .appleFoundation:
+            // Check availability using SystemLanguageModel
+            let availability = SystemLanguageModel.default.availability
+            switch availability {
+            case .available:
+                appleSession = LanguageModelSession()
+                #if !targetEnvironment(simulator)
+                mlxSession = nil
+                mlxModelID = nil
+                #endif
+                state = .ready
+            case .unavailable(let reason):
+                let message: String
+                switch reason {
+                case .deviceNotEligible:
+                    message = "This device doesn't support Apple Intelligence."
+                case .modelNotReady:
+                    message = "Apple Intelligence model is not ready. Please check Settings."
+                case .appleIntelligenceNotEnabled:
+                    message = "Apple Intelligence is not enabled. Enable it in Settings > Apple Intelligence."
+                @unknown default:
+                    message = "Apple Intelligence is unavailable."
+                }
+                state = .error(message: message)
+                throw LLMError.modelNotAvailable(message)
+            }
+            
+        case .mlx:
+            #if targetEnvironment(simulator)
+            state = .error(message: "MLX is not available on the simulator.")
+            throw LLMError.modelNotAvailable("MLX is not available on the simulator.")
+            #else
+            print("[LLMEngine] MLX load requested id=\(model.id) downloaded=\(model.downloadState.isDownloaded)")
+            guard model.downloadState.isDownloaded else {
+                state = .error(message: "Model not downloaded. Go to Settings > Models to download it.")
+                throw LLMError.modelNotAvailable("Model not downloaded. Go to Settings > Models to download it.")
+            }
+            do {
+                if mlxModelID != model.id || mlxSession == nil {
+                    try Task.checkCancellation()
+                    print("[LLMEngine] MLX loading model id=\(model.id)")
+                    let container = try await MLXLMCommon.loadModelContainer(
+                        id: model.id,
+                        progressHandler: { _ in }
+                    )
+                    try Task.checkCancellation()
+                    mlxContainer = container
+                    mlxSession = ChatSession(container)
+                    mlxModelID = model.id
+                    print("[LLMEngine] MLX session ready id=\(model.id)")
+                }
+                appleSession = nil
+                state = .ready
+            } catch {
+                if error is CancellationError {
+                    state = .idle
+                    throw error
+                }
+                print("[LLMEngine] MLX load failed id=\(model.id) error=\(error.localizedDescription)")
+                state = .error(message: error.localizedDescription)
+                throw LLMError.modelNotAvailable(error.localizedDescription)
+            }
+            #endif
+        }
+    }
+}
+
 
 // MARK: - Errors
 

@@ -11,6 +11,8 @@
 		8B8A3DFE2F2B9BF70010461E /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B8A3DFC2F2B9BF70010461E /* Metal.framework */; };
 		8B8A3E092F2CCB980010461E /* Shimmer in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E082F2CCB980010461E /* Shimmer */; };
 		8B8A3E0C2F2CCBE90010461E /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E0B2F2CCBE90010461E /* MarkdownUI */; };
+		8B8A3E1A2F2D00010010461E /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E1D2F2D00010010461E /* MLXLMCommon */; };
+		8B8A3E1B2F2D00010010461E /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E1E2F2D00010010461E /* MLXLLM */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -36,6 +38,8 @@
 				8B8A3DFD2F2B9BF70010461E /* MetalPerformanceShaders.framework in Frameworks */,
 				8B8A3DFE2F2B9BF70010461E /* Metal.framework in Frameworks */,
 				8B8A3E0C2F2CCBE90010461E /* MarkdownUI in Frameworks */,
+				8B8A3E1A2F2D00010010461E /* MLXLMCommon in Frameworks */,
+				8B8A3E1B2F2D00010010461E /* MLXLLM in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -90,6 +94,8 @@
 			packageProductDependencies = (
 				8B8A3E082F2CCB980010461E /* Shimmer */,
 				8B8A3E0B2F2CCBE90010461E /* MarkdownUI */,
+				8B8A3E1D2F2D00010010461E /* MLXLMCommon */,
+				8B8A3E1E2F2D00010010461E /* MLXLLM */,
 			);
 			productName = LocalAI;
 			productReference = 8B8A3DBC2F2B75380010461E /* LocalAI.app */;
@@ -122,6 +128,7 @@
 			packageReferences = (
 				8B8A3E072F2CCB980010461E /* XCRemoteSwiftPackageReference "SwiftUI-Shimmer" */,
 				8B8A3E0A2F2CCBE90010461E /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
+				8B8A3E1C2F2D00010010461E /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8B8A3DBD2F2B75380010461E /* Products */;
@@ -387,6 +394,14 @@
 				minimumVersion = 2.4.1;
 			};
 		};
+		8B8A3E1C2F2D00010010461E /* XCRemoteSwiftPackageReference "mlx-swift-lm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/ml-explore/mlx-swift-lm";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 2.30.3;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -399,6 +414,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8B8A3E0A2F2CCBE90010461E /* XCRemoteSwiftPackageReference "swift-markdown-ui" */;
 			productName = MarkdownUI;
+		};
+		8B8A3E1D2F2D00010010461E /* MLXLMCommon */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8B8A3E1C2F2D00010010461E /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLMCommon;
+		};
+		8B8A3E1E2F2D00010010461E /* MLXLLM */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8B8A3E1C2F2D00010010461E /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
+			productName = MLXLLM;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

@@ -26,6 +26,14 @@ struct SettingsView: View {
                     // AI Personality
                     settingsGroup {
                         NavigationLink {
+                            ModelDownloadView()
+                        } label: {
+                            settingsRow(title: "Models", icon: "square.stack.3d.up.fill", iconColor: .blue, trailingIcon: "chevron.right")
+                        }
+                        
+                        Divider().padding(.leading, 56)
+                        
+                        NavigationLink {
                             AIPersonalityView()
                         } label: {
                             settingsRow(title: "AI Personality", icon: "brain.head.profile", iconColor: .purple, trailingIcon: "chevron.right")

@@ -7,11 +7,12 @@
 
 import Foundation
 import FoundationModels
+import SwiftUI
 
 // MLX is disabled for simulator - only available on real devices
 #if !targetEnvironment(simulator)
-// import MLXLMCommon
-// import MLXLLM
+import MLXLMCommon
+import MLXLLM
 #endif
 
 /// Manages model downloads and lifecycle
@@ -22,7 +23,7 @@ final class ModelManager {
     // MARK: - Properties
     
     var models: [ModelInfo] = ModelInfo.allModels
-    var selectedModelID: String?
+    @ObservationIgnored @AppStorage("selectedModelID") var selectedModelID: String?
     
     private var downloadTasks: [String: Task<Void, Never>] = [:]
     
@@ -63,12 +64,66 @@ final class ModelManager {
     
     /// Select a specific model to use
     func selectModel(_ modelID: String) {
+        print("[ModelManager] selectModel id=\(modelID)")
         selectedModelID = modelID
     }
     
     /// Start downloading a model
     func downloadModel(_ modelID: String) {
-        // MLX temporarily disabled
+        guard let index = models.firstIndex(where: { $0.id == modelID }) else { return }
+        let model = models[index]
+        guard model.engine == .mlx else { return }
+        guard downloadTasks[modelID] == nil else { return }
+        
+        print("[ModelManager] download start id=\(modelID)")
+        models[index].downloadState = .downloading(progress: 0.02)
+        
+        let task = Task { [weak self] in
+            guard let self = self else { return }
+            #if targetEnvironment(simulator)
+            await MainActor.run {
+                if let idx = self.models.firstIndex(where: { $0.id == modelID }) {
+                    self.models[idx].downloadState = .error(message: "Simulator not supported")
+                }
+            }
+            #else
+            do {
+                _ = try await MLXLMCommon.loadModelContainer(
+                    id: modelID,
+                    progressHandler: { progress in
+                    let fraction = max(0.0, min(progress.fractionCompleted, 0.99))
+                    Task { @MainActor in
+                        if let idx = self.models.firstIndex(where: { $0.id == modelID }) {
+                            self.models[idx].downloadState = .downloading(progress: fraction)
+                        }
+                    }
+                })
+                await MainActor.run {
+                    if let idx = self.models.firstIndex(where: { $0.id == modelID }) {
+                        self.models[idx].downloadState = .downloaded
+                    }
+                }
+                print("[ModelManager] download complete id=\(modelID)")
+                await MainActor.run {
+                    if self.selectedModelID == nil {
+                        self.selectedModelID = modelID
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    if let idx = self.models.firstIndex(where: { $0.id == modelID }) {
+                        self.models[idx].downloadState = .error(message: error.localizedDescription)
+                    }
+                }
+                print("[ModelManager] download failed id=\(modelID) error=\(error.localizedDescription)")
+            }
+            #endif
+            await MainActor.run {
+                self.downloadTasks.removeValue(forKey: modelID)
+            }
+        }
+        
+        downloadTasks[modelID] = task
     }
     
     /// Cancel an ongoing download
@@ -127,8 +182,6 @@ final class ModelManager {
             }
         }
         
-        // Check MLX model availability temporarily disabled
-        /*
         #if targetEnvironment(simulator)
         // Mark MLX models as unavailable on simulator
         for (index, model) in models.enumerated() {
@@ -147,34 +200,11 @@ final class ModelManager {
             }
         }
         #endif
-        */
+        
+        ensureSelection()
     }
     
     #if !targetEnvironment(simulator)
-    /*
-    private func performDownload(modelID: String) async throws {
-        // Use the registry configuration for gemma
-        let configuration = LLMRegistry.gemma_2_2b_it_4bit
-        
-        // Load the model which handles downloading
-        _ = try await LLMModelFactory.shared.loadContainer(
-            configuration: configuration
-        ) { progress in
-            Task { @MainActor in
-                if let index = self.models.firstIndex(where: { $0.id == modelID }) {
-                    self.models[index].downloadState = .downloading(progress: progress.fractionCompleted)
-                }
-            }
-        }
-        
-        // Mark as downloaded
-        if let index = models.firstIndex(where: { $0.id == modelID }) {
-            models[index].downloadState = .downloaded
-        }
-        
-        downloadTasks.removeValue(forKey: modelID)
-    }
-    
     private func getModelCachePath(for modelID: String) -> URL {
         // MLX stores models in the hub cache directory
         let libraryPath = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first!
@@ -182,6 +212,20 @@ final class ModelManager {
         let modelDirName = "models--\(modelID.replacingOccurrences(of: "/", with: "--"))"
         return hubCachePath.appendingPathComponent(modelDirName)
     }
-    */
     #endif
+}
+
+private extension ModelManager {
+    func ensureSelection() {
+        if let selectedID = selectedModelID,
+           models.contains(where: { $0.id == selectedID && $0.downloadState.isDownloaded }) {
+            return
+        }
+        
+        if let fallback = availableModels.first {
+            selectedModelID = fallback.id
+        } else {
+            selectedModelID = nil
+        }
+    }
 }
