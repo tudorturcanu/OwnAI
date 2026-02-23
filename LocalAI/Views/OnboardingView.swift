@@ -9,6 +9,7 @@ import SwiftUI
 
 struct OnboardingView: View {
     @Binding var isPresented: Bool
+    @Environment(ModelManager.self) private var modelManager
     @State private var animate = false
     
     var body: some View {
@@ -51,7 +52,9 @@ struct OnboardingView: View {
                         .font(.system(size: 32, weight: .bold))
                         .foregroundStyle(Color(white: 0.1))
                     
-                    Text("Experience the power of AI,\nrunning 100% locally on your device.")
+                    Text(modelManager.isAppleIntelligenceDeviceSupported ?
+                         "Experience the power of AI,\non-device and with Apple Intelligence when enabled." :
+                         "Experience the power of AI,\nrunning entirely on your device.")
                         .font(.body)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(Color(white: 0.5))
@@ -67,14 +70,18 @@ struct OnboardingView: View {
                         icon: "lock.shield.fill",
                         color: .green,
                         title: "Private & Secure",
-                        subtitle: "Your data never leaves this device."
+                        subtitle: modelManager.isAppleIntelligenceDeviceSupported ?
+                            "On-device by default. Apple Intelligence may use Private Cloud Compute." :
+                            "Your data never leaves your device. Everything runs locally."
                     )
                     
                     featureRow(
                         icon: "bolt.fill",
                         color: .orange,
                         title: "Lightning Fast",
-                        subtitle: "Powered by Apple Intelligence & MLX."
+                        subtitle: modelManager.isAppleIntelligenceDeviceSupported ?
+                            "Powered by Apple Intelligence and on-device models." :
+                            "Powered by highly optimized on-device models."
                     )
                     
                     featureRow(
@@ -149,4 +156,5 @@ struct OnboardingView: View {
 
 #Preview {
     OnboardingView(isPresented: .constant(true))
+        .environment(ModelManager())
 }

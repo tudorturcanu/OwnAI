@@ -165,7 +165,9 @@ final class LLMEngine {
         
         // Capture state on MainActor
         let currentAppleSession = self.appleSession
+        #if !targetEnvironment(simulator)
         let currentMlxSession = self.mlxSession
+        #endif
         let currentTopP = overrides?.topP ?? self.topP
         let currentTemperature = overrides?.temperature ?? self.temperature
         let currentMaxTokens = overrides?.maxTokens ?? self.maxTokens

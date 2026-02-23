@@ -119,13 +119,15 @@ struct SettingsView: View {
                 .foregroundStyle(Color(white: 0.2))
             
             VStack(spacing: 0) {
-                statusRow(
-                    title: "Apple Intelligence",
-                    status: modelManager.isAppleIntelligenceAvailable ? "Available" : "Unavailable",
-                    isAvailable: modelManager.isAppleIntelligenceAvailable
-                )
-                
-                Divider().padding(.leading, 16)
+                if modelManager.isAppleIntelligenceDeviceSupported {
+                    statusRow(
+                        title: "Apple Intelligence",
+                        status: modelManager.isAppleIntelligenceAvailable ? "Available" : "Unavailable",
+                        isAvailable: modelManager.isAppleIntelligenceAvailable
+                    )
+                    
+                    Divider().padding(.leading, 16)
+                }
                 
                 statusRow(
                     title: "Engine Status",
@@ -137,11 +139,11 @@ struct SettingsView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
             
-            if !modelManager.isAppleIntelligenceAvailable {
+            if !modelManager.isAppleIntelligenceAvailable && modelManager.isAppleIntelligenceDeviceSupported {
                 HStack(spacing: 8) {
                     Image(systemName: "info.circle.fill")
                         .foregroundStyle(.orange)
-                    Text("Enable Apple Intelligence in Settings > Apple Intelligence")
+                    Text(modelManager.appleIntelligenceUnavailableHint)
                         .font(.caption)
                         .foregroundStyle(Color(white: 0.5))
                 }
@@ -222,7 +224,7 @@ struct SettingsView: View {
                 Divider().padding(.leading, 56)
 
                 Toggle(isOn: $warmStartEnabled) {
-                    settingsRow(title: "Warm-Start MLX", icon: "bolt.fill", iconColor: .purple, trailingIcon: "")
+                    settingsRow(title: "Warm-Start Models", icon: "bolt.fill", iconColor: .purple, trailingIcon: "")
                 }
                 .padding(.trailing, 16)
             }

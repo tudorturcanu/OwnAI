@@ -13,6 +13,7 @@
 		8B8A3E0C2F2CCBE90010461E /* MarkdownUI in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E0B2F2CCBE90010461E /* MarkdownUI */; };
 		8B8A3E1A2F2D00010010461E /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E1D2F2D00010010461E /* MLXLMCommon */; };
 		8B8A3E1B2F2D00010010461E /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E1E2F2D00010010461E /* MLXLLM */; };
+		8B8A3F012F2B9C000010461E /* MetalPerformanceShadersGraph.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B8A3F002F2B9C000010461E /* MetalPerformanceShadersGraph.framework */; };
 		8BA1440A2F36200400EAAC6F /* LocalAIKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8BA144092F36200400EAAC6F /* LocalAIKit */; };
 /* End PBXBuildFile section */
 
@@ -20,11 +21,25 @@
 		8B8A3DBC2F2B75380010461E /* LocalAI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LocalAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8B8A3DFB2F2B9BF70010461E /* MetalPerformanceShaders.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalPerformanceShaders.framework; path = System/Library/Frameworks/MetalPerformanceShaders.framework; sourceTree = SDKROOT; };
 		8B8A3DFC2F2B9BF70010461E /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
+		8B8A3F002F2B9C000010461E /* MetalPerformanceShadersGraph.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalPerformanceShadersGraph.framework; path = System/Library/Frameworks/MetalPerformanceShadersGraph.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		8BA8863B2F4C849A0083E693 /* Exceptions for "LocalAI" folder in "LocalAI" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 8B8A3DBB2F2B75380010461E /* LocalAI */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		8B8A3DBE2F2B75380010461E /* LocalAI */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				8BA8863B2F4C849A0083E693 /* Exceptions for "LocalAI" folder in "LocalAI" target */,
+			);
 			path = LocalAI;
 			sourceTree = "<group>";
 		};
@@ -36,6 +51,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8B8A3E092F2CCB980010461E /* Shimmer in Frameworks */,
+				8B8A3F012F2B9C000010461E /* MetalPerformanceShadersGraph.framework in Frameworks */,
 				8B8A3DFD2F2B9BF70010461E /* MetalPerformanceShaders.framework in Frameworks */,
 				8B8A3DFE2F2B9BF70010461E /* Metal.framework in Frameworks */,
 				8BA1440A2F36200400EAAC6F /* LocalAIKit in Frameworks */,
@@ -70,6 +86,7 @@
 			children = (
 				8B8A3DFC2F2B9BF70010461E /* Metal.framework */,
 				8B8A3DFB2F2B9BF70010461E /* MetalPerformanceShaders.framework */,
+				8B8A3F002F2B9C000010461E /* MetalPerformanceShadersGraph.framework */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -293,13 +310,14 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = LocalAI/LocalAI.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = 75YTB67VJZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LocalAI/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Own Ai";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Own Ai uses the microphone to enable speech-to-text functionality, allowing you to speak with the AI.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "We need speech recognition to transcribe your words.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Own Ai uses the microphone to enable speech-to-text functionality. Audio is processed locally on your device and never sent to a server.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "We need speech recognition to transcribe your words. Processing is performed entirely on your device.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -330,13 +348,14 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = LocalAI/LocalAI.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 4;
+				CURRENT_PROJECT_VERSION = 6;
 				DEVELOPMENT_TEAM = 75YTB67VJZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = LocalAI/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Own Ai";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Own Ai uses the microphone to enable speech-to-text functionality, allowing you to speak with the AI.";
-				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "We need speech recognition to transcribe your words.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Own Ai uses the microphone to enable speech-to-text functionality. Audio is processed locally on your device and never sent to a server.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "We need speech recognition to transcribe your words. Processing is performed entirely on your device.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

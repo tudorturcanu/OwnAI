@@ -271,7 +271,7 @@ struct MessageShape: Shape {
 #Preview {
     VStack(spacing: 16) {
         MessageBubble(message: ChatMessage(role: .user, content: "Hello! How are you today?"))
-        MessageBubble(message: ChatMessage(role: .assistant, content: "I'm doing great! I'm running completely on your device using Apple's MLX framework. How can I help you today?"))
+        MessageBubble(message: ChatMessage(role: .assistant, content: "I'm doing great! I'm running completely on your device. How can I help you today?"))
         MessageBubble(message: ChatMessage(role: .assistant, content: "Thinking...", isStreaming: true))
     }
     .padding()

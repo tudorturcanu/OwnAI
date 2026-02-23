@@ -30,6 +30,7 @@ struct ChatView: View {
     @AppStorage("autoRead") private var autoRead = false
     @State private var showExportSheet = false
     @FocusState private var isInputFocused: Bool
+    @State private var showThirdPartyConsentAlert = false
     
     var body: some View {
         ZStack {
@@ -72,6 +73,15 @@ struct ChatView: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Please enable microphone and speech recognition access in Settings to use voice input.")
+        }
+        .alert("Allow Apple Intelligence Processing?", isPresented: $showThirdPartyConsentAlert) {
+            Button("Not Now", role: .cancel) { }
+            Button("Allow and Send") {
+                setConsentForSelectedModel()
+                performSendMessage()
+            }
+        } message: {
+            Text("Your message and attached document text may include personal data and will be sent to Apple to generate a response when Apple Intelligence is selected.")
         }
     }
     
@@ -427,20 +437,25 @@ struct ChatView: View {
     }
     
     private var statusColor: Color {
+        guard modelManager.selectedModel != nil else { return .red }
         switch llmEngine.state {
         case .ready: return .green
         case .loading, .generating: return .orange
-        case .idle: return modelManager.selectedModel != nil ? .yellow : .red
+        case .idle: return .yellow
         case .error: return .red
         }
     }
     
     private var statusText: String {
+        guard let model = modelManager.selectedModel else {
+            return "No Model"
+        }
         switch llmEngine.state {
-        case .ready: return "Apple AI"
+        case .ready:
+            return model.name
         case .loading: return "Loading..."
         case .generating: return "Thinking..."
-        case .idle: return llmEngine.isAvailable ? "Ready" : "Unavailable"
+        case .idle: return "Ready"
         case .error: return "Error"
         }
     }
@@ -481,6 +496,17 @@ struct ChatView: View {
     }
     
     private func sendMessage() {
+        guard canSend else { return }
+        
+        if shouldRequestThirdPartyConsent {
+            showThirdPartyConsentAlert = true
+            return
+        }
+        
+        performSendMessage()
+    }
+    
+    private func performSendMessage() {
         if speechManager.isListening {
             speechManager.stopListening()
         }
@@ -574,6 +600,21 @@ struct ChatView: View {
                 historyManager.addMessage(errorMessage)
             }
         }
+    }
+    
+    private var shouldRequestThirdPartyConsent: Bool {
+        guard let model = modelManager.selectedModel else { return false }
+        guard model.engine == .appleFoundation else { return false }
+        return !hasConsent(for: model.id)
+    }
+    
+    private func hasConsent(for modelID: String) -> Bool {
+        UserDefaults.standard.bool(forKey: "modelConsent.\(modelID)")
+    }
+    
+    private func setConsentForSelectedModel() {
+        guard let modelID = modelManager.selectedModel?.id else { return }
+        UserDefaults.standard.set(true, forKey: "modelConsent.\(modelID)")
     }
 
 }

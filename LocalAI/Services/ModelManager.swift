@@ -9,6 +9,7 @@ import Foundation
 import LocalAIKit
 import FoundationModels
 import SwiftUI
+import UIKit
 
 // MLX is disabled for simulator - only available on real devices
 #if !targetEnvironment(simulator)
@@ -28,7 +29,7 @@ final class ModelManager {
     @ObservationIgnored @AppStorage("downloadNotifications") var downloadNotifications: Bool = true
     
     private var downloadTasks: [String: Task<Void, Never>] = [:]
-    private var downloadNotificationSteps: [String: Int] = [:]
+    private var backgroundTaskIDs: [String: UIBackgroundTaskIdentifier] = [:]
     
     // MARK: - Computed Properties
     
@@ -62,12 +63,53 @@ final class ModelManager {
         return false
     }
     
+    /// Returns true if the device hardware supports Apple Intelligence, even if disabled
+    var isAppleIntelligenceDeviceSupported: Bool {
+        if case .unavailable(.deviceNotEligible) = FoundationModels.SystemLanguageModel.default.availability {
+            return false
+        }
+        return true
+    }
+    
+    /// Returns a user-friendly hint explaining why Apple Intelligence is unavailable
+    var appleIntelligenceUnavailableHint: String {
+        guard let appleModel = models.first(where: { $0.engine == .appleFoundation }) else {
+            return "Apple Intelligence is not available."
+        }
+        if case .error(let message) = appleModel.downloadState {
+            switch message {
+            case "Device not supported":
+                return "Apple Intelligence is not supported on this device. You can use a downloadable model instead."
+            case "Not enabled":
+                return "Enable Apple Intelligence in Settings > Apple Intelligence."
+            case "Model not ready":
+                return "Apple Intelligence is still preparing. Please try again later."
+            default:
+                return "Apple Intelligence is currently unavailable."
+            }
+        }
+        return "Apple Intelligence is currently unavailable."
+    }
+    
     // MARK: - Initialization
     
     init() {
         ensureSelection()
         Task {
             await checkAvailability()
+        }
+        
+        // Warn user when app goes to background during an active download
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            guard self.downloadNotifications else { return }
+            guard let activeModelID = self.downloadTasks.keys.first,
+                  let model = self.models.first(where: { $0.id == activeModelID }) else { return }
+            NotificationManager.shared.postDownloadBackgroundWarning(modelName: model.name)
         }
     }
     
@@ -92,13 +134,12 @@ final class ModelManager {
         
         print("[ModelManager] download start id=\(modelID)")
         models[index].downloadState = .downloading(progress: 0.02)
-        downloadNotificationSteps[modelID] = 0
+        updateIdleTimer()
+        beginBackgroundTask(for: modelID)
 
         if downloadNotifications {
             Task { @MainActor in
-                if await NotificationManager.shared.requestAuthorizationIfNeeded() {
-                    NotificationManager.shared.postDownloadStarted(modelName: model.name)
-                }
+                _ = await NotificationManager.shared.requestAuthorizationIfNeeded()
             }
         }
         
@@ -120,7 +161,6 @@ final class ModelManager {
                         if let idx = self.models.firstIndex(where: { $0.id == modelID }) {
                             self.models[idx].downloadState = .downloading(progress: fraction)
                         }
-                        self.notifyDownloadProgressIfNeeded(modelID: modelID, modelName: model.name, fraction: fraction)
                     }
                 })
                 await MainActor.run {
@@ -156,7 +196,8 @@ final class ModelManager {
             #endif
             await MainActor.run {
                 self.downloadTasks.removeValue(forKey: modelID)
-                self.downloadNotificationSteps.removeValue(forKey: modelID)
+                self.updateIdleTimer()
+                self.endBackgroundTask(for: modelID)
             }
         }
         
@@ -171,6 +212,8 @@ final class ModelManager {
         if let index = models.firstIndex(where: { $0.id == modelID }) {
             models[index].downloadState = .notDownloaded
         }
+        updateIdleTimer()
+        endBackgroundTask(for: modelID)
     }
     
     /// Delete a downloaded model
@@ -200,6 +243,31 @@ final class ModelManager {
         }
 
         ensureSelection()
+    }
+    
+    // MARK: - Idle Timer
+    
+    /// Keeps the screen awake while any download is in progress
+    private func updateIdleTimer() {
+        let hasActiveDownloads = !downloadTasks.isEmpty
+        UIApplication.shared.isIdleTimerDisabled = hasActiveDownloads
+    }
+    
+    // MARK: - Background Task
+    
+    /// Request extra background execution time so downloads continue when the app is backgrounded
+    private func beginBackgroundTask(for modelID: String) {
+        let taskID = UIApplication.shared.beginBackgroundTask(withName: "ModelDownload.\(modelID)") { [weak self] in
+            // iOS is about to expire the background time — clean up
+            self?.endBackgroundTask(for: modelID)
+        }
+        backgroundTaskIDs[modelID] = taskID
+    }
+    
+    private func endBackgroundTask(for modelID: String) {
+        guard let taskID = backgroundTaskIDs.removeValue(forKey: modelID),
+              taskID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(taskID)
     }
     
     // MARK: - Private Methods
@@ -348,16 +416,5 @@ final class ModelManager {
 
     func saveQuickTestResult(_ result: ModelQuickTestResult) {
         ModelHealthStore.shared.saveResult(result)
-    }
-
-    private func notifyDownloadProgressIfNeeded(modelID: String, modelName: String, fraction: Double) {
-        guard downloadNotifications else { return }
-        let percent = Int(fraction * 100)
-        let step = (percent / 25) * 25
-        guard step >= 25 else { return }
-        let last = downloadNotificationSteps[modelID] ?? 0
-        guard step > last else { return }
-        downloadNotificationSteps[modelID] = step
-        NotificationManager.shared.postDownloadProgress(modelName: modelName, percent: step)
     }
 }

@@ -73,6 +73,11 @@ class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         }
         recognitionRequest.shouldReportPartialResults = true
         
+        // IMPORTANT: Enforce on-device recognition for privacy
+        if #available(iOS 13, *) {
+            recognitionRequest.requiresOnDeviceRecognition = true
+        }
+        
         // Keep audio engine running even if silent
         
         recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { result, error in

@@ -13,37 +13,27 @@ struct ModelDownloadView: View {
     @Environment(LLMEngine.self) private var llmEngine
     
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Header description
-                    headerView
-                    
-                    // Model cards
-                    ForEach(modelManager.models) { model in
-                        ModelCard(model: model)
-                            .transition(.asymmetric(
-                                insertion: .opacity.combined(with: .move(edge: .top)),
-                                removal: .opacity
-                            ))
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 16)
-                .padding(.bottom, 40)
-            }
-            .background(Color(white: 0.96))
-            .navigationTitle("Manage Models")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") {
-                        dismiss()
-                    }
-                    .fontWeight(.medium)
+        ScrollView {
+            VStack(spacing: 20) {
+                // Header description
+                headerView
+                
+                // Model cards
+                ForEach(modelManager.models.filter { $0.engine != .appleFoundation || modelManager.isAppleIntelligenceDeviceSupported }) { model in
+                    ModelCard(model: model)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .move(edge: .top)),
+                            removal: .opacity
+                        ))
                 }
             }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 40)
         }
+        .background(Color(white: 0.96))
+        .navigationTitle("Manage Models")
+        .navigationBarTitleDisplayMode(.large)
     }
     
     private var headerView: some View {
@@ -52,7 +42,9 @@ struct ModelDownloadView: View {
                 Image(systemName: "info.circle.fill")
                     .foregroundStyle(.blue.opacity(0.8))
                 
-                Text("Choose your AI model. Apple Intelligence is built-in, while other models can be downloaded.")
+                Text(modelManager.isAppleIntelligenceDeviceSupported ?
+                     "Choose your AI model. Apple Intelligence is built-in, while other models can be downloaded." :
+                     "Choose your AI model. Models can be downloaded to run entirely on your device.")
                     .font(.subheadline)
                     .foregroundStyle(Color(white: 0.4))
                 
@@ -73,15 +65,21 @@ struct ModelCard: View {
     @Environment(ModelManager.self) private var modelManager
     @Environment(LLMEngine.self) private var llmEngine
     @State private var isHovered = false
-    @State private var isRunningTest = false
     @State private var testResult: ModelQuickTestResult?
+    @State private var showConsentSheet = false
+    @State private var pendingAction: (() -> Void)?
     
     private var isSelected: Bool {
         modelManager.selectedModel?.id == model.id
     }
     
+    /// Whether this Apple model is unsupported on the current device
+    private var isAppleUnavailable: Bool {
+        model.isAppleFoundation && !modelManager.isAppleIntelligenceAvailable
+    }
+    
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: isAppleUnavailable ? 12 : 16) {
             // Header row
             HStack(alignment: .top, spacing: 14) {
                 // Icon
@@ -92,9 +90,9 @@ struct ModelCard: View {
                     HStack(spacing: 8) {
                         Text(model.name)
                             .font(.title3.bold())
-                            .foregroundStyle(Color(white: 0.1))
+                            .foregroundStyle(isAppleUnavailable ? Color(white: 0.4) : Color(white: 0.1))
                         
-                        if model.isAppleFoundation {
+                        if model.isAppleFoundation && !isAppleUnavailable {
                             Text("DEFAULT")
                                 .font(.caption2.bold())
                                 .foregroundStyle(.white)
@@ -111,43 +109,54 @@ struct ModelCard: View {
                         }
                     }
                     
-                    Text(model.description)
-                        .font(.subheadline)
-                        .foregroundStyle(Color(white: 0.5))
-                        .lineLimit(3)
+                    if isAppleUnavailable {
+                        Text(modelManager.appleIntelligenceUnavailableHint)
+                            .font(.subheadline)
+                            .foregroundStyle(Color(white: 0.5))
+                            .lineLimit(3)
+                    } else {
+                        Text(model.description)
+                            .font(.subheadline)
+                            .foregroundStyle(Color(white: 0.5))
+                            .lineLimit(3)
+                    }
                 }
                 
                 Spacer(minLength: 0)
             }
             
-            // Info tags
-            HStack(spacing: 10) {
-                if model.isAppleFoundation {
-                    InfoTag(icon: "apple.logo", text: "Built-in", isHighlighted: true)
-                    InfoTag(icon: "lock.shield", text: "Private")
-                } else {
-                    InfoTag(icon: "externaldrive", text: String(format: "%.1f GB", model.sizeGB))
-                    InfoTag(icon: "cpu", text: "MLX")
+            if !isAppleUnavailable {
+                // Info tags
+                HStack(spacing: 10) {
+                    if model.isAppleFoundation {
+                        InfoTag(icon: "apple.logo", text: "Built-in", isHighlighted: true)
+                        InfoTag(icon: "lock.shield", text: "Private")
+                    } else {
+                        InfoTag(icon: "externaldrive", text: String(format: "%.1f GB", model.sizeGB))
+                        InfoTag(icon: "cpu", text: "On-Device")
+                    }
+                    
+                    if model.downloadState.isDownloaded && !model.isAppleFoundation {
+                        InfoTag(icon: "checkmark.circle.fill", text: "Ready", isHighlighted: true)
+                    }
+                    
+                    Spacer()
                 }
-                
-                if model.downloadState.isDownloaded && !model.isAppleFoundation {
-                    InfoTag(icon: "checkmark.circle.fill", text: "Ready", isHighlighted: true)
-                }
-                
-                Spacer()
-            }
 
-            healthSection
-            
-            // Action button
-            actionButton
+                healthSection
+                
+                // Action button
+                actionButton
+            }
         }
-        .padding(20)
+        .padding(isAppleUnavailable ? 16 : 20)
         .background(
             model.isAppleFoundation ?
             AnyShapeStyle(
                 LinearGradient(
-                    colors: [Color.white, Color(white: 0.99)],
+                    colors: isAppleUnavailable ? 
+                        [Color(white: 0.97), Color(white: 0.96)] :
+                        [Color.white, Color(white: 0.99)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
@@ -177,6 +186,18 @@ struct ModelCard: View {
         .onAppear {
             if testResult == nil {
                 testResult = modelManager.quickTestResult(for: model.id)
+            }
+        }
+        .sheet(isPresented: $showConsentSheet) {
+            ModelConsentSheet(model: model) {
+                UserDefaults.standard.set(true, forKey: consentKey)
+                showConsentSheet = false
+                let action = pendingAction
+                pendingAction = nil
+                action?()
+            } onCancel: {
+                showConsentSheet = false
+                pendingAction = nil
             }
         }
     }
@@ -225,7 +246,7 @@ struct ModelCard: View {
                 HStack(spacing: 6) {
                     Image(systemName: "bolt.shield")
                         .foregroundStyle(.orange)
-                    Text(modelManager.isAppleIntelligenceAvailable ? "No download required." : "Not available on this device.")
+                    Text(modelManager.isAppleIntelligenceAvailable ? "No download required." : modelManager.appleIntelligenceUnavailableHint)
                         .font(.caption)
                         .foregroundStyle(Color(white: 0.5))
                 }
@@ -247,42 +268,15 @@ struct ModelCard: View {
             }
 
             if (model.downloadState.isDownloaded || model.isAppleFoundation) && (model.engine != .appleFoundation || modelManager.isAppleIntelligenceAvailable) {
-                HStack(spacing: 10) {
-                    Button {
-                        runQuickTest()
-                    } label: {
-                        HStack(spacing: 6) {
-                            if isRunningTest {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                            } else {
-                                Image(systemName: "waveform.path.ecg")
-                            }
-                            Text(isRunningTest ? "Testing..." : "Run Quick Test")
-                                .fontWeight(.semibold)
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.blue)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 8)
-                        .background(Color.blue.opacity(0.08))
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isRunningTest || llmEngine.state == .generating || llmEngine.state == .loading)
-
-                    if let result = testResult {
-                        HStack(spacing: 6) {
-                            Image(systemName: result.success ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                                .foregroundStyle(result.success ? .green : .red)
-                            Text(result.success ? "Passed" : "Failed")
-                                .font(.caption)
-                                .foregroundStyle(Color(white: 0.5))
-                        }
-                    }
-                }
-
                 if let result = testResult {
+                    HStack(spacing: 6) {
+                        Image(systemName: result.success ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                            .foregroundStyle(result.success ? .green : .red)
+                        Text(result.success ? "Passed" : "Failed")
+                            .font(.caption)
+                            .foregroundStyle(Color(white: 0.5))
+                    }
+
                     Text("Last test: \(result.durationMs)ms • \(result.responseSnippet)")
                         .font(.caption2)
                         .foregroundStyle(Color(white: 0.5))
@@ -292,42 +286,23 @@ struct ModelCard: View {
         }
     }
 
-    private func runQuickTest() {
-        guard !isRunningTest else { return }
-        isRunningTest = true
-        Task {
-            let result = await llmEngine.runQuickTest(model: model)
-            await MainActor.run {
-                self.testResult = result
-                modelManager.saveQuickTestResult(result)
-                isRunningTest = false
-            }
-        }
-    }
-    
     @ViewBuilder
     private var actionButton: some View {
         switch model.downloadState {
         case .builtin:
             BuiltInButton(isSelected: isSelected) {
-                modelManager.selectModel(model.id)
+                requireConsentAndPerform {
+                    modelManager.selectModel(model.id)
+                }
             }
             
         case .notDownloaded:
-            if model.engine == .mlx {
-                HStack(spacing: 12) {
-                    SelectButton(isSelected: isSelected) {
-                        modelManager.selectModel(model.id)
-                    }
-                    DownloadButton(action: {
-                        modelManager.downloadModel(model.id)
-                    })
-                }
-            } else {
-                DownloadButton(action: {
+            DownloadButton(action: {
+                requireConsentAndPerform {
                     modelManager.downloadModel(model.id)
-                })
-            }
+                    modelManager.selectModel(model.id)
+                }
+            })
             
         case .downloading(let progress):
             DownloadingButton(progress: progress, action: {
@@ -337,7 +312,9 @@ struct ModelCard: View {
         case .downloaded:
             HStack(spacing: 12) {
                 SelectButton(isSelected: isSelected) {
-                    modelManager.selectModel(model.id)
+                    requireConsentAndPerform {
+                        modelManager.selectModel(model.id)
+                    }
                 }
                 DeleteButton(action: {
                     modelManager.deleteModel(model.id)
@@ -349,6 +326,156 @@ struct ModelCard: View {
                 modelManager.downloadModel(model.id)
             })
         }
+    }
+
+    private var consentKey: String {
+        "modelConsent.\(model.id)"
+    }
+
+    private var hasConsented: Bool {
+        UserDefaults.standard.bool(forKey: consentKey)
+    }
+
+    private func requireConsentAndPerform(_ action: @escaping () -> Void) {
+        if hasConsented {
+            action()
+            return
+        }
+        pendingAction = action
+        showConsentSheet = true
+    }
+}
+
+// MARK: - Model Consent Sheet
+
+struct ModelConsentSheet: View {
+    let model: ModelInfo
+    let onAccept: () -> Void
+    let onCancel: () -> Void
+    
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    header
+                    disclosureCard
+                    termsCard
+                }
+                .padding(20)
+            }
+            .navigationTitle("Model Terms")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                        onCancel()
+                    }
+                }
+            }
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 12) {
+                    Button {
+                        dismiss()
+                        onAccept()
+                    } label: {
+                        Text("I Agree")
+                            .font(.headline.weight(.bold))
+                            .foregroundStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
+                            .background(
+                                LinearGradient(
+                                    colors: model.isAppleFoundation ? [.orange, .pink] : [.blue, .blue.opacity(0.85)],
+                                    startPoint: .leading,
+                                    endPoint: .trailing
+                                )
+                            )
+                            .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                    
+                    Text("You can change models anytime in Settings.")
+                        .font(.caption)
+                        .foregroundStyle(Color(white: 0.5))
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+                .padding(.bottom, 16)
+                .background(Color(white: 0.98))
+            }
+        }
+    }
+    
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(model.name)
+                .font(.title2.bold())
+                .foregroundStyle(Color(white: 0.1))
+            Text(model.isAppleFoundation ? "Provided by Apple" : "Provided by the model publisher")
+                .font(.subheadline)
+                .foregroundStyle(Color(white: 0.5))
+        }
+    }
+    
+    private var disclosureCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "hand.raised.fill")
+                    .foregroundStyle(.orange)
+                Text("Data Use Disclosure")
+                    .font(.headline)
+                    .foregroundStyle(Color(white: 0.2))
+            }
+            
+            if model.isAppleFoundation {
+                Text("If you use Apple Intelligence, your prompts and attached document text may include personal data and may be sent to Apple Inc. (including Apple Private Cloud Compute) to generate responses. We ask for your permission before this data is shared. If you prefer fully on-device processing, choose a downloadable model instead.")
+                    .font(.subheadline)
+                    .foregroundStyle(Color(white: 0.5))
+            } else {
+                Text("This model runs fully on your device. Your prompts and documents are not sent to any server. The model file itself is downloaded to your device.")
+                    .font(.subheadline)
+                    .foregroundStyle(Color(white: 0.5))
+            }
+        }
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+    }
+    
+    private var termsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "doc.text.fill")
+                    .foregroundStyle(.blue)
+                Text("Terms & Conditions")
+                    .font(.headline)
+                    .foregroundStyle(Color(white: 0.2))
+            }
+            
+            Text("By continuing, you agree to the terms and conditions for this model, as well as the app's Terms of Service and Privacy Policy.")
+                .font(.subheadline)
+                .foregroundStyle(Color(white: 0.5))
+            
+            VStack(alignment: .leading, spacing: 8) {
+                if let termsURL = model.termsURL {
+                    Link("Model Terms", destination: termsURL)
+                }
+                if let privacyURL = model.privacyURL {
+                    Link("Model Privacy", destination: privacyURL)
+                }
+                Link("App Terms of Service", destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/terms.html")!)
+                Link("App Privacy Policy", destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/privacy.html")!)
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(.blue)
+        }
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 }
 

@@ -33,24 +33,17 @@ final class NotificationManager {
         }
     }
 
-    func postDownloadStarted(modelName: String) {
-        postNotification(
-            title: "Model Download Started",
-            body: "Downloading \(modelName)."
-        )
-    }
-
-    func postDownloadProgress(modelName: String, percent: Int) {
-        postNotification(
-            title: "Model Download \(percent)%",
-            body: "\(modelName) is downloading."
-        )
-    }
-
     func postDownloadCompleted(modelName: String) {
         postNotification(
-            title: "Model Download Complete",
+            title: "Download Complete",
             body: "\(modelName) is ready to use."
+        )
+    }
+
+    func postDownloadBackgroundWarning(modelName: String) {
+        postNotification(
+            title: "Download May Pause",
+            body: "Please return to the app to continue downloading \(modelName)."
         )
     }
 

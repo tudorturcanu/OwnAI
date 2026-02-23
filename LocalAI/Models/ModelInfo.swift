@@ -45,6 +45,8 @@ struct ModelInfo: Identifiable, Equatable {
     let description: String // Short description
     let sizeGB: Double      // Approximate size in GB (0 for built-in)
     let engine: ModelEngine // Which engine to use
+    let termsURL: URL?
+    let privacyURL: URL?
     var downloadState: DownloadState
     
     static func == (lhs: ModelInfo, rhs: ModelInfo) -> Bool {
@@ -65,16 +67,20 @@ extension ModelInfo {
         description: "Apple's on-device model. Fast, private, and built right into your device. No download required.",
         sizeGB: 0,
         engine: .appleFoundation,
+        termsURL: URL(string: "https://www.apple.com/legal/privacy/data/en/intelligence-engine/"),
+        privacyURL: URL(string: "https://www.apple.com/legal/privacy/data/en/intelligence-engine/"),
         downloadState: .builtin
     )
 
     /// Gemma 2 2B Instruct (4-bit MLX)
     static let gemma2_2b_4bit = ModelInfo(
         id: "mlx-community/gemma-2-2b-it-4bit",
-        name: "Gemma 2 2B (MLX)",
-        description: "Gemma 2 2B Instruct, 4-bit MLX quantized weights. Runs fully on-device.",
+        name: "Gemma 2 2B",
+        description: "Google's compact AI model. Runs fully on-device with complete privacy.",
         sizeGB: 1.47,
         engine: .mlx,
+        termsURL: URL(string: "https://ai.google.dev/gemma/terms"),
+        privacyURL: nil,
         downloadState: .notDownloaded
     )
     

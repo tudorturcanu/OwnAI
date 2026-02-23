@@ -24,6 +24,11 @@ let package = Package(
             name: "LocalAIKit",
             dependencies: [
                 .product(name: "AnyLanguageModel", package: "AnyLanguageModel")
+            ],
+            linkerSettings: [
+                .linkedFramework("Metal"),
+                .linkedFramework("MetalPerformanceShaders"),
+                .linkedFramework("MetalPerformanceShadersGraph")
             ]
         )
     ]

@@ -12,7 +12,7 @@
     <div class="container">
         <header>
             <div class="logo-text">Own Ai</div>
-            <div class="subtitle">Private, Secure, On-Device AI</div>
+            <div class="subtitle">Private AI, On-Device and Apple Intelligence</div>
         </header>
 
         <nav class="nav-links">
@@ -23,38 +23,57 @@
 
         <div class="card">
             <h1>Privacy Policy</h1>
-            <p>Last updated: February 1, 2026</p>
+            <p>Last updated: February 23, 2026</p>
 
-            <p>At Own Ai, your privacy is not a feature—it is our foundation. We believe that your conversations with AI
-                are personal and should remain that way. <strong>Your data never leaves your device.</strong></p>
+            <p>Own Ai is designed for local-first AI. This policy explains what data the app handles, how data is
+                collected, how it is used, and when it is shared with third-party AI services.</p>
 
-            <h2>1. Zero Data Collection</h2>
-            <p>We do not collect, store, or transmit your personal data, conversation history, or usage analytics to any
-                remote servers. Own Ai operates entirely offline for its core functions.</p>
-
-            <h2>2. On-Device Processing</h2>
-            <p>All AI inference occurs locally on your device hardware.
+            <h2>1. Data the App Collects</h2>
             <ul>
-                <li><strong>Apple Intelligence:</strong> Uses on-device models provided by iOS.</li>
-                <li><strong>Local LLMs (MLX/Gemma):</strong> Run directly on your device's Silicon (GPU/Neural Engine).
-                </li>
+                <li><strong>Chat and prompt content:</strong> Messages you type in chat.</li>
+                <li><strong>Document content:</strong> Text extracted from files you choose to import.</li>
+                <li><strong>Voice input/output data:</strong> Speech-to-text transcription and text-to-speech content.</li>
+                <li><strong>Model and app settings:</strong> Selected model, generation preferences, and consent flags.</li>
+                <li><strong>Downloaded model files:</strong> Model weights and tokenizer files you choose to download.</li>
             </ul>
-            No text, voice recordings, or document contents are sent to the cloud for processing.</p>
 
-            <h2>3. Document Privacy (RAG)</h2>
-            <p>When you upload documents for analysis, they are processed and indexed locally. The extracted text and
-                vector embeddings remain strictly within your device's secure storage.</p>
+            <h2>2. How Data Is Collected</h2>
+            <ul>
+                <li>Directly from you when you type prompts, speak, or import documents.</li>
+                <li>From iOS frameworks for speech recognition, text-to-speech, and model availability checks.</li>
+                <li>By local storage on your device (for chat history, settings, and model files).</li>
+                <li>By network requests only when downloading models or when Apple Intelligence is selected.</li>
+            </ul>
 
-            <h2>4. Third-Party Services</h2>
-            <p>Own Ai does not include third-party tracking, advertising, or analytics SDKs. We have no way of knowing
-                how you use the app or what you discuss with the AI.</p>
+            <h2>3. How Data Is Used</h2>
+            <ul>
+                <li>To generate AI responses.</li>
+                <li>To provide document question-answering and summaries.</li>
+                <li>To save chat history and app preferences on your device.</li>
+                <li>To download and manage on-device models you select.</li>
+                <li>To support optional voice features.</li>
+            </ul>
 
-            <h2>5. Data Retention & Control</h2>
-            <p>Your chat history is saved only in your device's local database. You can clear individual conversations
-                or reset the entire app history at any time through the settings menu. Once deleted, this data is gone
-                and cannot be recovered by us.</p>
+            <h2>4. Third-Party AI Sharing</h2>
+            <p>If you select <strong>Apple Intelligence</strong>, your prompt and attached document text may be sent to
+                <strong>Apple Inc.</strong> (including Apple Private Cloud Compute) to generate responses. Because this
+                content may include personal data, the app asks for your permission before sending Apple Intelligence
+                requests.</p>
+            <p>If you select an <strong>MLX local model</strong>, prompts and document content are processed on-device
+                and are not sent to a third-party AI service for inference.</p>
 
-            <h2>6. Contact Us</h2>
+            <h2>5. Other Third-Party Services</h2>
+            <ul>
+                <li><strong>Model hosting/download:</strong> Public model repositories (for example, Hugging Face) are
+                    used only to download model files you request.</li>
+                <li><strong>No ad/analytics SDKs:</strong> The app does not include third-party advertising or tracking SDKs.</li>
+            </ul>
+
+            <h2>6. Retention and Control</h2>
+            <p>Chat history, extracted document data, and settings are stored locally on your device. You can delete
+                conversations or reset app data from within the app.</p>
+
+            <h2>7. Contact Us</h2>
             <p>If you have questions about this policy, please contact us at <a
                     href="mailto:alice.turcanu91@gmail.com">alice.turcanu91@gmail.com</a>.</p>
         </div>
