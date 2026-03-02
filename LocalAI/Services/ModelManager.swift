@@ -24,7 +24,12 @@ final class ModelManager {
     // MARK: - Properties
     
     var models: [ModelInfo] = ModelInfo.allModels
-    @ObservationIgnored @AppStorage("selectedModelID") var selectedModelID: String?
+    @ObservationIgnored @AppStorage("selectedModelID") private var persistedSelectedModelID: String?
+    var selectedModelID: String? {
+        didSet {
+            persistedSelectedModelID = selectedModelID
+        }
+    }
     @ObservationIgnored @AppStorage("autoSelectBestModel") var autoSelectBestModel: Bool = true
     @ObservationIgnored @AppStorage("downloadNotifications") var downloadNotifications: Bool = true
     
@@ -94,6 +99,7 @@ final class ModelManager {
     // MARK: - Initialization
     
     init() {
+        selectedModelID = persistedSelectedModelID
         ensureSelection()
         Task {
             await checkAvailability()
