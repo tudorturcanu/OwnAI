@@ -249,11 +249,20 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("AI Disclaimer")
                             .font(.subheadline.bold())
-                        Text("Own Ai uses generative AI which may occasionally produce inaccurate, biased, or inappropriate content. Please verify important information.")
+                        Text("Own Ai uses generative AI provided by Apple Inc. (Apple Intelligence) or local models which may occasionally produce inaccurate, biased, or inappropriate content. Please verify important information.")
                             .font(.caption)
                             .foregroundStyle(Color(white: 0.5))
                             .lineLimit(nil)
                             .fixedSize(horizontal: false, vertical: true)
+                        
+                        Button {
+                            openMail(subject: "Reporting AI Content Issue")
+                        } label: {
+                            Text("Report an issue")
+                                .font(.caption.bold())
+                                .foregroundStyle(.blue)
+                        }
+                        .padding(.top, 2)
                     }
                 }
                 
@@ -299,6 +308,8 @@ struct SettingsView: View {
 
     // MARK: - Legal Section
     
+    @State private var showDataPrivacySheet = false
+    
     private var legalSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Legal")
@@ -306,6 +317,14 @@ struct SettingsView: View {
                 .foregroundStyle(Color(white: 0.2))
             
             VStack(spacing: 0) {
+                Button {
+                    showDataPrivacySheet = true
+                } label: {
+                    settingsRow(title: "Data & Privacy", icon: "hand.raised.fill", iconColor: .purple, trailingIcon: "chevron.right")
+                }
+                
+                Divider().padding(.leading, 56)
+                
                 Link(destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/privacy.html")!) {
                     settingsRow(title: "Privacy Policy", icon: "hand.raised.fill", iconColor: .blue, trailingIcon: "arrow.up.right")
                 }
@@ -327,6 +346,9 @@ struct SettingsView: View {
             .background(Color.white)
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        }
+        .sheet(isPresented: $showDataPrivacySheet) {
+            DataPrivacySheet()
         }
     }
     
@@ -364,7 +386,7 @@ struct SettingsView: View {
                 Divider().padding(.leading, 16)
                 aboutRow(title: "Build", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1")
                 Divider().padding(.leading, 16)
-                aboutRow(title: "Privacy", value: "100% On-Device")
+                aboutRow(title: "Privacy", value: modelManager.selectedModel?.engine == .appleFoundation ? "Hybrid (Local + PCC)" : "100% On-Device")
             }
             .background(Color.white)
             .clipShape(RoundedRectangle(cornerRadius: 16))

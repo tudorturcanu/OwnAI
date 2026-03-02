@@ -30,7 +30,9 @@ struct ChatView: View {
     @AppStorage("autoRead") private var autoRead = false
     @State private var showExportSheet = false
     @FocusState private var isInputFocused: Bool
-    @State private var showThirdPartyConsentAlert = false
+    @State private var showModelDownloadSheet = false
+    @State private var showModelConsentSheet = false
+    @State private var shouldSendAfterConsent = false
     
     var body: some View {
         ZStack {
@@ -74,14 +76,26 @@ struct ChatView: View {
         } message: {
             Text("Please enable microphone and speech recognition access in Settings to use voice input.")
         }
-        .alert("Allow Apple Intelligence Processing?", isPresented: $showThirdPartyConsentAlert) {
-            Button("Not Now", role: .cancel) { }
-            Button("Allow and Send") {
-                setConsentForSelectedModel()
-                performSendMessage()
+        .sheet(isPresented: $showModelDownloadSheet) {
+            ModelDownloadView()
+        }
+        .sheet(isPresented: $showModelConsentSheet) {
+            if let selectedModel = modelManager.selectedModel {
+                ModelConsentSheet(model: selectedModel) {
+                    setConsent(for: selectedModel.id)
+                    showModelConsentSheet = false
+                    if shouldSendAfterConsent {
+                        shouldSendAfterConsent = false
+                        performSendMessage()
+                    }
+                } onCancel: {
+                    showModelConsentSheet = false
+                    shouldSendAfterConsent = false
+                }
+            } else {
+                Text("No model selected.")
+                    .padding()
             }
-        } message: {
-            Text("Your message and attached document text may include personal data and will be sent to Apple to generate a response when Apple Intelligence is selected.")
         }
     }
     
@@ -211,6 +225,21 @@ struct ChatView: View {
                         Text("Using \(model.name)")
                             .font(.caption)
                             .foregroundStyle(Color(white: 0.4))
+                    } else if !modelManager.isAppleIntelligenceAvailable {
+                        Button {
+                            showModelDownloadSheet = true
+                        } label: {
+                            HStack {
+                                Image(systemName: "arrow.down.app")
+                                Text("Download a Model")
+                            }
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.blue)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.blue.opacity(0.1))
+                            .clipShape(Capsule())
+                        }
                     } else {
                         Text("Select or download a model in Settings")
                             .font(.caption)
@@ -497,12 +526,14 @@ struct ChatView: View {
     
     private func sendMessage() {
         guard canSend else { return }
-        
-        if shouldRequestThirdPartyConsent {
-            showThirdPartyConsentAlert = true
+
+        guard let model = modelManager.selectedModel else { return }
+        if !hasConsent(for: model.id) {
+            shouldSendAfterConsent = true
+            showModelConsentSheet = true
             return
         }
-        
+
         performSendMessage()
     }
     
@@ -602,18 +633,11 @@ struct ChatView: View {
         }
     }
     
-    private var shouldRequestThirdPartyConsent: Bool {
-        guard let model = modelManager.selectedModel else { return false }
-        guard model.engine == .appleFoundation else { return false }
-        return !hasConsent(for: model.id)
-    }
-    
     private func hasConsent(for modelID: String) -> Bool {
         UserDefaults.standard.bool(forKey: "modelConsent.\(modelID)")
     }
-    
-    private func setConsentForSelectedModel() {
-        guard let modelID = modelManager.selectedModel?.id else { return }
+
+    private func setConsent(for modelID: String) {
         UserDefaults.standard.set(true, forKey: "modelConsent.\(modelID)")
     }
 

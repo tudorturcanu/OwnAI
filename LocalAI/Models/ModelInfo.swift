@@ -56,6 +56,16 @@ struct ModelInfo: Identifiable, Equatable {
     var isAppleFoundation: Bool {
         engine == .appleFoundation
     }
+
+    var providerName: String {
+        if isAppleFoundation {
+            return "Apple Inc."
+        }
+        if id.localizedCaseInsensitiveContains("gemma") {
+            return "Google LLC (Gemma)"
+        }
+        return "Model publisher"
+    }
 }
 
 // MARK: - Available Models
@@ -76,7 +86,7 @@ extension ModelInfo {
     static let gemma2_2b_4bit = ModelInfo(
         id: "mlx-community/gemma-2-2b-it-4bit",
         name: "Gemma 2 2B",
-        description: "Google's compact AI model. Runs fully on-device with complete privacy.",
+        description: "Google's compact AI model. Runs fully on-device — your data never leaves your device for AI processing.",
         sizeGB: 1.47,
         engine: .mlx,
         termsURL: URL(string: "https://ai.google.dev/gemma/terms"),

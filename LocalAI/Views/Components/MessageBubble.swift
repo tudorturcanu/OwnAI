@@ -162,6 +162,14 @@ struct MessageBubble: View {
                     } label: {
                         Label("Copy", systemImage: "doc.on.doc")
                     }
+                    
+                    if message.role == .assistant {
+                        Button(role: .destructive) {
+                            reportContent(message.content)
+                        } label: {
+                            Label("Report Inappropriate Content", systemImage: "flag")
+                        }
+                    }
                 }
             }
             
@@ -176,6 +184,16 @@ struct MessageBubble: View {
             withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
                 appeared = true
             }
+        }
+    }
+
+    private func reportContent(_ content: String) {
+        let subject = "Inappropriate AI Content Report"
+        let body = "The following AI response was flagged as inappropriate:\n\n\"\(content)\"\n\nPlease provide details on why this content is inappropriate:"
+        let mailto = "mailto:alice.turcanu91@gmail.com?subject=\(subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&body=\(body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
+
+        if let url = URL(string: mailto) {
+            UIApplication.shared.open(url)
         }
     }
 }

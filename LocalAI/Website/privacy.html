@@ -23,7 +23,7 @@
 
         <div class="card">
             <h1>Privacy Policy</h1>
-            <p>Last updated: February 23, 2026</p>
+            <p>Last updated: February 25, 2026</p>
 
             <p>Own Ai is designed for local-first AI. This policy explains what data the app handles, how data is
                 collected, how it is used, and when it is shared with third-party AI services.</p>
@@ -32,9 +32,12 @@
             <ul>
                 <li><strong>Chat and prompt content:</strong> Messages you type in chat.</li>
                 <li><strong>Document content:</strong> Text extracted from files you choose to import.</li>
-                <li><strong>Voice input/output data:</strong> Speech-to-text transcription and text-to-speech content.</li>
-                <li><strong>Model and app settings:</strong> Selected model, generation preferences, and consent flags.</li>
-                <li><strong>Downloaded model files:</strong> Model weights and tokenizer files you choose to download.</li>
+                <li><strong>Voice input/output data:</strong> Speech-to-text transcription and text-to-speech content.
+                </li>
+                <li><strong>Model and app settings:</strong> Selected model, generation preferences, and consent flags.
+                </li>
+                <li><strong>Downloaded model files:</strong> Model weights and tokenizer files you choose to download.
+                </li>
             </ul>
 
             <h2>2. How Data Is Collected</h2>
@@ -42,7 +45,7 @@
                 <li>Directly from you when you type prompts, speak, or import documents.</li>
                 <li>From iOS frameworks for speech recognition, text-to-speech, and model availability checks.</li>
                 <li>By local storage on your device (for chat history, settings, and model files).</li>
-                <li>By network requests only when downloading models or when Apple Intelligence is selected.</li>
+                <li>By network requests only when downloading model files or when Apple Intelligence is selected.</li>
             </ul>
 
             <h2>3. How Data Is Used</h2>
@@ -54,19 +57,55 @@
                 <li>To support optional voice features.</li>
             </ul>
 
-            <h2>4. Third-Party AI Sharing</h2>
-            <p>If you select <strong>Apple Intelligence</strong>, your prompt and attached document text may be sent to
-                <strong>Apple Inc.</strong> (including Apple Private Cloud Compute) to generate responses. Because this
-                content may include personal data, the app asks for your permission before sending Apple Intelligence
-                requests.</p>
-            <p>If you select an <strong>MLX local model</strong>, prompts and document content are processed on-device
-                and are not sent to a third-party AI service for inference.</p>
+            <h2>4. Third-Party AI Sharing and Consent</h2>
+
+            <h3>4a. On-Device Models (MLX / Gemma 2 2B)</h3>
+            <p>If you select an <strong>MLX local model</strong> such as <strong>Gemma 2 2B</strong> (published by
+                Google LLC),
+                all AI inference (prompt processing, response generation) runs <strong>100% on your device</strong>.
+                <strong>No personal data — including prompts, chat messages, document text, voice input, or conversation
+                    history — is sent to Google LLC or any third-party AI service.</strong>
+            </p>
+            <p>The app asks for your explicit permission before using any model for the first time. A consent screen
+                clearly identifies what data is processed, confirms it stays on-device, and requires your approval
+                before
+                proceeding.
+            </p>
+
+            <h3>4b. Apple Intelligence</h3>
+            <p>If you select <strong>Apple Intelligence</strong>, your prompt text, attached document text, and
+                conversation context may be sent to
+                <strong>Apple Inc.</strong> (including Apple Private Cloud Compute) to generate responses. Apple Inc.
+                provides
+                the same or equal protection for your data as described in this policy, ensuring that your personal data
+                is
+                never stored or accessible to Apple for model training or diagnostics without your explicit system-level
+                consent.
+            </p>
+            <p><strong>Specific Data Shared:</strong> Prompts, conversation context, and text content extracted from
+                attached documents.</p>
+            <p><strong>In-app permission control:</strong> Before first use of Apple Intelligence, the app shows a
+                disclosure sheet
+                that identifies data categories, the recipient (Apple Inc.), and asks for your explicit permission.
+            </p>
+
+            <h3>4c. Model File Downloads</h3>
+            <p>When you choose to download a model, the app makes a network request to <strong>Hugging Face
+                    Inc.</strong>
+                (a model hosting provider) to retrieve the model files. This request may include:</p>
+            <ul>
+                <li>Your IP address</li>
+                <li>Device request headers (e.g. operating system version)</li>
+            </ul>
+            <p><strong>No chat messages, prompts, documents, voice input, or any personal content is sent during model
+                    downloads.</strong></p>
 
             <h2>5. Other Third-Party Services</h2>
             <ul>
-                <li><strong>Model hosting/download:</strong> Public model repositories (for example, Hugging Face) are
-                    used only to download model files you request.</li>
-                <li><strong>No ad/analytics SDKs:</strong> The app does not include third-party advertising or tracking SDKs.</li>
+                <li><strong>No ad/analytics SDKs:</strong> The app does not include third-party advertising or tracking
+                    SDKs.</li>
+                <li><strong>No other third-party AI services:</strong> The app does not send data to any AI service
+                    other than Apple Inc. (when Apple Intelligence is selected by the user).</li>
             </ul>
 
             <h2>6. Retention and Control</h2>

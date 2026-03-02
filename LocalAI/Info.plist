@@ -5,7 +5,12 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
-		<string>processing</string>
 	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Own Ai needs microphone access to transcribe your voice into text for chat interactions.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Own Ai uses speech recognition to convert your voice input into text locally on your device.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Own Ai may use the camera to allow you to take photos and attach them to your chat.</string>
 </dict>
 </plist>
