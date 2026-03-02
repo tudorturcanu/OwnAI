@@ -600,8 +600,19 @@ final class ModelManager {
  extension ModelManager {
     func ensureSelection() {
         if let selectedID = selectedModelID,
-           let selected = models.first(where: { $0.id == selectedID }) {
+           let selectedIndex = models.firstIndex(where: { $0.id == selectedID }) {
+            let selected = models[selectedIndex]
             if isModelUsable(selected) { return }
+            #if !targetEnvironment(simulator)
+            // During startup, the model state can still be stale (.notDownloaded) until
+            // async availability checks complete. Preserve the persisted selection when
+            // valid model artifacts already exist on disk.
+            if selected.engine == .mlx && MLXStorage.hasValidModelArtifacts(for: selected.id) {
+                models[selectedIndex].downloadState = .downloaded
+                downloadFailures.removeValue(forKey: selected.id)
+                return
+            }
+            #endif
         }
         
         if autoSelectBestModel {
