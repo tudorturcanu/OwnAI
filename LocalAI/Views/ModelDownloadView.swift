@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct ModelDownloadView: View {
     @Environment(\.dismiss) private var dismiss
@@ -64,6 +65,7 @@ struct ModelCard: View {
     let model: ModelInfo
     @Environment(ModelManager.self) private var modelManager
     @Environment(LLMEngine.self) private var llmEngine
+    @Environment(\.openURL) private var openURL
     @State private var isHovered = false
     @State private var testResult: ModelQuickTestResult?
     @State private var showConsentSheet = false
@@ -265,6 +267,9 @@ struct ModelCard: View {
                         .font(.caption2)
                         .foregroundStyle(.orange)
                 }
+                Text("Inference privacy: Prompts and document text stay on-device and are not sent to third-party AI services.")
+                    .font(.caption2)
+                    .foregroundStyle(Color(white: 0.45))
             }
 
             if (model.downloadState.isDownloaded || model.isAppleFoundation) && (model.engine != .appleFoundation || modelManager.isAppleIntelligenceAvailable) {
@@ -322,8 +327,9 @@ struct ModelCard: View {
             }
             
         case .error(let message):
-            ErrorButton(message: message, action: {
-                modelManager.downloadModel(model.id)
+            let action = modelManager.downloadErrorAction(for: model.id)
+            ErrorButton(message: message, actionTitle: action.title, actionIcon: action.iconName, action: {
+                handleDownloadErrorAction(action)
             })
         }
     }
@@ -344,6 +350,19 @@ struct ModelCard: View {
         pendingAction = action
         showConsentSheet = true
     }
+
+    private func handleDownloadErrorAction(_ action: DownloadErrorAction) {
+        switch action {
+        case .retry:
+            modelManager.downloadModel(model.id)
+        case .freeSpace:
+            if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                openURL(settingsURL)
+            }
+        case .repair:
+            modelManager.repairModel(model.id)
+        }
+    }
 }
 
 // MARK: - Model Consent Sheet
@@ -360,12 +379,19 @@ struct ModelConsentSheet: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     header
-                    disclosureCard
+                    
+                    if model.isAppleFoundation {
+                        appleDataSharingCard
+                    } else {
+                        localProcessingCard
+                        downloadDataCard
+                    }
+                    
                     termsCard
                 }
                 .padding(20)
             }
-            .navigationTitle("Model Terms")
+            .navigationTitle("Data & Privacy")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -381,7 +407,7 @@ struct ModelConsentSheet: View {
                         dismiss()
                         onAccept()
                     } label: {
-                        Text("I Agree")
+                        Text(model.isAppleFoundation ? "Allow Data Sharing & Continue" : "I Understand — No Data Shared")
                             .font(.headline.weight(.bold))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -413,37 +439,119 @@ struct ModelConsentSheet: View {
             Text(model.name)
                 .font(.title2.bold())
                 .foregroundStyle(Color(white: 0.1))
-            Text(model.isAppleFoundation ? "Provided by Apple" : "Provided by the model publisher")
+            Text("Provider: \(model.providerName)")
                 .font(.subheadline)
                 .foregroundStyle(Color(white: 0.5))
         }
     }
     
-    private var disclosureCard: some View {
+    // MARK: - Apple Intelligence Data Sharing Card
+    
+    private var appleDataSharingCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "hand.raised.fill")
                     .foregroundStyle(.orange)
-                Text("Data Use Disclosure")
+                Text("Data Sent to Apple Inc.")
                     .font(.headline)
                     .foregroundStyle(Color(white: 0.2))
             }
             
-            if model.isAppleFoundation {
-                Text("If you use Apple Intelligence, your prompts and attached document text may include personal data and may be sent to Apple Inc. (including Apple Private Cloud Compute) to generate responses. We ask for your permission before this data is shared. If you prefer fully on-device processing, choose a downloadable model instead.")
-                    .font(.subheadline)
-                    .foregroundStyle(Color(white: 0.5))
-            } else {
-                Text("This model runs fully on your device. Your prompts and documents are not sent to any server. The model file itself is downloaded to your device.")
-                    .font(.subheadline)
-                    .foregroundStyle(Color(white: 0.5))
+            Text("When you use Apple Intelligence, the following personal data may be sent to **Apple Inc.** (including Apple Private Cloud Compute) to generate AI responses:")
+                .font(.subheadline)
+                .foregroundStyle(Color(white: 0.5))
+            
+            VStack(alignment: .leading, spacing: 8) {
+                dataRow(icon: "text.bubble", text: "Your chat messages and prompts")
+                dataRow(icon: "doc.text", text: "Text from attached documents")
+                dataRow(icon: "text.quote", text: "Conversation context and history")
             }
+            
+            Text("By tapping \"Allow Data Sharing & Continue\", you authorize this data transfer to Apple Inc. for AI processing.")
+                .font(.caption)
+                .foregroundStyle(Color(white: 0.45))
+                .padding(.top, 4)
         }
         .padding(16)
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
+    
+    // MARK: - Local Model: No Data Shared Card
+    
+    private var localProcessingCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "lock.shield.fill")
+                    .foregroundStyle(.green)
+                Text("Data NOT Sent to Any Third Party")
+                    .font(.headline)
+                    .foregroundStyle(Color(white: 0.2))
+            }
+            
+            Text("This model runs **100% on your device**. The following data is processed locally and is **never sent** to Google LLC, Gemma, or any third-party AI service:")
+                .font(.subheadline)
+                .foregroundStyle(Color(white: 0.5))
+            
+            VStack(alignment: .leading, spacing: 8) {
+                privacyRow(text: "Your chat messages and prompts")
+                privacyRow(text: "Text from attached documents")
+                privacyRow(text: "Conversation context and history")
+                privacyRow(text: "Voice input and transcriptions")
+            }
+            
+            HStack(spacing: 6) {
+                Image(systemName: "info.circle.fill")
+                    .foregroundStyle(.blue)
+                Text("All AI inference happens on your device. No personal data leaves your device for AI processing.")
+                    .font(.caption)
+                    .foregroundStyle(Color(white: 0.45))
+            }
+            .padding(.top, 4)
+        }
+        .padding(16)
+        .background(Color.green.opacity(0.03))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.green.opacity(0.15), lineWidth: 1)
+        )
+    }
+    
+    // MARK: - Download Data Card
+    
+    private var downloadDataCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .foregroundStyle(.blue)
+                Text("Model Download Data")
+                    .font(.headline)
+                    .foregroundStyle(Color(white: 0.2))
+            }
+            
+            Text("To download the model files, a network request is made to **Hugging Face Inc.** (model hosting provider). This request may include:")
+                .font(.subheadline)
+                .foregroundStyle(Color(white: 0.5))
+            
+            VStack(alignment: .leading, spacing: 8) {
+                dataRow(icon: "network", text: "Your IP address")
+                dataRow(icon: "gear", text: "Device request headers (e.g. OS version)")
+            }
+            
+            Text("No chat messages, prompts, documents, or any personal content is sent during downloads.")
+                .font(.caption)
+                .foregroundStyle(Color(white: 0.45))
+                .padding(.top, 4)
+        }
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+    }
+    
+    // MARK: - Terms Card
     
     private var termsCard: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -476,6 +584,32 @@ struct ModelConsentSheet: View {
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+    }
+    
+    // MARK: - Helper Views
+    
+    private func dataRow(icon: String, text: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundStyle(.orange)
+                .frame(width: 20)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(Color(white: 0.4))
+        }
+    }
+    
+    private func privacyRow(text: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "checkmark.shield.fill")
+                .font(.caption)
+                .foregroundStyle(.green)
+                .frame(width: 20)
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(Color(white: 0.4))
+        }
     }
 }
 
@@ -679,6 +813,8 @@ struct DeleteButton: View {
 
 struct ErrorButton: View {
     let message: String
+    let actionTitle: String
+    let actionIcon: String
     let action: () -> Void
     
     var body: some View {
@@ -689,13 +825,13 @@ struct ErrorButton: View {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(Color(white: 0.5))
-                    .lineLimit(1)
+                    .lineLimit(2)
             }
             
             Button(action: action) {
                 HStack(spacing: 8) {
-                    Image(systemName: "arrow.clockwise")
-                    Text("Retry")
+                    Image(systemName: actionIcon)
+                    Text(actionTitle)
                         .fontWeight(.medium)
                 }
                 .foregroundStyle(.blue)
