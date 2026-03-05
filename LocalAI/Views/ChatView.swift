@@ -152,10 +152,6 @@ struct ChatView: View {
             .onChange(of: historyManager.currentMessages.count) {
                 scrollToBottom(proxy: proxy)
             }
-            .onChange(of: llmEngine.currentResponse) {
-                // Throttled or delayed scroll to allow layout to settle
-                scrollToBottom(proxy: proxy, delay: 0.05)
-            }
             .onChange(of: llmEngine.state) {
                 scrollToBottom(proxy: proxy)
             }
@@ -165,14 +161,15 @@ struct ChatView: View {
             .onChange(of: llmEngine.currentResponse) {
                 // Update the last message in history if it's currently streaming
                 if let lastMsg = historyManager.currentMessages.last, 
-                   lastMsg.role == .assistant && lastMsg.isStreaming {
+                   lastMsg.role == .assistant && lastMsg.isStreaming &&
+                   lastMsg.content != llmEngine.currentResponse {
                     historyManager.updateMessage(
                         id: lastMsg.id,
                         content: llmEngine.currentResponse,
                         isStreaming: true
                     )
                 }
-                scrollToBottom(proxy: proxy, delay: 0.05)
+                scrollToBottom(proxy: proxy, delay: 0.02, animated: false)
             }
         }
     }
@@ -183,10 +180,17 @@ struct ChatView: View {
         }
     }
     
-    private func scrollToBottom(proxy: ScrollViewProxy, delay: Double = 0) {
+    private func scrollToBottom(proxy: ScrollViewProxy, delay: Double = 0, animated: Bool = true) {
         let performScroll = {
-            withAnimation(.easeInOut(duration: 0.25)) { // Gentler scroll to match liquid text
+            let scrollAction = {
                 proxy.scrollTo("bottom", anchor: .bottom)
+            }
+            if animated {
+                withAnimation(.easeInOut(duration: 0.25)) { // Gentler scroll to match liquid text
+                    scrollAction()
+                }
+            } else {
+                scrollAction()
             }
         }
         

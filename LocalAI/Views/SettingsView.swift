@@ -391,6 +391,12 @@ struct SettingsView: View {
             .background(Color.white)
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+
+            Text("Made with ❤️ in Switzerland")
+                .font(.footnote)
+                .foregroundStyle(Color(white: 0.5))
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, 4)
         }
     }
     

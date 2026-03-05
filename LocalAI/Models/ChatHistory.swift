@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Observation
 
 /// Represents a single chat conversation
 struct ChatConversation: Identifiable, Equatable, Codable {
@@ -39,6 +40,11 @@ final class ChatHistoryManager {
     
     var conversations: [ChatConversation] = []
     var currentConversationID: UUID?
+    @ObservationIgnored private var pendingSaveWorkItem: DispatchWorkItem?
+    @ObservationIgnored private let saveQueue = DispatchQueue(
+        label: "alice.turcanu.LocalAI.chat-history-save",
+        qos: .utility
+    )
     
     var currentConversation: ChatConversation? {
         get {
@@ -69,12 +75,29 @@ final class ChatHistoryManager {
     }
     
     /// Save conversations to disk
-    func saveConversations() {
-        do {
-            let data = try JSONEncoder().encode(conversations)
-            try data.write(to: saveURL)
-        } catch {
-            print("Failed to save conversations: \(error)")
+    func saveConversations(immediately: Bool = false) {
+        let snapshot = conversations
+        let url = saveURL
+        let delay: TimeInterval = immediately ? 0 : 0.6
+        
+        pendingSaveWorkItem?.cancel()
+        var workItem: DispatchWorkItem?
+        workItem = DispatchWorkItem {
+            guard let workItem, !workItem.isCancelled else { return }
+            do {
+                let data = try JSONEncoder().encode(snapshot)
+                try data.write(to: url, options: .atomic)
+            } catch {
+                print("Failed to save conversations: \(error)")
+            }
+        }
+        guard let workItem else { return }
+        pendingSaveWorkItem = workItem
+        
+        if delay == 0 {
+            saveQueue.async(execute: workItem)
+        } else {
+            saveQueue.asyncAfter(deadline: .now() + delay, execute: workItem)
         }
     }
     
@@ -114,7 +137,7 @@ final class ChatHistoryManager {
         let conversation = ChatConversation()
         conversations.insert(conversation, at: 0)
         currentConversationID = conversation.id
-        saveConversations()
+        saveConversations(immediately: true)
     }
     
     /// Select a conversation
@@ -135,7 +158,7 @@ final class ChatHistoryManager {
                 newConversation()
             }
         }
-        saveConversations()
+        saveConversations(immediately: true)
     }
     
     /// Add a message to the current conversation
@@ -175,7 +198,7 @@ final class ChatHistoryManager {
         // Save history intermittently (or eventually, but for now every update might be heavy)
         // Let's only save when streaming finishes or every N updates
         if !isStreaming {
-            saveConversations()
+            saveConversations(immediately: true)
         }
     }
     

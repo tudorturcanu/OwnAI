@@ -12,6 +12,7 @@ import FoundationModels
 
 #if !targetEnvironment(simulator)
 import MLXLLM
+import MLX
 #endif
 
 /// Engine state for LLM operations
@@ -64,8 +65,8 @@ final class LLMEngine {
     // Throttling
     private var lastUpdate: Date = .distantPast
     private var throttleInterval: TimeInterval {
-        lowPowerMode ? 0.12 : 0.04
-    } // Fast updates (~25fps) for continuous feel
+        lowPowerMode ? 0.16 : 0.08
+    } // Balance smooth streaming with UI responsiveness
 
     struct GenerationOverrides {
         var temperature: Double?
@@ -223,8 +224,17 @@ final class LLMEngine {
                         maximumResponseTokens: effectiveMaxTokens
                     )
                     
-                    let response = try await session.respond(to: prompt, options: options)
-                    await self.updateResponseIfNeeded(response.content, force: true)
+                    // Stream MLX output so users see first tokens sooner and keep MLX errors throwable.
+                    var lastContent = ""
+                    try await withError {
+                        let stream = session.streamResponse(to: prompt, options: options)
+                        for try await snapshot in stream {
+                            if Task.isCancelled { break }
+                            lastContent = snapshot.content
+                            await self.updateResponseIfNeeded(lastContent, force: false)
+                        }
+                    }
+                    await self.updateResponseIfNeeded(lastContent, force: true)
                     #endif
                 }
                 
