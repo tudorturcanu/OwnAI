@@ -577,6 +577,7 @@ struct ChatView: View {
         
         // Generate response
         Task {
+            let assistantID = UUID()
             do {
                 // Prepare prompt (Async if using RAG)
                 var fullPrompt = text
@@ -602,7 +603,6 @@ struct ChatView: View {
                 }
 
                 // Add placeholder assistant message after we confirm a usable model.
-                let assistantID = UUID()
                 let assistantPlaceholder = ChatMessage(
                     id: assistantID,
                     role: .assistant,
@@ -630,9 +630,17 @@ struct ChatView: View {
                     speechManager.speak(historyManager.currentMessages.last?.content ?? "")
                 }
             } catch {
-                // Add error message
-                let errorMessage = ChatMessage(role: .assistant, content: "Sorry, I encountered an error: \(error.localizedDescription)")
-                historyManager.addMessage(errorMessage)
+                let errorText = "Sorry, I encountered an error: \(error.localizedDescription)"
+                if historyManager.currentMessages.contains(where: { $0.id == assistantID }) {
+                    historyManager.updateMessage(
+                        id: assistantID,
+                        content: errorText,
+                        isStreaming: false
+                    )
+                } else {
+                    historyManager.addMessage(ChatMessage(role: .assistant, content: errorText))
+                }
+                llmEngine.currentResponse = ""
             }
         }
     }

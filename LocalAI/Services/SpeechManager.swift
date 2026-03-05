@@ -21,6 +21,7 @@ class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
+    private var isRequestingPermissions = false
     
     // TTS
     private let synthesizer = AVSpeechSynthesizer()
@@ -31,18 +32,27 @@ class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         synthesizer.delegate = self
     }
     
-    func requestPermissions() {
-        SFSpeechRecognizer.requestAuthorization { authStatus in
-            AVCaptureDevice.requestAccess(for: .audio) { _ in }
-        }
-    }
-    
     func startListening() throws {
         let authStatus = SFSpeechRecognizer.authorizationStatus()
         let audioStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         
         if authStatus == .notDetermined || audioStatus == .notDetermined {
-            requestPermissions()
+            guard !isRequestingPermissions else { return }
+            isRequestingPermissions = true
+            Task {
+                let granted = await requestPermissionsIfNeeded()
+                isRequestingPermissions = false
+                
+                if granted {
+                    do {
+                        try startListening()
+                    } catch {
+                        showPermissionAlert = true
+                    }
+                } else {
+                    showPermissionAlert = true
+                }
+            }
             return
         }
         
@@ -105,6 +115,38 @@ class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         
         isListening = true
         transcribedText = ""
+    }
+
+    private func requestPermissionsIfNeeded() async -> Bool {
+        var speechStatus = SFSpeechRecognizer.authorizationStatus()
+        var audioStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        
+        if speechStatus == .notDetermined {
+            speechStatus = await requestSpeechAuthorization()
+        }
+        
+        if audioStatus == .notDetermined {
+            let granted = await requestMicrophoneAuthorization()
+            audioStatus = granted ? .authorized : .denied
+        }
+        
+        return speechStatus == .authorized && audioStatus == .authorized
+    }
+
+    private func requestSpeechAuthorization() async -> SFSpeechRecognizerAuthorizationStatus {
+        await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { status in
+                continuation.resume(returning: status)
+            }
+        }
+    }
+
+    private func requestMicrophoneAuthorization() async -> Bool {
+        await withCheckedContinuation { continuation in
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                continuation.resume(returning: granted)
+            }
+        }
     }
     
     func stopListening() {
