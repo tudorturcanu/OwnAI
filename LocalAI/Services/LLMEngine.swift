@@ -38,7 +38,7 @@ final class LLMEngine {
     // Settings
     @ObservationIgnored @AppStorage("temperature") var temperature: Double = 0.7
     @ObservationIgnored @AppStorage("topP") var topP: Double = 1.0
-    @ObservationIgnored @AppStorage("maxTokens") var maxTokens: Int = 512
+    @ObservationIgnored @AppStorage("maxTokens") var maxTokens: Int = 2048
     @ObservationIgnored @AppStorage("lowPowerMode") var lowPowerMode: Bool = false
     @ObservationIgnored @AppStorage("warmStartEnabled") var warmStartEnabled: Bool = true
     
@@ -131,6 +131,30 @@ final class LLMEngine {
         loadTaskID = nil
         currentModel = nil
         state = .idle
+    }
+    
+    /// Reset conversation session (keeps model loaded).
+    /// Call this before generating with a new document so the model
+    /// doesn't answer from old conversation context.
+    func resetSession() {
+        appleSession = nil
+        #if !targetEnvironment(simulator)
+        // Recreate MLX session with same model to clear conversation history
+        if let session = mlxSession, let modelID = mlxModelID {
+            let persistentPath = MLXStorage.modelDirectory(for: modelID)
+            let mlxModel: MLXLanguageModel
+            if FileManager.default.fileExists(atPath: persistentPath.path) {
+                mlxModel = MLXLanguageModel(modelId: modelID, directory: persistentPath)
+            } else {
+                mlxModel = MLXLanguageModel(modelId: modelID)
+            }
+            mlxSession = LocalSession(
+                model: mlxModel,
+                instructions: UserDefaults.standard.string(forKey: "systemPrompt") ?? "You are a helpful AI assistant."
+            )
+            mlxSession?.prewarm()
+        }
+        #endif
     }
     
     /// Generate a response for the given prompt with streaming and throttling

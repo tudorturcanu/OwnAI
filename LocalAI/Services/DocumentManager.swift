@@ -13,9 +13,20 @@ struct AttachedDocument: Identifiable, Equatable {
     let id = UUID()
     let url: URL
     let content: String
+    let extractedPages: Int
+    let totalPages: Int
     
     var name: String {
-        url.lastPathComponent
+        url.lastPathComponent.removingPercentEncoding ?? url.lastPathComponent
+    }
+    
+    /// Human-readable page info, e.g. "Pages 1–5 of 42" or "All 3 pages"
+    var pageInfo: String? {
+        guard totalPages > 0 else { return nil }
+        if extractedPages < totalPages {
+            return "Pages 1–\(extractedPages) of \(totalPages)"
+        }
+        return "All \(totalPages) page\(totalPages == 1 ? "" : "s")"
     }
 }
 
@@ -50,9 +61,14 @@ class DocumentManager {
         }
         
         let content: String
+        var extractedPages = 0
+        var totalPages = 0
         
         if url.pathExtension.lowercased() == "pdf" {
-            content = try extractTextFromPDF(at: url)
+            let result = try extractTextFromPDF(at: url)
+            content = result.text
+            extractedPages = result.extractedPages
+            totalPages = result.totalPages
         } else {
             // Assume text/code
             content = try String(contentsOf: url, encoding: .utf8)
@@ -62,21 +78,26 @@ class DocumentManager {
         // Ingest into RAG Engine
         await RAGEngine.shared.ingest(text: content, documentID: id)
         
-        return AttachedDocument(url: url, content: content) // Note: AttachedDocument definition needs ID update or use existing UUID
+        return AttachedDocument(url: url, content: content, extractedPages: extractedPages, totalPages: totalPages)
     }
     
-    private func extractTextFromPDF(at url: URL) throws -> String {
+    private static let maxPages = 5
+    
+    private func extractTextFromPDF(at url: URL) throws -> (text: String, extractedPages: Int, totalPages: Int) {
         guard let pdfDocument = PDFDocument(url: url) else {
             throw DocumentError.extractionFailed
         }
         
+        let totalPages = pdfDocument.pageCount
+        let pagesToExtract = min(totalPages, Self.maxPages)
         var fullText = ""
-        for i in 0..<pdfDocument.pageCount {
+        
+        for i in 0..<pagesToExtract {
             if let page = pdfDocument.page(at: i), let pageText = page.string {
                 fullText += pageText + "\n"
             }
         }
         
-        return fullText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (fullText.trimmingCharacters(in: .whitespacesAndNewlines), pagesToExtract, totalPages)
     }
 }

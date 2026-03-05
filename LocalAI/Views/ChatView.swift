@@ -33,6 +33,7 @@ struct ChatView: View {
     @State private var showModelDownloadSheet = false
     @State private var showModelConsentSheet = false
     @State private var shouldSendAfterConsent = false
+    @State private var documentError: String?
     
     var body: some View {
         ZStack {
@@ -96,6 +97,14 @@ struct ChatView: View {
                 Text("No model selected.")
                     .padding()
             }
+        }
+        .alert("Document Error", isPresented: Binding(
+            get: { documentError != nil },
+            set: { if !$0 { documentError = nil } }
+        )) {
+            Button("OK", role: .cancel) { documentError = nil }
+        } message: {
+            Text(documentError ?? "An unknown error occurred.")
         }
     }
     
@@ -308,9 +317,16 @@ struct ChatView: View {
                         HStack(spacing: 6) {
                             Image(systemName: "doc.fill")
                                 .foregroundStyle(.blue)
-                            Text(document.name)
-                                .font(.caption)
-                                .lineLimit(1)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(document.name)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                                if let pageInfo = document.pageInfo {
+                                    Text(pageInfo)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
                         }
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
@@ -507,7 +523,7 @@ struct ChatView: View {
                 attachedDocument = document
             } catch {
                 print("Error processing file: \(error)")
-                // Optionally show error to user
+                documentError = error.localizedDescription
             }
             isExtractingDocument = false
         }
@@ -582,16 +598,18 @@ struct ChatView: View {
                 // Prepare prompt (Async if using RAG)
                 var fullPrompt = text
                 
-                if let docName = documentName {
-                    // Use RAG Retrieval
-                    let retrievedContexts = await RAGEngine.shared.retrieve(query: text.isEmpty ? "Summary" : text)
-                    let contextString = retrievedContexts.joined(separator: "\n\n")
+                if let docName = documentName, let docContent = documentContent, !docContent.isEmpty {
+                    // Direct injection — truncate to fit model context window
+                    let maxChars = 3000
+                    let truncatedContent = String(docContent.prefix(maxChars))
                     
                     fullPrompt = """
-                    Context from \(docName):
-                    \(contextString)
+                    Below is text from the document "\(docName)":
+                    ---
+                    \(truncatedContent)
+                    ---
                     
-                    Human: \(text.isEmpty ? "Summarize this document" : text)
+                    \(text.isEmpty ? "Summarize this document." : text)
                     """
                 }
                 
@@ -612,6 +630,12 @@ struct ChatView: View {
                 historyManager.addMessage(assistantPlaceholder)
                 
                 try await llmEngine.loadModel(model)
+                
+                // Reset session when a document is attached so the model
+                // answers about the NEW document, not a previous one
+                if documentName != nil {
+                    llmEngine.resetSession()
+                }
                 
                 // Generate
                 try await llmEngine.generate(prompt: fullPrompt)
