@@ -22,6 +22,7 @@ struct ChatView: View {
     @Environment(ChatHistoryManager.self) private var historyManager
     @Environment(ModelManager.self) private var modelManager
     @Environment(SpeechManager.self) private var speechManager
+    @State private var documentManager = DocumentManager.shared
     
     @State private var messageText = ""
     @State private var isFileImporterPresented = false
@@ -62,7 +63,7 @@ struct ChatView: View {
         }
         .fileImporter(
             isPresented: $isFileImporterPresented,
-            allowedContentTypes: [.pdf, .text, .plainText, .sourceCode],
+            allowedContentTypes: [.pdf, .text, .plainText, .sourceCode, .rtf, .rtfd, .init(filenameExtension: "docx")!],
             allowsMultipleSelection: false
         ) { result in
             handleFileImport(result: result)
@@ -312,35 +313,65 @@ struct ChatView: View {
             
             VStack(spacing: 8) {
                 // Attached Document Pill
-                if let document = attachedDocument {
+                if isExtractingDocument {
+                    HStack(spacing: 8) {
+                        ProgressView(value: documentManager.extractionProgress)
+                            .progressViewStyle(.linear)
+                            .tint(.blue)
+                        Text("Extracting…")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    .transition(.opacity)
+                } else if let document = attachedDocument {
                     HStack {
-                        HStack(spacing: 6) {
-                            Image(systemName: "doc.fill")
-                                .foregroundStyle(.blue)
+                        HStack(spacing: 8) {
+                            Image(systemName: document.iconName)
+                                .font(.title3)
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [.blue, .blue.opacity(0.7)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(document.name)
-                                    .font(.caption)
+                                    .font(.caption.weight(.medium))
                                     .lineLimit(1)
-                                if let pageInfo = document.pageInfo {
-                                    Text(pageInfo)
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
+                                HStack(spacing: 4) {
+                                    Text(document.fileSizeText)
+                                    if let pageInfo = document.pageInfo {
+                                        Text("·")
+                                        Text(pageInfo)
+                                    }
                                 }
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
                             }
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.blue.opacity(0.1))
-                        .clipShape(Capsule())
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(Color.blue.opacity(0.08))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.blue.opacity(0.15), lineWidth: 1)
+                                )
+                        )
                         .overlay(
                             Button {
-                                withAnimation {
+                                withAnimation(.spring(response: 0.3)) {
                                     attachedDocument = nil
                                 }
                             } label: {
                                 Image(systemName: "xmark.circle.fill")
-                                    .foregroundStyle(.gray)
-                                    .background(Color.white.clipShape(Circle()))
+                                    .font(.caption)
+                                    .foregroundStyle(.white)
+                                    .background(Color.gray.opacity(0.7).clipShape(Circle()))
                             }
                             .offset(x: 6, y: -6),
                             alignment: .topTrailing
@@ -369,12 +400,6 @@ struct ChatView: View {
                     
                     // Text field
                     HStack {
-                        if isExtractingDocument {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                                .frame(width: 20)
-                        }
-                        
                         TextField(speechManager.isListening ? "Listening..." : "Ask anything", text: $messageText, axis: .vertical)
                             .textFieldStyle(.plain)
                             .lineLimit(1...5)
@@ -514,18 +539,24 @@ struct ChatView: View {
     private func handleFileImport(result: Result<[URL], Error>) {
         guard case .success(let urls) = result, let url = urls.first else { return }
         
-        isExtractingDocument = true
-        attachedDocument = nil
+        withAnimation(.spring(response: 0.3)) {
+            isExtractingDocument = true
+            attachedDocument = nil
+        }
         
         Task {
             do {
-                let document = try await DocumentManager.shared.processFile(at: url)
-                attachedDocument = document
+                let document = try await documentManager.processFile(at: url)
+                withAnimation(.spring(response: 0.3)) {
+                    attachedDocument = document
+                }
             } catch {
                 print("Error processing file: \(error)")
                 documentError = error.localizedDescription
             }
-            isExtractingDocument = false
+            withAnimation(.spring(response: 0.3)) {
+                isExtractingDocument = false
+            }
         }
     }
     
@@ -639,6 +670,21 @@ struct ChatView: View {
                 
                 // Generate
                 try await llmEngine.generate(prompt: fullPrompt)
+                
+                // Check if generation ended in error (errors are caught inside generate's detached task)
+                if case .error(let message) = llmEngine.state {
+                    var errorText = "Sorry, I encountered an error: \(message)"
+                    if message.contains("unsupported language") || message.contains("locale") {
+                        errorText = "This document's language is not supported by Apple Intelligence. Try switching to an MLX model (like Gemma) in Settings → Models for multi-language support."
+                    }
+                    historyManager.updateMessage(
+                        id: assistantID,
+                        content: errorText,
+                        isStreaming: false
+                    )
+                    llmEngine.currentResponse = ""
+                    return
+                }
                 
                 // Final update after generation completes
                 historyManager.updateMessage(
