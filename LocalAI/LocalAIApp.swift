@@ -12,6 +12,7 @@ struct LocalAIApp: App {
     @State private var llmEngine = LLMEngine()
     @State private var historyManager = ChatHistoryManager()
     @State private var modelManager = ModelManager()
+    @Environment(\.scenePhase) private var scenePhase
     
     var body: some Scene {
         WindowGroup {
@@ -21,6 +22,11 @@ struct LocalAIApp: App {
                 .environment(modelManager)
                 .environment(SpeechManager())
                 .preferredColorScheme(.light)
+                .onChange(of: scenePhase) {
+                    if scenePhase == .active {
+                        historyManager.applyRetentionPolicy()
+                    }
+                }
         }
     }
 }

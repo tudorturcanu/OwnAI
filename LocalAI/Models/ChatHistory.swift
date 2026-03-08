@@ -7,6 +7,7 @@
 
 import Foundation
 import Observation
+import SwiftUI
 
 /// Represents a single chat conversation
 struct ChatConversation: Identifiable, Equatable, Codable {
@@ -45,6 +46,7 @@ final class ChatHistoryManager {
         label: "alice.turcanu.LocalAI.chat-history-save",
         qos: .utility
     )
+    @ObservationIgnored @AppStorage("historyRetentionDays") private var historyRetentionDays: Int = 0
     
     var currentConversation: ChatConversation? {
         get {
@@ -60,12 +62,17 @@ final class ChatHistoryManager {
     
     init() {
         loadConversations()
+        let removedDuplicateDrafts = deduplicateEmptyConversations()
+        applyRetentionPolicy()
         
         // Start with a new conversation on app launch if the current one isn't already empty
         if conversations.isEmpty || !conversations[0].messages.isEmpty {
             newConversation()
         } else {
             currentConversationID = conversations.first?.id
+            if removedDuplicateDrafts {
+                saveConversations(immediately: true)
+            }
         }
     }
     
@@ -130,10 +137,53 @@ final class ChatHistoryManager {
             print("No saved chat history found or failed to load: \(error)")
         }
     }
+
+    func applyRetentionPolicy() {
+        guard historyRetentionDays > 0 else { return }
+
+        let cutoffDate = Calendar.current.date(byAdding: .day, value: -historyRetentionDays, to: Date()) ?? .distantPast
+        let originalCount = conversations.count
+        conversations.removeAll { $0.updatedAt < cutoffDate }
+
+        if conversations.isEmpty {
+            currentConversationID = nil
+            newConversation()
+            return
+        }
+
+        if let currentConversationID, !conversations.contains(where: { $0.id == currentConversationID }) {
+            self.currentConversationID = conversations.first?.id
+        }
+
+        if conversations.count != originalCount {
+            saveConversations(immediately: true)
+        }
+    }
+
+    func updateRetention(days: Int) {
+        historyRetentionDays = max(0, days)
+        applyRetentionPolicy()
+    }
+
+    func clearAllConversations() {
+        conversations.removeAll()
+        currentConversationID = nil
+        newConversation()
+    }
     
     
     /// Create a new conversation
     func newConversation() {
+        _ = deduplicateEmptyConversations()
+
+        if let existingEmptyIndex = conversations.firstIndex(where: \.messages.isEmpty) {
+            let existingEmptyConversation = conversations.remove(at: existingEmptyIndex)
+            conversations.insert(existingEmptyConversation, at: 0)
+            currentConversationID = existingEmptyConversation.id
+            saveConversations(immediately: true)
+            return
+        }
+
         let conversation = ChatConversation()
         conversations.insert(conversation, at: 0)
         currentConversationID = conversation.id
@@ -207,5 +257,23 @@ final class ChatHistoryManager {
     /// Get messages for current conversation
     var currentMessages: [ChatMessage] {
         currentConversation?.messages ?? []
+    }
+
+    private func deduplicateEmptyConversations() -> Bool {
+        var keptEmptyConversationID: UUID?
+        var removedDuplicates = false
+        conversations.removeAll { conversation in
+            guard conversation.messages.isEmpty else { return false }
+            if keptEmptyConversationID == nil {
+                keptEmptyConversationID = conversation.id
+                return false
+            }
+            removedDuplicates = true
+            if currentConversationID == conversation.id {
+                currentConversationID = keptEmptyConversationID
+            }
+            return true
+        }
+        return removedDuplicates
     }
 }

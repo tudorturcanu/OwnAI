@@ -12,11 +12,16 @@ import FoundationModels
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(LLMEngine.self) private var llmEngine
+    @Environment(ChatHistoryManager.self) private var historyManager
     @Environment(ModelManager.self) private var modelManager
     @AppStorage("autoRead") private var autoRead = false
     @AppStorage("autoSelectBestModel") private var autoSelectBestModel = true
     @AppStorage("downloadNotifications") private var downloadNotifications = true
     @AppStorage("lowPowerMode") private var lowPowerMode = false
+    @AppStorage("historyRetentionDays") private var historyRetentionDays = 0
+    @State private var showClearHistoryConfirmation = false
+    
+    private let retentionOptions = [0, 7, 30, 90]
     
     var body: some View {
         NavigationStack {
@@ -57,6 +62,9 @@ struct SettingsView: View {
                     
                     // Content Safety
                     contentSafetySection
+
+                    // Privacy Controls
+                    privacyControlsSection
 
                     // Performance
                     performanceSection
@@ -281,6 +289,99 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Privacy Controls Section
+
+    private var privacyControlsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Privacy Controls")
+                .font(.headline)
+                .foregroundStyle(Color(white: 0.2))
+
+            settingsGroup {
+                HStack(spacing: 16) {
+                    Image(systemName: "internaldrive.fill")
+                        .font(.body)
+                        .foregroundStyle(.blue)
+                        .frame(width: 24)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Storage")
+                            .font(.body)
+                            .foregroundStyle(Color(white: 0.1))
+                        Text("Chats stay on this device.")
+                            .font(.caption)
+                            .foregroundStyle(Color(white: 0.5))
+                    }
+
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+
+                Divider().padding(.leading, 56)
+
+                HStack(spacing: 16) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.body)
+                        .foregroundStyle(.orange)
+                        .frame(width: 24)
+
+                    Text("Auto-Delete History")
+                        .font(.body)
+                        .foregroundStyle(Color(white: 0.1))
+
+                    Spacer()
+
+                    Picker("Auto-Delete History", selection: $historyRetentionDays) {
+                        ForEach(retentionOptions, id: \.self) { days in
+                            Text(retentionLabel(for: days)).tag(days)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+                .onChange(of: historyRetentionDays) {
+                    historyManager.updateRetention(days: historyRetentionDays)
+                }
+
+                Divider().padding(.leading, 56)
+
+                Button {
+                    showClearHistoryConfirmation = true
+                } label: {
+                    HStack(spacing: 16) {
+                        Image(systemName: "trash.fill")
+                            .font(.body)
+                            .foregroundStyle(.red)
+                            .frame(width: 24)
+
+                        Text("Clear All History")
+                            .font(.body)
+                            .foregroundStyle(.red)
+
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 16)
+                }
+            }
+
+            Text("Auto-delete removes conversations after their last activity date.")
+                .font(.caption)
+                .foregroundStyle(Color(white: 0.5))
+        }
+        .alert("Clear all chat history?", isPresented: $showClearHistoryConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Clear", role: .destructive) {
+                historyManager.clearAllConversations()
+            }
+        } message: {
+            Text("This permanently deletes every saved conversation on this device.")
+        }
+    }
+
     // MARK: - Performance Section
 
     private var performanceSection: some View {
@@ -365,6 +466,17 @@ struct SettingsView: View {
         .padding(.vertical, 16)
     }
 
+    private func retentionLabel(for days: Int) -> String {
+        switch days {
+        case 0:
+            return "Never"
+        case 1:
+            return "1 day"
+        default:
+            return "\(days) days"
+        }
+    }
+
     // MARK: - About Section
     
     private var aboutSection: some View {
@@ -419,5 +531,6 @@ struct SettingsView: View {
 #Preview {
     SettingsView()
         .environment(LLMEngine())
+        .environment(ChatHistoryManager())
         .environment(ModelManager())
 }
