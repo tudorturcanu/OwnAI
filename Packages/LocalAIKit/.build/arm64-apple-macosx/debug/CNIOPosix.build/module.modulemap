@@ -1,0 +1,4 @@
+module CNIOPosix {
+    umbrella header "/Users/teo/Documents/LocalAI copy/Packages/LocalAIKit/.build/checkouts/swift-nio/Sources/CNIOPosix/include/CNIOPosix.h"
+    export *
+}

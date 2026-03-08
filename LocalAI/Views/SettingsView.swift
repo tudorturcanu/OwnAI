@@ -17,7 +17,6 @@ struct SettingsView: View {
     @AppStorage("autoSelectBestModel") private var autoSelectBestModel = true
     @AppStorage("downloadNotifications") private var downloadNotifications = true
     @AppStorage("lowPowerMode") private var lowPowerMode = false
-    @AppStorage("warmStartEnabled") private var warmStartEnabled = true
     
     var body: some View {
         NavigationStack {
@@ -220,13 +219,6 @@ struct SettingsView: View {
                     settingsRow(title: "Download Notifications", icon: "bell.badge.fill", iconColor: .orange, trailingIcon: "")
                 }
                 .padding(.trailing, 16)
-
-                Divider().padding(.leading, 56)
-
-                Toggle(isOn: $warmStartEnabled) {
-                    settingsRow(title: "Warm-Start Models", icon: "bolt.fill", iconColor: .purple, trailingIcon: "")
-                }
-                .padding(.trailing, 16)
             }
         }
     }
@@ -392,7 +384,7 @@ struct SettingsView: View {
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
 
-            Text("Made with ❤️ in Switzerland")
+            Text("Made in Switzerland")
                 .font(.footnote)
                 .foregroundStyle(Color(white: 0.5))
                 .frame(maxWidth: .infinity, alignment: .center)

@@ -1,0 +1,3 @@
+module SystemPackage {
+    header "/Users/teo/Documents/LocalAI copy/Packages/LocalAIKit/.build/arm64-apple-macosx/debug/SystemPackage.build/include/SystemPackage-Swift.h"
+}

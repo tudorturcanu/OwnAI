@@ -35,6 +35,7 @@ struct ChatView: View {
     @State private var showModelConsentSheet = false
     @State private var shouldSendAfterConsent = false
     @State private var documentError: String?
+    @State private var streamingPrefix = ""
     
     var body: some View {
         ZStack {
@@ -145,7 +146,11 @@ struct ChatView: View {
                         emptyStateView
                     } else {
                         ForEach(historyManager.currentMessages) { message in
-                            MessageBubble(message: message)
+                            MessageBubble(
+                                message: message,
+                                showsContinue: canContinue(message),
+                                onContinue: canContinue(message) ? { continueResponse(for: message) } : nil
+                            )
                                 .id(message.id)
                         }
                     }
@@ -172,10 +177,10 @@ struct ChatView: View {
                 // Update the last message in history if it's currently streaming
                 if let lastMsg = historyManager.currentMessages.last, 
                    lastMsg.role == .assistant && lastMsg.isStreaming &&
-                   lastMsg.content != llmEngine.currentResponse {
+                   combinedStreamingContent(for: llmEngine.currentResponse) != lastMsg.content {
                     historyManager.updateMessage(
                         id: lastMsg.id,
-                        content: llmEngine.currentResponse,
+                        content: combinedStreamingContent(for: llmEngine.currentResponse),
                         isStreaming: true
                     )
                 }
@@ -566,6 +571,7 @@ struct ChatView: View {
         if let lastMsg = historyManager.currentMessages.last, lastMsg.isStreaming {
             historyManager.updateMessage(id: lastMsg.id, content: lastMsg.content, isStreaming: false)
         }
+        streamingPrefix = ""
     }    
     private func toggleListening() {
         if speechManager.isListening {
@@ -624,95 +630,224 @@ struct ChatView: View {
         
         // Generate response
         Task {
-            let assistantID = UUID()
-            do {
-                // Prepare prompt (Async if using RAG)
-                var fullPrompt = text
+            // Prepare prompt (Async if using RAG)
+            var fullPrompt = text
+            
+            if let docName = documentName, let docContent = documentContent, !docContent.isEmpty {
+                // Direct injection — truncate to fit model context window
+                let maxChars = 3000
+                let truncatedContent = String(docContent.prefix(maxChars))
                 
-                if let docName = documentName, let docContent = documentContent, !docContent.isEmpty {
-                    // Direct injection — truncate to fit model context window
-                    let maxChars = 3000
-                    let truncatedContent = String(docContent.prefix(maxChars))
-                    
-                    fullPrompt = """
-                    Below is text from the document "\(docName)":
-                    ---
-                    \(truncatedContent)
-                    ---
-                    
-                    \(text.isEmpty ? "Summarize this document." : text)
-                    """
-                }
+                fullPrompt = """
+                Below is text from the document "\(docName)":
+                ---
+                \(truncatedContent)
+                ---
                 
-                // Load model if needed
-                guard let model = modelManager.selectedModel else {
-                    let errorMessage = ChatMessage(role: .assistant, content: "Please select or download a model first (Settings > Models).")
-                    historyManager.addMessage(errorMessage)
-                    return
-                }
+                \(text.isEmpty ? "Summarize this document." : text)
+                """
+            }
 
-                // Add placeholder assistant message after we confirm a usable model.
+            let shouldResetSession = documentName != nil
+            await runAssistantResponse(prompt: fullPrompt, resetSession: shouldResetSession)
+        }
+    }
+
+    private func runAssistantResponse(
+        prompt: String,
+        resetSession: Bool = false,
+        assistantID: UUID = UUID(),
+        existingPrefix: String = "",
+        placeholderContent: String = ""
+    ) async {
+        do {
+            guard let model = modelManager.selectedModel else {
+                let errorMessage = ChatMessage(role: .assistant, content: "Please select or download a model first (Settings > Models).")
+                historyManager.addMessage(errorMessage)
+                return
+            }
+
+            streamingPrefix = existingPrefix
+            llmEngine.currentResponse = ""
+
+            if historyManager.currentMessages.contains(where: { $0.id == assistantID }) {
+                historyManager.updateMessage(
+                    id: assistantID,
+                    content: placeholderContent,
+                    isStreaming: true
+                )
+            } else {
                 let assistantPlaceholder = ChatMessage(
                     id: assistantID,
                     role: .assistant,
-                    content: "",
+                    content: placeholderContent,
                     isStreaming: true
                 )
                 historyManager.addMessage(assistantPlaceholder)
-                
-                try await llmEngine.loadModel(model)
-                
-                // Reset session when a document is attached so the model
-                // answers about the NEW document, not a previous one
-                if documentName != nil {
-                    llmEngine.resetSession()
+            }
+
+            try await llmEngine.loadModel(model)
+
+            if resetSession {
+                llmEngine.resetSession()
+            }
+
+            try await llmEngine.generate(prompt: prompt)
+
+            if case .error(let message) = llmEngine.state {
+                var errorText = "Sorry, I encountered an error: \(message)"
+                if message.contains("unsupported language") || message.contains("locale") {
+                    errorText = "This document's language is not supported by Apple Intelligence. Try switching to an MLX model (like Gemma) in Settings → Models for multi-language support."
                 }
-                
-                // Generate
-                try await llmEngine.generate(prompt: fullPrompt)
-                
-                // Check if generation ended in error (errors are caught inside generate's detached task)
-                if case .error(let message) = llmEngine.state {
-                    var errorText = "Sorry, I encountered an error: \(message)"
-                    if message.contains("unsupported language") || message.contains("locale") {
-                        errorText = "This document's language is not supported by Apple Intelligence. Try switching to an MLX model (like Gemma) in Settings → Models for multi-language support."
-                    }
-                    historyManager.updateMessage(
-                        id: assistantID,
-                        content: errorText,
-                        isStreaming: false
-                    )
-                    llmEngine.currentResponse = ""
-                    return
-                }
-                
-                // Final update after generation completes
+                let fallbackContent = failureContent(
+                    assistantID: assistantID,
+                    existingPrefix: existingPrefix,
+                    errorText: errorText
+                )
                 historyManager.updateMessage(
                     id: assistantID,
-                    content: llmEngine.currentResponse,
+                    content: fallbackContent,
                     isStreaming: false
                 )
-                
                 llmEngine.currentResponse = ""
-                
-                // TTS: Read response if enabled
-                if autoRead {
-                    speechManager.speak(historyManager.currentMessages.last?.content ?? "")
-                }
-            } catch {
-                let errorText = "Sorry, I encountered an error: \(error.localizedDescription)"
-                if historyManager.currentMessages.contains(where: { $0.id == assistantID }) {
-                    historyManager.updateMessage(
-                        id: assistantID,
-                        content: errorText,
-                        isStreaming: false
-                    )
-                } else {
-                    historyManager.addMessage(ChatMessage(role: .assistant, content: errorText))
-                }
-                llmEngine.currentResponse = ""
+                streamingPrefix = ""
+                return
+            }
+
+            historyManager.updateMessage(
+                id: assistantID,
+                content: combinedStreamingContent(for: llmEngine.currentResponse),
+                isStreaming: false
+            )
+
+            llmEngine.currentResponse = ""
+            streamingPrefix = ""
+
+            if autoRead {
+                speechManager.speak(historyManager.currentMessages.last?.content ?? "")
+            }
+        } catch {
+            let errorText = "Sorry, I encountered an error: \(error.localizedDescription)"
+            if historyManager.currentMessages.contains(where: { $0.id == assistantID }) {
+                let fallbackContent = failureContent(
+                    assistantID: assistantID,
+                    existingPrefix: existingPrefix,
+                    errorText: errorText
+                )
+                historyManager.updateMessage(
+                    id: assistantID,
+                    content: fallbackContent,
+                    isStreaming: false
+                )
+            } else {
+                historyManager.addMessage(ChatMessage(role: .assistant, content: errorText))
+            }
+            llmEngine.currentResponse = ""
+            streamingPrefix = ""
+        }
+    }
+
+    private func continueResponse(for message: ChatMessage) {
+        guard llmEngine.state != .generating else { return }
+        guard let lastMessage = historyManager.currentMessages.last, lastMessage.id == message.id else { return }
+
+        let separator = message.content.hasSuffix("\n") ? "" : "\n\n"
+        let prefix = message.content + separator
+        let prompt = """
+        Continue exactly where you stopped.
+        Do not repeat the earlier text.
+        Finish the same answer naturally and concisely.
+        """
+
+        Task {
+            await runAssistantResponse(
+                prompt: prompt,
+                assistantID: message.id,
+                existingPrefix: prefix,
+                placeholderContent: prefix
+            )
+        }
+    }
+
+    private func canContinue(_ message: ChatMessage) -> Bool {
+        guard message.role == .assistant else { return false }
+        guard !message.isStreaming else { return false }
+        guard llmEngine.state != .generating else { return false }
+        guard historyManager.currentMessages.last?.id == message.id else { return false }
+        return looksTruncated(message.content)
+    }
+
+    private func combinedStreamingContent(for response: String) -> String {
+        if streamingPrefix.isEmpty {
+            return response
+        }
+        return streamingPrefix + response
+    }
+
+    private func failureContent(
+        assistantID: UUID,
+        existingPrefix: String,
+        errorText: String
+    ) -> String {
+        if let existingMessage = historyManager.currentMessages.first(where: { $0.id == assistantID }) {
+            let existingContent = existingMessage.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !existingContent.isEmpty {
+                return existingMessage.content
             }
         }
+
+        let streamedContent = combinedStreamingContent(for: llmEngine.currentResponse)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if !streamedContent.isEmpty {
+            return combinedStreamingContent(for: llmEngine.currentResponse)
+        }
+
+        if !existingPrefix.isEmpty {
+            return String(existingPrefix.dropLast(existingPrefix.hasSuffix("\n\n") ? 2 : 0))
+        }
+
+        return errorText
+    }
+
+    private func looksTruncated(_ content: String) -> Bool {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 80 else { return false }
+        if trimmed.hasSuffix("```") { return false }
+
+        if let lastScalar = trimmed.unicodeScalars.last {
+            let terminalCharacters = CharacterSet(charactersIn: ".!?\"')]}”")
+            if terminalCharacters.contains(lastScalar) {
+                return false
+            }
+        }
+
+        let lowercased = trimmed.lowercased()
+        let trailingFragments = [
+            " and",
+            " or",
+            " but",
+            " because",
+            " so",
+            " to",
+            " with",
+            " that",
+            " which",
+            " then",
+            " of",
+            " in",
+            " for"
+        ]
+
+        if trailingFragments.contains(where: { lowercased.hasSuffix($0) }) {
+            return true
+        }
+
+        if let lastScalar = trimmed.unicodeScalars.last {
+            let inconclusiveCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ",:;-("))
+            return inconclusiveCharacters.contains(lastScalar)
+        }
+
+        return false
     }
     
     private func hasConsent(for modelID: String) -> Bool {

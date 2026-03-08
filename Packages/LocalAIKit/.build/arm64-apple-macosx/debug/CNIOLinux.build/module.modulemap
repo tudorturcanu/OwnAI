@@ -1,0 +1,4 @@
+module CNIOLinux {
+    umbrella header "/Users/teo/Documents/LocalAI copy/Packages/LocalAIKit/.build/checkouts/swift-nio/Sources/CNIOLinux/include/CNIOLinux.h"
+    export *
+}

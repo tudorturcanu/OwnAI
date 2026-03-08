@@ -8,8 +8,19 @@
 import SwiftUI
 
 struct AIPersonalityView: View {
-    @Environment(LLMEngine.self) private var llmEngine
     @AppStorage("systemPrompt") private var systemPrompt = "You are a helpful AI assistant."
+    @AppStorage("temperature") private var temperature = 0.7
+    @AppStorage("topP") private var topP = 1.0
+    @AppStorage("maxTokens") private var maxTokens = 512
+
+    private var selectedPresetID: String? {
+        PersonalityPreset.presets.first { preset in
+            preset.systemPrompt == systemPrompt &&
+            abs(preset.temperature - temperature) < 0.0001 &&
+            abs(preset.topP - topP) < 0.0001 &&
+            preset.maxTokens == maxTokens
+        }?.id
+    }
     
     var body: some View {
         ScrollView {
@@ -32,7 +43,7 @@ struct AIPersonalityView: View {
                             ForEach(PersonalityPreset.presets) { preset in
                                 Button {
                                     withAnimation {
-                                        systemPrompt = preset.systemPrompt
+                                        applyPreset(preset)
                                     }
                                 } label: {
                                     HStack(spacing: 6) {
@@ -43,8 +54,8 @@ struct AIPersonalityView: View {
                                     }
                                     .padding(.horizontal, 16)
                                     .padding(.vertical, 10)
-                                    .background(systemPrompt == preset.systemPrompt ? Color.blue : Color.white)
-                                    .foregroundStyle(systemPrompt == preset.systemPrompt ? .white : .primary)
+                                    .background(selectedPresetID == preset.id ? Color.blue : Color.white)
+                                    .foregroundStyle(selectedPresetID == preset.id ? .white : .primary)
                                     .clipShape(Capsule())
                                     .overlay(
                                         Capsule()
@@ -111,9 +122,9 @@ struct AIPersonalityView: View {
                         
                         Button("Reset") {
                             withAnimation {
-                                llmEngine.temperature = 0.7
-                                llmEngine.topP = 1.0
-                                llmEngine.maxTokens = 512
+                                temperature = 0.7
+                                topP = 1.0
+                                maxTokens = 512
                             }
                         }
                         .font(.caption.weight(.medium))
@@ -129,15 +140,12 @@ struct AIPersonalityView: View {
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                                 Spacer()
-                                Text(String(format: "%.1f", llmEngine.temperature))
+                                Text(String(format: "%.1f", temperature))
                                     .font(.caption.monospacedDigit())
                                     .foregroundStyle(.secondary)
                             }
                             
-                            Slider(value: Binding(
-                                get: { llmEngine.temperature },
-                                set: { llmEngine.temperature = $0 }
-                            ), in: 0.0...1.0)
+                            Slider(value: $temperature, in: 0.0...1.0)
                                 .tint(Gradient(colors: [.orange, .pink]))
                                 
                             HStack {
@@ -158,15 +166,12 @@ struct AIPersonalityView: View {
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                                 Spacer()
-                                Text(String(format: "%.1f", llmEngine.topP))
+                                Text(String(format: "%.1f", topP))
                                     .font(.caption.monospacedDigit())
                                     .foregroundStyle(.secondary)
                             }
                             
-                            Slider(value: Binding(
-                                get: { llmEngine.topP },
-                                set: { llmEngine.topP = $0 }
-                            ), in: 0.0...1.0)
+                            Slider(value: $topP, in: 0.0...1.0)
                                 .tint(Gradient(colors: [.purple, .blue]))
                                 
                             Text("Limits the AI to only consider the most likely words whose cumulative probability reaches P.")
@@ -183,14 +188,14 @@ struct AIPersonalityView: View {
                                     .font(.subheadline)
                                     .foregroundStyle(.secondary)
                                 Spacer()
-                                Text("\(llmEngine.maxTokens) tokens")
+                                Text("\(maxTokens) tokens")
                                     .font(.caption.monospacedDigit())
                                     .foregroundStyle(.secondary)
                             }
                             
                             Slider(value: Binding(
-                                get: { Float(llmEngine.maxTokens) },
-                                set: { llmEngine.maxTokens = Int($0) }
+                                get: { Float(maxTokens) },
+                                set: { maxTokens = Int($0) }
                             ), in: 64...2048, step: 64)
                                 .tint(Gradient(colors: [.green, .teal]))
                                 
@@ -214,11 +219,17 @@ struct AIPersonalityView: View {
         .navigationTitle("AI Personality")
         .navigationBarTitleDisplayMode(.inline)
     }
+
+    private func applyPreset(_ preset: PersonalityPreset) {
+        systemPrompt = preset.systemPrompt
+        temperature = preset.temperature
+        topP = preset.topP
+        maxTokens = preset.maxTokens
+    }
 }
 
 #Preview {
     NavigationStack {
         AIPersonalityView()
-            .environment(LLMEngine())
     }
 }

@@ -10,7 +10,19 @@ import MarkdownUI
 
 struct MessageBubble: View {
     let message: ChatMessage
+    let showsContinue: Bool
+    let onContinue: (() -> Void)?
     @State private var appeared = false
+
+    init(
+        message: ChatMessage,
+        showsContinue: Bool = false,
+        onContinue: (() -> Void)? = nil
+    ) {
+        self.message = message
+        self.showsContinue = showsContinue
+        self.onContinue = onContinue
+    }
     
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -170,6 +182,20 @@ struct MessageBubble: View {
                             Label("Report Inappropriate Content", systemImage: "flag")
                         }
                     }
+                }
+
+                if showsContinue, let onContinue {
+                    Button(action: onContinue) {
+                        Label("Continue", systemImage: "arrow.trianglehead.clockwise")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.blue)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.85))
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 4)
                 }
             }
             

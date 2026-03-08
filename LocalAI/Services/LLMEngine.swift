@@ -38,9 +38,8 @@ final class LLMEngine {
     // Settings
     @ObservationIgnored @AppStorage("temperature") var temperature: Double = 0.7
     @ObservationIgnored @AppStorage("topP") var topP: Double = 1.0
-    @ObservationIgnored @AppStorage("maxTokens") var maxTokens: Int = 2048
+    @ObservationIgnored @AppStorage("maxTokens") var maxTokens: Int = 512
     @ObservationIgnored @AppStorage("lowPowerMode") var lowPowerMode: Bool = false
-    @ObservationIgnored @AppStorage("warmStartEnabled") var warmStartEnabled: Bool = true
     
     private typealias AppleSession = FoundationModels.LanguageModelSession
     private typealias LocalSession = AnyLanguageModel.LanguageModelSession
@@ -223,12 +222,22 @@ final class LLMEngine {
                         )
                     }
                     
-                    let stream = session.streamResponse(to: prompt)
+                    let options = FoundationModels.GenerationOptions(
+                        sampling: .random(probabilityThreshold: effectiveTopP),
+                        temperature: effectiveTemperature,
+                        maximumResponseTokens: effectiveMaxTokens
+                    )
+                    
+                    let stream = session.streamResponse(to: prompt, options: options)
+                    var lastContent = ""
                     
                     for try await partialResponse in stream {
                         if Task.isCancelled { break }
-                        await self.updateResponseIfNeeded(partialResponse.content, force: false)
+                        lastContent = partialResponse.content
+                        await self.updateResponseIfNeeded(lastContent, force: false)
                     }
+                    
+                    await self.updateResponseIfNeeded(lastContent, force: true)
                     
                     await MainActor.run {
                         self.appleSession = session
@@ -263,6 +272,13 @@ final class LLMEngine {
                 }
                 
                 // Finalize state
+                await MainActor.run {
+                    self.state = .ready
+                    self.generationTask = nil
+                    self.streamingStartTime = nil
+                    self.streamingTokensPerSecond = 0
+                }
+            } catch is CancellationError {
                 await MainActor.run {
                     self.state = .ready
                     self.generationTask = nil
@@ -378,7 +394,6 @@ extension LLMEngine {
     }
 
     func prewarmIfNeeded(model: ModelInfo) async {
-        guard warmStartEnabled else { return }
         if currentModel?.id == model.id {
             #if !targetEnvironment(simulator)
             if let session = mlxSession {

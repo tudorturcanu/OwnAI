@@ -195,9 +195,11 @@ final class ChatHistoryManager {
             isStreaming: isStreaming
         )
         
-        // Save history intermittently (or eventually, but for now every update might be heavy)
-        // Let's only save when streaming finishes or every N updates
-        if !isStreaming {
+        // Persist partial assistant output as it streams so app refreshes don't
+        // discard the in-progress response. Streaming saves stay debounced.
+        if isStreaming {
+            saveConversations()
+        } else {
             saveConversations(immediately: true)
         }
     }

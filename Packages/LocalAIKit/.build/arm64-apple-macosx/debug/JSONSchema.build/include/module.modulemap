@@ -1,0 +1,3 @@
+module JSONSchema {
+    header "/Users/teo/Documents/LocalAI copy/Packages/LocalAIKit/.build/arm64-apple-macosx/debug/JSONSchema.build/include/JSONSchema-Swift.h"
+}
