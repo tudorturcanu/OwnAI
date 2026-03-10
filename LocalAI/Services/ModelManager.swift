@@ -8,6 +8,7 @@
 import Foundation
 import LocalAIKit
 import FoundationModels
+import Hub
 import SwiftUI
 import UIKit
 import Darwin
@@ -450,20 +451,18 @@ final class ModelManager {
     #if !targetEnvironment(simulator)
     private func downloadModelContainerWithRetry(modelID: String, model: ModelInfo) async throws {
         let maxAttempts = 3
+        let hub = HubApi(downloadBase: MLXStorage.persistentBaseURL().deletingLastPathComponent())
         for attempt in 1...maxAttempts {
             do {
                 try Task.checkCancellation()
-                _ = try await MLXLMCommon.loadModelContainer(
-                    id: modelID,
-                    progressHandler: { progress in
-                        let fraction = max(0.0, min(progress.fractionCompleted, 0.99))
-                        Task { @MainActor in
-                            if let idx = self.models.firstIndex(where: { $0.id == modelID }) {
-                                self.models[idx].downloadState = .downloading(progress: fraction)
-                            }
+                _ = try await hub.snapshot(from: modelID) { progress, _ in
+                    let fraction = max(0.0, min(progress.fractionCompleted, 0.99))
+                    Task { @MainActor in
+                        if let idx = self.models.firstIndex(where: { $0.id == modelID }) {
+                            self.models[idx].downloadState = .downloading(progress: fraction)
                         }
                     }
-                )
+                }
                 return
             } catch {
                 if error is CancellationError { throw error }

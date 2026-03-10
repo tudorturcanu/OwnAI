@@ -12,20 +12,48 @@ struct ModelDownloadView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(ModelManager.self) private var modelManager
     @Environment(LLMEngine.self) private var llmEngine
+
+    private var appleModels: [ModelInfo] {
+        modelManager.models.filter { $0.engine == .appleFoundation && modelManager.isAppleIntelligenceDeviceSupported }
+    }
+
+    private var familyGroups: [ModelFamilyGroup] {
+        let familyOrder = ModelFamily.allCases.filter { $0 != .appleIntelligence }
+        return familyOrder.compactMap { family in
+            let models = modelManager.models
+                .filter { $0.family == family && $0.engine == .mlx }
+                .sorted { $0.sizeGB < $1.sizeGB }
+            guard !models.isEmpty else { return nil }
+            return ModelFamilyGroup(family: family, models: models)
+        }
+    }
     
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // Header description
                 headerView
-                
-                // Model cards
-                ForEach(modelManager.models.filter { $0.engine != .appleFoundation || modelManager.isAppleIntelligenceDeviceSupported }) { model in
+
+                ForEach(appleModels) { model in
                     ModelCard(model: model)
                         .transition(.asymmetric(
                             insertion: .opacity.combined(with: .move(edge: .top)),
                             removal: .opacity
                         ))
+                }
+
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Model Families")
+                        .font(.headline)
+                        .foregroundStyle(Color(white: 0.2))
+
+                    ForEach(familyGroups) { group in
+                        NavigationLink {
+                            ModelFamilyDetailView(family: group.family, models: group.models)
+                        } label: {
+                            FamilyCard(group: group)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -44,8 +72,8 @@ struct ModelDownloadView: View {
                     .foregroundStyle(.blue.opacity(0.8))
                 
                 Text(modelManager.isAppleIntelligenceDeviceSupported ?
-                     "Choose your AI model. Apple Intelligence is built-in, while other models can be downloaded." :
-                     "Choose your AI model. Models can be downloaded to run entirely on your device.")
+                     "Choose a model family first. Apple Intelligence is built-in, while other families open into downloadable variants." :
+                     "Choose a model family first, then pick a variant to download and run on your device.")
                     .font(.subheadline)
                     .foregroundStyle(Color(white: 0.4))
                 
@@ -56,6 +84,177 @@ struct ModelDownloadView: View {
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+    }
+}
+
+struct ModelFamilyGroup: Identifiable {
+    let family: ModelFamily
+    let models: [ModelInfo]
+
+    var id: String { family.id }
+
+    var downloadedCount: Int {
+        models.filter { $0.downloadState.isDownloaded }.count
+    }
+
+    var sizeRangeText: String {
+        guard let smallest = models.min(by: { $0.sizeGB < $1.sizeGB }),
+              let largest = models.max(by: { $0.sizeGB < $1.sizeGB }) else {
+            return ""
+        }
+        if abs(smallest.sizeGB - largest.sizeGB) < 0.05 {
+            return String(format: "%.1f GB", smallest.sizeGB)
+        }
+        return String(format: "%.1f-%.1f GB", smallest.sizeGB, largest.sizeGB)
+    }
+}
+
+struct ModelFamilyDetailView: View {
+    let family: ModelFamily
+    let models: [ModelInfo]
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        Image(systemName: family.symbolName)
+                            .foregroundStyle(.blue)
+                        Text(family.title)
+                            .font(.title3.bold())
+                            .foregroundStyle(Color(white: 0.1))
+                    }
+
+                    Text(family.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(Color(white: 0.45))
+
+                    Text("Choose a specific \(family.title) variant to download or use.")
+                        .font(.caption)
+                        .foregroundStyle(Color(white: 0.5))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+
+                ForEach(models) { model in
+                    ModelCard(model: model)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 40)
+        }
+        .background(Color(white: 0.96))
+        .navigationTitle(family.title)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+}
+
+struct FamilyCard: View {
+    let group: ModelFamilyGroup
+    @Environment(ModelManager.self) private var modelManager
+
+    private var selectedModel: ModelInfo? {
+        guard let selected = modelManager.selectedModel else { return nil }
+        return group.models.first(where: { $0.id == selected.id })
+    }
+
+    private var modelCountText: String {
+        group.models.count == 1 ? "1 model" : "\(group.models.count) models"
+    }
+
+    private var readyText: String {
+        "\(group.downloadedCount) ready"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(
+                            LinearGradient(
+                                colors: [.blue.opacity(0.12), .cyan.opacity(0.10)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .frame(width: 58, height: 58)
+
+                    Image(systemName: group.family.symbolName)
+                        .font(.title3)
+                        .foregroundStyle(.blue)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        Text(group.family.title)
+                            .font(.title3.bold())
+                            .foregroundStyle(Color(white: 0.1))
+
+                        if selectedModel != nil {
+                            Text("ACTIVE")
+                                .font(.caption2.bold())
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.blue)
+                                .clipShape(Capsule())
+                        }
+                    }
+
+                    Text(group.family.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(Color(white: 0.5))
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color(white: 0.6))
+                    .padding(.top, 4)
+            }
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 10) {
+                    InfoTag(icon: "square.stack.3d.up", text: modelCountText)
+                    InfoTag(icon: "externaldrive", text: group.sizeRangeText)
+                    if group.downloadedCount > 0 {
+                        InfoTag(icon: "checkmark.circle.fill", text: readyText, isHighlighted: true)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) {
+                        InfoTag(icon: "square.stack.3d.up", text: modelCountText)
+                        InfoTag(icon: "externaldrive", text: group.sizeRangeText)
+                    }
+
+                    if group.downloadedCount > 0 {
+                        InfoTag(icon: "checkmark.circle.fill", text: readyText, isHighlighted: true)
+                    }
+                }
+            }
+
+            if let selectedModel {
+                Text("Selected: \(selectedModel.name)")
+                    .font(.caption)
+                    .foregroundStyle(Color(white: 0.45))
+            } else {
+                Text("Tap to view all \(group.family.title) models.")
+                    .font(.caption)
+                    .foregroundStyle(Color(white: 0.45))
+            }
+        }
+        .padding(20)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 20))
+        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 }
 
@@ -490,7 +689,7 @@ struct ModelConsentSheet: View {
                     .foregroundStyle(Color(white: 0.2))
             }
             
-            Text("This model runs **100% on your device**. The following data is processed locally and is **never sent** to Google LLC, Gemma, or any third-party AI service:")
+            Text("This model runs **100% on your device**. The following data is processed locally and is **never sent** to \(model.providerName) or any third-party AI service:")
                 .font(.subheadline)
                 .foregroundStyle(Color(white: 0.5))
             
@@ -627,12 +826,15 @@ struct InfoTag: View {
             Text(text)
                 .font(.caption)
                 .fontWeight(.medium)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
         }
         .foregroundStyle(isHighlighted ? .green : Color(white: 0.5))
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(isHighlighted ? Color.green.opacity(0.1) : Color(white: 0.95))
         .clipShape(Capsule())
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
