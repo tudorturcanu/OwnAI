@@ -9,6 +9,7 @@ import Foundation
 import SwiftUI
 import LocalAIKit
 import FoundationModels
+import UIKit
 
 #if !targetEnvironment(simulator)
 import MLXLLM
@@ -462,6 +463,11 @@ private extension LLMEngine {
             state = .error(message: "MLX is not available on the simulator.")
             throw LLMError.modelNotAvailable("MLX is not available on the simulator.")
             #else
+            if UIDevice.current.userInterfaceIdiom == .phone && model.requiresLargeDeviceOnPhone {
+                let message = "This model requires an iPad Pro or Mac. It exceeds the practical memory budget for iPhone."
+                state = .error(message: message)
+                throw LLMError.modelNotAvailable(message)
+            }
             guard model.downloadState.isDownloaded else {
                 let message = "This model isn't downloaded yet. Open Settings > Models to download it."
                 state = .error(message: message)

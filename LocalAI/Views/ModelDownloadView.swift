@@ -14,14 +14,14 @@ struct ModelDownloadView: View {
     @Environment(LLMEngine.self) private var llmEngine
 
     private var appleModels: [ModelInfo] {
-        modelManager.models.filter { $0.engine == .appleFoundation && modelManager.isAppleIntelligenceDeviceSupported }
+        modelManager.models.filter { modelManager.shouldShowModelInCatalog($0) && $0.engine == .appleFoundation }
     }
 
     private var familyGroups: [ModelFamilyGroup] {
         let familyOrder = ModelFamily.allCases.filter { $0 != .appleIntelligence }
         return familyOrder.compactMap { family in
             let models = modelManager.models
-                .filter { $0.family == family && $0.engine == .mlx }
+                .filter { modelManager.shouldShowModelInCatalog($0) && $0.family == family && $0.engine == .mlx }
                 .sorted { $0.sizeGB < $1.sizeGB }
             guard !models.isEmpty else { return nil }
             return ModelFamilyGroup(family: family, models: models)
@@ -319,7 +319,8 @@ struct ModelCard: View {
                         Text(model.description)
                             .font(.subheadline)
                             .foregroundStyle(Color(white: 0.5))
-                            .lineLimit(3)
+                            .lineLimit(4)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 
@@ -327,25 +328,10 @@ struct ModelCard: View {
             }
             
             if !isAppleUnavailable {
-                // Info tags
-                HStack(spacing: 10) {
-                    if model.isAppleFoundation {
-                        InfoTag(icon: "apple.logo", text: "Built-in", isHighlighted: true)
-                        InfoTag(icon: "lock.shield", text: "Private")
-                    } else {
-                        InfoTag(icon: "externaldrive", text: String(format: "%.1f GB", model.sizeGB))
-                        InfoTag(icon: "cpu", text: "On-Device")
-                    }
-                    
-                    if model.downloadState.isDownloaded && !model.isAppleFoundation {
-                        InfoTag(icon: "checkmark.circle.fill", text: "Ready", isHighlighted: true)
-                    }
-                    
-                    Spacer()
-                }
+                modelInfoTags
 
                 healthSection
-                
+
                 // Action button
                 actionButton
             }
@@ -452,6 +438,15 @@ struct ModelCard: View {
                         .foregroundStyle(Color(white: 0.5))
                 }
             } else {
+                if let compatibilityMessage = modelManager.deviceCompatibilityMessage(for: model) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "ipad.and.arrow.forward")
+                            .foregroundStyle(.orange)
+                        Text(compatibilityMessage)
+                            .font(.caption)
+                            .foregroundStyle(Color(white: 0.5))
+                    }
+                }
                 let freeGB = DiskSpace.availableGB()
                 let hasSpace = freeGB >= model.sizeGB * 1.05
                 HStack(spacing: 6) {
@@ -491,45 +486,94 @@ struct ModelCard: View {
     }
 
     @ViewBuilder
-    private var actionButton: some View {
-        switch model.downloadState {
-        case .builtin:
-            BuiltInButton(isSelected: isSelected) {
-                requireConsentAndPerform {
-                    modelManager.selectModel(model.id)
+    private var modelInfoTags: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if model.isAppleFoundation {
+                HStack(spacing: 10) {
+                    InfoTag(icon: "apple.logo", text: "Built-in", isHighlighted: true)
+                    InfoTag(icon: "lock.shield", text: "Private")
                 }
+            } else {
+                HStack(spacing: 10) {
+                    InfoTag(icon: "externaldrive", text: String(format: "%.1f GB", model.sizeGB))
+                    InfoTag(icon: "cpu", text: "On-Device")
+                    if model.downloadState.isDownloaded {
+                        InfoTag(icon: "checkmark.circle.fill", text: "Ready", isHighlighted: true)
+                    }
+                }
+
+                if let recommendationTagText = model.recommendationTagText {
+                    HStack(spacing: 10) {
+                        InfoTag(
+                            icon: model.currentDeviceFit.iconName,
+                            text: recommendationTagText,
+                            isHighlighted: model.currentDeviceFit.isHighlighted
+                        )
+                    }
+                }
+
             }
-            
-        case .notDownloaded:
-            DownloadButton(action: {
-                requireConsentAndPerform {
-                    modelManager.downloadModel(model.id)
-                    modelManager.selectModel(model.id)
+        }
+    }
+
+    @ViewBuilder
+    private var actionButton: some View {
+        if let compatibilityMessage = modelManager.deviceCompatibilityMessage(for: model), !model.isAppleFoundation {
+            switch model.downloadState {
+            case .downloaded:
+                HStack(spacing: 12) {
+                    UnsupportedModelButton(title: "Requires iPad Pro or Mac", subtitle: compatibilityMessage)
+                    DeleteButton(action: {
+                        modelManager.deleteModel(model.id)
+                    })
                 }
-            })
-            
-        case .downloading(let progress):
-            DownloadingButton(progress: progress, action: {
-                modelManager.cancelDownload(model.id)
-            })
-            
-        case .downloaded:
-            HStack(spacing: 12) {
-                SelectButton(isSelected: isSelected) {
+            case .downloading(let progress):
+                DownloadingButton(progress: progress, action: {
+                    modelManager.cancelDownload(model.id)
+                })
+            default:
+                UnsupportedModelButton(title: "Requires iPad Pro or Mac", subtitle: compatibilityMessage)
+            }
+        } else {
+            switch model.downloadState {
+            case .builtin:
+                BuiltInButton(isSelected: isSelected) {
                     requireConsentAndPerform {
                         modelManager.selectModel(model.id)
                     }
                 }
-                DeleteButton(action: {
-                    modelManager.deleteModel(model.id)
+
+            case .notDownloaded:
+                DownloadButton(action: {
+                    requireConsentAndPerform {
+                        modelManager.downloadModel(model.id)
+                        modelManager.selectModel(model.id)
+                    }
+                })
+                
+            case .downloading(let progress):
+                DownloadingButton(progress: progress, action: {
+                    modelManager.cancelDownload(model.id)
+                })
+                
+            case .downloaded:
+                HStack(spacing: 12) {
+                    SelectButton(isSelected: isSelected) {
+                        requireConsentAndPerform {
+                            modelManager.selectModel(model.id)
+                        }
+                    }
+                    DeleteButton(action: {
+                        modelManager.deleteModel(model.id)
+                    })
+                }
+                
+            case .error(let message):
+                let action = modelManager.downloadErrorAction(for: model.id)
+                ErrorButton(message: message, actionTitle: action.title, actionIcon: action.iconName, action: {
+                    handleDownloadErrorAction(action)
                 })
             }
-            
-        case .error(let message):
-            let action = modelManager.downloadErrorAction(for: model.id)
-            ErrorButton(message: message, actionTitle: action.title, actionIcon: action.iconName, action: {
-                handleDownloadErrorAction(action)
-            })
         }
     }
 
@@ -946,6 +990,29 @@ struct DownloadButton: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(ActionButtonStyle())
+    }
+}
+
+struct UnsupportedModelButton: View {
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color(white: 0.35))
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(Color(white: 0.5))
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 10)
+        .background(Color(white: 0.94))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
 

@@ -14,9 +14,6 @@ struct SettingsView: View {
     @Environment(LLMEngine.self) private var llmEngine
     @Environment(ChatHistoryManager.self) private var historyManager
     @Environment(ModelManager.self) private var modelManager
-    @AppStorage("autoRead") private var autoRead = false
-    @AppStorage("autoSelectBestModel") private var autoSelectBestModel = true
-    @AppStorage("downloadNotifications") private var downloadNotifications = true
     @AppStorage("lowPowerMode") private var lowPowerMode = false
     @AppStorage("historyRetentionDays") private var historyRetentionDays = 0
     @State private var showClearHistoryConfirmation = false
@@ -33,9 +30,6 @@ struct SettingsView: View {
                     // AI Status
                     aiStatusSection
 
-                    // Model & Device
-                    modelDeviceSection
-
                     // AI Personality
                     settingsGroup {
                         NavigationLink {
@@ -51,13 +45,6 @@ struct SettingsView: View {
                         } label: {
                             settingsRow(title: "AI Personality", icon: "brain.head.profile", iconColor: .purple, trailingIcon: "chevron.right")
                         }
-                        
-                        Divider().padding(.leading, 56)
-                        
-                        Toggle(isOn: $autoRead) {
-                            settingsRow(title: "Auto-Read Responses", icon: "speaker.wave.2.fill", iconColor: .green, trailingIcon: "")
-                        }
-                        .padding(.trailing, 16)
                     }
                     
                     // Content Safety
@@ -203,34 +190,6 @@ struct SettingsView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
-
-    // MARK: - Model & Device Section
-
-    private var modelDeviceSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Model & Device")
-                .font(.headline)
-                .foregroundStyle(Color(white: 0.2))
-
-            settingsGroup {
-                Toggle(isOn: $autoSelectBestModel) {
-                    settingsRow(title: "Auto-Select Best Model", icon: "wand.and.stars", iconColor: .blue, trailingIcon: "")
-                }
-                .padding(.trailing, 16)
-                .onChange(of: autoSelectBestModel) {
-                    modelManager.refreshSelection()
-                }
-
-                Divider().padding(.leading, 56)
-
-                Toggle(isOn: $downloadNotifications) {
-                    settingsRow(title: "Download Notifications", icon: "bell.badge.fill", iconColor: .orange, trailingIcon: "")
-                }
-                .padding(.trailing, 16)
-            }
-        }
-    }
-
 
     // MARK: - Content Safety Section
     

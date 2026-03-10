@@ -6,6 +6,8 @@
 //
 
 import Foundation
+import UIKit
+import Darwin
 
 enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
     case appleIntelligence
@@ -14,7 +16,6 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
     case tinyLlama
     case llama
     case phi
-    case mistral
 
     var id: String { rawValue }
 
@@ -32,8 +33,6 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "Llama"
         case .phi:
             return "Phi"
-        case .mistral:
-            return "Mistral"
         }
     }
 
@@ -51,8 +50,6 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "Meta's local instruction models"
         case .phi:
             return "Microsoft's efficient reasoning models"
-        case .mistral:
-            return "Higher-capacity local models"
         }
     }
 
@@ -70,8 +67,65 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "bubble.left.and.bubble.right.fill"
         case .phi:
             return "function"
-        case .mistral:
-            return "bolt.fill"
+        }
+    }
+}
+
+enum ModelDeviceFit: Equatable {
+    case recommended
+    case supported
+    case unsupported
+
+    var title: String {
+        switch self {
+        case .recommended:
+            return "Recommended"
+        case .supported:
+            return "OK"
+        case .unsupported:
+            return "Heavy"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .recommended:
+            return "sparkles"
+        case .supported:
+            return "checkmark.circle"
+        case .unsupported:
+            return "exclamationmark.triangle"
+        }
+    }
+
+    var isHighlighted: Bool {
+        self == .recommended
+    }
+}
+
+private struct CurrentDeviceProfile {
+    let idiom: UIUserInterfaceIdiom
+    let hardwareIdentifier: String
+
+    var phoneMajorVersion: Int? {
+        guard hardwareIdentifier.hasPrefix("iPhone") else { return nil }
+        let suffix = hardwareIdentifier.dropFirst("iPhone".count)
+        guard let majorText = suffix.split(separator: ",").first else { return nil }
+        return Int(majorText)
+    }
+
+    static let current = CurrentDeviceProfile(
+        idiom: UIDevice.current.userInterfaceIdiom,
+        hardwareIdentifier: Self.resolveHardwareIdentifier()
+    )
+
+    private static func resolveHardwareIdentifier() -> String {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        return withUnsafePointer(to: &systemInfo.machine) { pointer in
+            pointer.withMemoryRebound(to: CChar.self, capacity: 1) { charPointer in
+                String(cString: charPointer)
+            }
         }
     }
 }
@@ -127,6 +181,43 @@ struct ModelInfo: Identifiable, Equatable {
         engine == .appleFoundation
     }
 
+    var requiresLargeDeviceOnPhone: Bool {
+        engine == .mlx && sizeGB > 4.5
+    }
+
+    var currentDeviceFit: ModelDeviceFit {
+        guard engine == .mlx else { return .recommended }
+        let device = CurrentDeviceProfile.current
+
+        switch device.idiom {
+        case .phone:
+            if sizeGB > 4.5 { return .unsupported }
+            let major = device.phoneMajorVersion ?? 0
+            if sizeGB <= 1.6 { return major >= 14 ? .recommended : .supported }
+            if sizeGB <= 2.6 { return major >= 15 ? .recommended : .supported }
+            return major >= 17 ? .recommended : .supported
+
+        case .pad:
+            if sizeGB <= 2.6 { return .recommended }
+            if sizeGB <= 4.6 { return .supported }
+            return .unsupported
+
+        default:
+            return .recommended
+        }
+    }
+
+    var recommendationTagText: String? {
+        switch currentDeviceFit {
+        case .recommended:
+            return "Recommended"
+        case .supported:
+            return nil
+        case .unsupported:
+            return "Heavy"
+        }
+    }
+
     var providerName: String {
         if isAppleFoundation {
             return "Apple Inc."
@@ -143,9 +234,6 @@ struct ModelInfo: Identifiable, Equatable {
         }
         if lowercasedID.contains("phi") {
             return "Microsoft (Phi)"
-        }
-        if lowercasedID.contains("mistral") {
-            return "Mistral AI"
         }
         if lowercasedID.contains("tinyllama") {
             return "TinyLlama Project"
@@ -260,45 +348,6 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
-    /// Mistral 7B Instruct v0.3 (4-bit MLX)
-    static let mistral7b_v03_4bit = ModelInfo(
-        id: "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
-        name: "Mistral 7B v0.3",
-        description: "A strong general-purpose instruction model with higher quality answers, best on devices with more memory.",
-        family: .mistral,
-        sizeGB: 4.08,
-        engine: .mlx,
-        termsURL: URL(string: "https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.3"),
-        privacyURL: nil,
-        downloadState: .notDownloaded
-    )
-
-    /// Mistral NeMo Minitron 8B Instruct (4-bit MLX)
-    static let mistral_nemo_minitron_8b_4bit = ModelInfo(
-        id: "mlx-community/Mistral-NeMo-Minitron-8B-Instruct-4bit",
-        name: "Mistral NeMo Minitron 8B",
-        description: "A larger Mistral model tuned for better quality while still fitting on capable iPads and Macs.",
-        family: .mistral,
-        sizeGB: 4.73,
-        engine: .mlx,
-        termsURL: URL(string: "https://huggingface.co/mistralai/Mistral-NeMo-Minitron-8B-Instruct"),
-        privacyURL: nil,
-        downloadState: .notDownloaded
-    )
-
-    /// Mistral Nemo Instruct 2407 (4-bit MLX)
-    static let mistral_nemo_2407_4bit = ModelInfo(
-        id: "mlx-community/Mistral-Nemo-Instruct-2407-4bit",
-        name: "Mistral NeMo 12B",
-        description: "A high-capacity local model for powerful devices like iPad Pro and Apple silicon Macs.",
-        family: .mistral,
-        sizeGB: 6.89,
-        engine: .mlx,
-        termsURL: URL(string: "https://huggingface.co/mistralai/Mistral-Nemo-Instruct-2407"),
-        privacyURL: nil,
-        downloadState: .notDownloaded
-    )
-    
     static let allModels: [ModelInfo] = [
         .appleFoundation,  // Default - first in list
         .qwen25_0_5b_4bit,
@@ -307,9 +356,6 @@ extension ModelInfo {
         .qwen25_1_5b_4bit,
         .qwen25_3b_4bit,
         .llama32_3b_4bit,
-        .phi35_mini_4bit,
-        .mistral7b_v03_4bit,
-        .mistral_nemo_minitron_8b_4bit,
-        .mistral_nemo_2407_4bit
+        .phi35_mini_4bit
     ]
 }

@@ -207,6 +207,7 @@ final class ModelManager {
         let model = models[index]
         guard model.engine == .mlx else { return }
         guard downloadTasks[modelID] == nil else { return }
+        guard deviceCompatibilityMessage(for: model) == nil else { return }
 
         if let failure = preflightFailure(for: model) {
             applyDownloadFailure(failure, for: modelID)
@@ -625,6 +626,9 @@ final class ModelManager {
         if model.engine == .appleFoundation {
             return isAppleIntelligenceAvailable
         }
+        if deviceCompatibilityMessage(for: model) != nil {
+            return false
+        }
         return model.downloadState.isDownloaded
     }
 
@@ -644,5 +648,21 @@ final class ModelManager {
 
     func saveQuickTestResult(_ result: ModelQuickTestResult) {
         ModelHealthStore.shared.saveResult(result)
+    }
+
+    func shouldShowModelInCatalog(_ model: ModelInfo) -> Bool {
+        if model.engine == .appleFoundation {
+            return isAppleIntelligenceDeviceSupported
+        }
+        return deviceCompatibilityMessage(for: model) == nil
+    }
+
+    func deviceCompatibilityMessage(for model: ModelInfo) -> String? {
+        guard model.engine == .mlx else { return nil }
+        let idiom = UIDevice.current.userInterfaceIdiom
+        if idiom == .phone && model.requiresLargeDeviceOnPhone {
+            return "Requires an iPad Pro or Mac. This model exceeds the practical memory budget for iPhone."
+        }
+        return nil
     }
 }
