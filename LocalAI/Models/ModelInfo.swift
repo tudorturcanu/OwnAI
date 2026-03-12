@@ -13,6 +13,7 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
     case appleIntelligence
     case gemma
     case qwen
+    case deepSeek
     case tinyLlama
     case llama
     case phi
@@ -27,6 +28,8 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "Gemma"
         case .qwen:
             return "Qwen"
+        case .deepSeek:
+            return "DeepSeek"
         case .tinyLlama:
             return "TinyLlama"
         case .llama:
@@ -44,6 +47,8 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "Google's compact local models"
         case .qwen:
             return "Alibaba's multilingual family"
+        case .deepSeek:
+            return "Compact reasoning-style models"
         case .tinyLlama:
             return "Ultra-small chat models"
         case .llama:
@@ -61,6 +66,8 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "sparkles"
         case .qwen:
             return "globe"
+        case .deepSeek:
+            return "brain.head.profile"
         case .tinyLlama:
             return "hare.fill"
         case .llama:
@@ -226,6 +233,9 @@ struct ModelInfo: Identifiable, Equatable {
         if lowercasedID.contains("gemma") {
             return "Google LLC (Gemma)"
         }
+        if lowercasedID.contains("deepseek") {
+            return "DeepSeek"
+        }
         if lowercasedID.contains("qwen") {
             return "Alibaba Cloud (Qwen)"
         }
@@ -239,6 +249,18 @@ struct ModelInfo: Identifiable, Equatable {
             return "TinyLlama Project"
         }
         return "Model publisher"
+    }
+
+    var supportsThinkingToggle: Bool {
+        id.lowercased().contains("qwen3")
+    }
+
+    var thinkingPreferenceKey: String {
+        "modelThinkingEnabled.\(id)"
+    }
+
+    var defaultThinkingEnabled: Bool {
+        false
     }
 }
 
@@ -270,15 +292,15 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
-    /// Qwen 2.5 0.5B Instruct (4-bit MLX)
-    static let qwen25_0_5b_4bit = ModelInfo(
-        id: "mlx-community/Qwen2.5-0.5B-Instruct-4bit",
-        name: "Qwen 2.5 0.5B",
-        description: "An ultra-lightweight multilingual model for fast local replies on lower-memory devices.",
+    /// Qwen3 0.6B MLX (4-bit)
+    static let qwen3_0_6b_4bit = ModelInfo(
+        id: "Qwen/Qwen3-0.6B-MLX-4bit",
+        name: "Qwen3 0.6B",
+        description: "Qwen's smallest current-generation chat model, optimized for very light local use while keeping broad multilingual support.",
         family: .qwen,
-        sizeGB: 0.29,
+        sizeGB: 0.32,
         engine: .mlx,
-        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct"),
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen3-0.6B-MLX-4bit"),
         privacyURL: nil,
         downloadState: .notDownloaded
     )
@@ -296,28 +318,41 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
-    /// Qwen 2.5 1.5B Instruct (4-bit MLX)
-    static let qwen25_1_5b_4bit = ModelInfo(
-        id: "mlx-community/Qwen2.5-1.5B-Instruct-4bit",
-        name: "Qwen 2.5 1.5B",
-        description: "Alibaba's lightweight multilingual model. Fast on-device responses with fully local inference.",
+    /// Qwen3 1.7B MLX (4-bit)
+    static let qwen3_1_7b_4bit = ModelInfo(
+        id: "Qwen/Qwen3-1.7B-MLX-4bit",
+        name: "Qwen3 1.7B",
+        description: "A stronger small Qwen3 option for everyday chat, multilingual use, and better instruction following on-device.",
         family: .qwen,
-        sizeGB: 1.1,
+        sizeGB: 0.98,
         engine: .mlx,
-        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct"),
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen3-1.7B-MLX-4bit"),
         privacyURL: nil,
         downloadState: .notDownloaded
     )
 
-    /// Qwen 2.5 3B Instruct (4-bit MLX)
-    static let qwen25_3b_4bit = ModelInfo(
-        id: "mlx-community/Qwen2.5-3B-Instruct-4bit",
-        name: "Qwen 2.5 3B",
-        description: "A stronger multilingual on-device model with a good balance of speed and quality.",
-        family: .qwen,
-        sizeGB: 1.8,
+    /// DeepSeek R1 Distill Qwen 1.5B (4-bit MLX)
+    static let deepseek_r1_distill_qwen_1_5b_4bit = ModelInfo(
+        id: "mlx-community/DeepSeek-R1-Distill-Qwen-1.5B-4bit",
+        name: "DeepSeek R1 Distill 1.5B",
+        description: "A compact reasoning-style model distilled onto Qwen for stronger step-by-step responses at small size.",
+        family: .deepSeek,
+        sizeGB: 1.01,
         engine: .mlx,
-        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct"),
+        termsURL: URL(string: "https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"),
+        privacyURL: nil,
+        downloadState: .notDownloaded
+    )
+
+    /// Qwen3 4B MLX (4-bit)
+    static let qwen3_4b_4bit = ModelInfo(
+        id: "Qwen/Qwen3-4B-MLX-4bit",
+        name: "Qwen3 4B",
+        description: "A more capable Qwen3 tier for higher-quality local chat, reasoning, and multilingual responses on larger devices.",
+        family: .qwen,
+        sizeGB: 2.6,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen3-4B-MLX-4bit"),
         privacyURL: nil,
         downloadState: .notDownloaded
     )
@@ -335,6 +370,19 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Llama 3.2 1B Instruct (4-bit MLX)
+    static let llama32_1b_4bit = ModelInfo(
+        id: "mlx-community/Llama-3.2-1B-Instruct-4bit",
+        name: "Llama 3.2 1B",
+        description: "A very small Llama option that keeps downloads light while still feeling like a modern chat model.",
+        family: .llama,
+        sizeGB: 0.71,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct"),
+        privacyURL: nil,
+        downloadState: .notDownloaded
+    )
+
     /// Phi 3.5 Mini Instruct (4-bit MLX)
     static let phi35_mini_4bit = ModelInfo(
         id: "mlx-community/Phi-3.5-mini-instruct-4bit",
@@ -348,14 +396,30 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Phi 3 Mini 4K Instruct (4-bit MLX)
+    static let phi3_mini_4k_4bit = ModelInfo(
+        id: "mlx-community/Phi-3-mini-4k-instruct-4bit",
+        name: "Phi 3 Mini 4K",
+        description: "Microsoft's smaller Phi model with strong compact reasoning and instruction-following.",
+        family: .phi,
+        sizeGB: 2.15,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct"),
+        privacyURL: nil,
+        downloadState: .notDownloaded
+    )
+
     static let allModels: [ModelInfo] = [
         .appleFoundation,  // Default - first in list
-        .qwen25_0_5b_4bit,
+        .qwen3_0_6b_4bit,
         .tinyllama11b_chat_4bit,
+        .llama32_1b_4bit,
         .gemma2_2b_4bit,
-        .qwen25_1_5b_4bit,
-        .qwen25_3b_4bit,
+        .qwen3_1_7b_4bit,
+        .deepseek_r1_distill_qwen_1_5b_4bit,
+        .qwen3_4b_4bit,
         .llama32_3b_4bit,
+        .phi3_mini_4k_4bit,
         .phi35_mini_4bit
     ]
 }

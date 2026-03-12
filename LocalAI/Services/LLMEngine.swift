@@ -234,8 +234,11 @@ final class LLMEngine {
                     
                     for try await partialResponse in stream {
                         if Task.isCancelled { break }
-                        lastContent = partialResponse.content
+                        lastContent = AssistantOutputSanitizer.sanitize(partialResponse.content)
                         await self.updateResponseIfNeeded(lastContent, force: false)
+                        if AssistantOutputSanitizer.containsControlMarker(partialResponse.content) {
+                            break
+                        }
                     }
                     
                     await self.updateResponseIfNeeded(lastContent, force: true)
@@ -264,8 +267,11 @@ final class LLMEngine {
                         let stream = session.streamResponse(to: prompt, options: options)
                         for try await snapshot in stream {
                             if Task.isCancelled { break }
-                            lastContent = snapshot.content
+                            lastContent = AssistantOutputSanitizer.sanitize(snapshot.content)
                             await self.updateResponseIfNeeded(lastContent, force: false)
+                            if AssistantOutputSanitizer.containsControlMarker(snapshot.content) {
+                                break
+                            }
                         }
                     }
                     await self.updateResponseIfNeeded(lastContent, force: true)
@@ -303,14 +309,15 @@ final class LLMEngine {
     
     /// Throttled UI update
     private func updateResponseIfNeeded(_ content: String, force: Bool) async {
+        let sanitizedContent = AssistantOutputSanitizer.sanitize(content)
         let now = Date()
         if force || now.timeIntervalSince(lastUpdate) >= throttleInterval {
             await MainActor.run {
-                self.currentResponse = content
+                self.currentResponse = sanitizedContent
                 self.lastUpdate = now
                 if let start = self.streamingStartTime {
                     let elapsed = max(0.001, now.timeIntervalSince(start))
-                    let tokens = Double(self.approximateTokenCount(content))
+                    let tokens = Double(self.approximateTokenCount(sanitizedContent))
                     self.streamingTokensPerSecond = tokens / elapsed
                 }
             }

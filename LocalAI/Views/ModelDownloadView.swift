@@ -332,6 +332,10 @@ struct ModelCard: View {
 
                 healthSection
 
+                if isSelected && model.supportsThinkingToggle {
+                    thinkingToggleSection
+                }
+
                 // Action button
                 actionButton
             }
@@ -483,6 +487,36 @@ struct ModelCard: View {
                 }
             }
         }
+    }
+
+    private var thinkingToggleSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle(isOn: Binding(
+                get: { modelManager.isThinkingEnabled(for: model) },
+                set: { modelManager.setThinkingEnabled($0, for: model) }
+            )) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Enable Thinking")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color(white: 0.15))
+                    Text("When available, the model can spend extra tokens on reasoning before answering.")
+                        .font(.caption)
+                        .foregroundStyle(Color(white: 0.45))
+                }
+            }
+            .tint(.blue)
+
+            Text("Applies to this model only.")
+                .font(.caption2)
+                .foregroundStyle(Color(white: 0.5))
+        }
+        .padding(14)
+        .background(Color.blue.opacity(0.05))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(Color.blue.opacity(0.12), lineWidth: 1)
+        )
     }
 
     @ViewBuilder

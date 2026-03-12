@@ -70,6 +70,10 @@ final class ModelManager {
     var selectedModelID: String? {
         didSet {
             persistedSelectedModelID = selectedModelID
+            if let selectedModelID,
+               let model = models.first(where: { $0.id == selectedModelID }) {
+                ensureModelPreferences(for: model)
+            }
         }
     }
     @ObservationIgnored @AppStorage("autoSelectBestModel") var autoSelectBestModel: Bool = true
@@ -168,6 +172,20 @@ final class ModelManager {
     func selectModel(_ modelID: String) {
         print("[ModelManager] selectModel id=\(modelID)")
         selectedModelID = modelID
+    }
+
+    func isThinkingEnabled(for model: ModelInfo) -> Bool {
+        guard model.supportsThinkingToggle else { return false }
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: model.thinkingPreferenceKey) == nil {
+            return model.defaultThinkingEnabled
+        }
+        return defaults.bool(forKey: model.thinkingPreferenceKey)
+    }
+
+    func setThinkingEnabled(_ enabled: Bool, for model: ModelInfo) {
+        guard model.supportsThinkingToggle else { return }
+        UserDefaults.standard.set(enabled, forKey: model.thinkingPreferenceKey)
     }
 
     func refreshSelection() {
@@ -598,10 +616,19 @@ final class ModelManager {
 }
 
  extension ModelManager {
+    private func ensureModelPreferences(for model: ModelInfo) {
+        guard model.supportsThinkingToggle else { return }
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: model.thinkingPreferenceKey) == nil {
+            defaults.set(model.defaultThinkingEnabled, forKey: model.thinkingPreferenceKey)
+        }
+    }
+
     func ensureSelection() {
         if let selectedID = selectedModelID,
            let selectedIndex = models.firstIndex(where: { $0.id == selectedID }) {
             let selected = models[selectedIndex]
+            ensureModelPreferences(for: selected)
             if isModelUsable(selected) { return }
             #if !targetEnvironment(simulator)
             // During startup, the model state can still be stale (.notDownloaded) until

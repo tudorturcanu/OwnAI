@@ -80,7 +80,9 @@ struct ChatView: View {
             Text("Please enable microphone and speech recognition access in Settings to use voice input.")
         }
         .sheet(isPresented: $showModelDownloadSheet) {
-            ModelDownloadView()
+            NavigationStack {
+                ModelDownloadView()
+            }
         }
         .sheet(isPresented: $showModelConsentSheet) {
             if let selectedModel = modelManager.selectedModel {
@@ -779,9 +781,9 @@ struct ChatView: View {
 
     private func combinedStreamingContent(for response: String) -> String {
         if streamingPrefix.isEmpty {
-            return response
+            return AssistantOutputSanitizer.sanitize(response)
         }
-        return streamingPrefix + response
+        return AssistantOutputSanitizer.sanitize(streamingPrefix + response)
     }
 
     private func failureContent(

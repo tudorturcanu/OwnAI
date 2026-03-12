@@ -13,6 +13,8 @@ struct MessageBubble: View {
     let showsContinue: Bool
     let onContinue: (() -> Void)?
     @State private var appeared = false
+    private let userLeadingInset: CGFloat = 60
+    private let assistantTrailingInset: CGFloat = 16
 
     init(
         message: ChatMessage,
@@ -27,7 +29,7 @@ struct MessageBubble: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             if message.role == .user {
-                Spacer(minLength: 60)
+                Spacer(minLength: userLeadingInset)
             } else {
                 // Assistant avatar
                 ZStack {
@@ -200,7 +202,7 @@ struct MessageBubble: View {
             }
             
             if message.role == .assistant {
-                Spacer(minLength: 60)
+                Spacer(minLength: assistantTrailingInset)
             }
         }
         .opacity(appeared ? 1 : 0)

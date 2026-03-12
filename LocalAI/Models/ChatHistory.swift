@@ -9,6 +9,73 @@ import Foundation
 import Observation
 import SwiftUI
 
+enum AssistantOutputSanitizer {
+    private static let controlMarkers = [
+        "<end_of_turn>",
+        "<start_of_turn>",
+        "<|eot_id|>",
+        "<|end_of_text|>",
+        "<|start_header_id|>",
+        "<|end_header_id|>",
+        "<eos>",
+        "<bos>",
+        "</s>",
+        "[/INST]",
+        "[INST]"
+    ]
+
+    static func sanitize(_ content: String) -> String {
+        let truncated = truncateAtFirstControlMarker(in: content)
+        let withoutPartialMarker = stripTrailingPartialMarker(from: truncated)
+
+        if truncated != content {
+            return withoutPartialMarker.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return withoutPartialMarker
+    }
+
+    static func containsControlMarker(_ content: String) -> Bool {
+        firstControlMarkerIndex(in: content) != nil
+    }
+
+    private static func truncateAtFirstControlMarker(in content: String) -> String {
+        guard let index = firstControlMarkerIndex(in: content) else {
+            return content
+        }
+        return String(content[..<index])
+    }
+
+    private static func firstControlMarkerIndex(in content: String) -> String.Index? {
+        controlMarkers.compactMap { marker in
+            content.range(of: marker)?.lowerBound
+        }
+        .min()
+    }
+
+    private static func stripTrailingPartialMarker(from content: String) -> String {
+        guard !content.isEmpty else { return content }
+
+        let minimumPartialLength = 4
+        var longestSuffixLength = 0
+
+        for marker in controlMarkers {
+            guard marker.count > minimumPartialLength else { continue }
+
+            for prefixLength in stride(from: marker.count - 1, through: minimumPartialLength, by: -1) {
+                let prefix = String(marker.prefix(prefixLength))
+                if content.hasSuffix(prefix) {
+                    longestSuffixLength = max(longestSuffixLength, prefixLength)
+                    break
+                }
+            }
+        }
+
+        guard longestSuffixLength > 0 else { return content }
+        return String(content.dropLast(longestSuffixLength))
+    }
+}
+
 /// Represents a single chat conversation
 struct ChatConversation: Identifiable, Equatable, Codable {
     let id: UUID
@@ -117,16 +184,23 @@ final class ChatHistoryManager {
             // Sanitize: Fix stuck streaming state
             self.conversations = decoded.map { conversation in
                 var updatedMessages = conversation.messages.compactMap { message -> ChatMessage? in
+                    let sanitizedContent = message.role == .assistant
+                        ? AssistantOutputSanitizer.sanitize(message.content)
+                        : message.content
+
                     if message.isStreaming {
                         // If it was streaming but has content, keep it but stop streaming
-                        if !message.content.isEmpty {
-                            return ChatMessage(id: message.id, role: message.role, content: message.content, isStreaming: false)
+                        if !sanitizedContent.isEmpty {
+                            return ChatMessage(id: message.id, role: message.role, content: sanitizedContent, isStreaming: false)
                         } else {
                             // If it was streaming and empty (interrupted thinking), remove it
                             return nil
                         }
                     }
-                    return message
+                    if message.role == .assistant && sanitizedContent.isEmpty {
+                        return nil
+                    }
+                    return ChatMessage(id: message.id, role: message.role, content: sanitizedContent, isStreaming: false)
                 }
                 
                 var updatedConversation = conversation
@@ -214,12 +288,14 @@ final class ChatHistoryManager {
     /// Add a message to the current conversation
     func addMessage(_ message: ChatMessage) {
         guard let index = conversations.firstIndex(where: { $0.id == currentConversationID }) else { return }
+
+        let sanitizedMessage = sanitizedAssistantMessage(message)
         
-        conversations[index].messages.append(message)
+        conversations[index].messages.append(sanitizedMessage)
         conversations[index].updatedAt = Date()
         
         // Generate title from first user message
-        if conversations[index].messages.count == 1 && message.role == .user {
+        if conversations[index].messages.count == 1 && sanitizedMessage.role == .user {
             conversations[index].generateTitle()
         }
         
@@ -238,10 +314,15 @@ final class ChatHistoryManager {
         guard let convIndex = conversations.firstIndex(where: { $0.id == currentConversationID }) else { return }
         guard let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == id }) else { return }
 
+        let role = conversations[convIndex].messages[msgIndex].role
+        let sanitizedContent = role == .assistant
+            ? AssistantOutputSanitizer.sanitize(content)
+            : content
+
         conversations[convIndex].messages[msgIndex] = ChatMessage(
             id: id,
-            role: conversations[convIndex].messages[msgIndex].role,
-            content: content,
+            role: role,
+            content: sanitizedContent,
             isStreaming: isStreaming
         )
         
@@ -257,6 +338,16 @@ final class ChatHistoryManager {
     /// Get messages for current conversation
     var currentMessages: [ChatMessage] {
         currentConversation?.messages ?? []
+    }
+
+    private func sanitizedAssistantMessage(_ message: ChatMessage) -> ChatMessage {
+        guard message.role == .assistant else { return message }
+        return ChatMessage(
+            id: message.id,
+            role: message.role,
+            content: AssistantOutputSanitizer.sanitize(message.content),
+            isStreaming: message.isStreaming
+        )
     }
 
     private func deduplicateEmptyConversations() -> Bool {
