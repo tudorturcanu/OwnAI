@@ -390,7 +390,7 @@ struct ChatView: View {
                     .padding(.top, 12)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
-                
+
                 HStack(spacing: 10) {
                     // Plus button
                     Button {
@@ -568,11 +568,14 @@ struct ChatView: View {
     }
     
     private func stopGeneration() {
-        llmEngine.stopGeneration()
-        // If there's a streaming message, mark it as stopped
         if let lastMsg = historyManager.currentMessages.last, lastMsg.isStreaming {
-            historyManager.updateMessage(id: lastMsg.id, content: lastMsg.content, isStreaming: false)
+            historyManager.updateMessage(
+                id: lastMsg.id,
+                content: combinedStreamingContent(for: llmEngine.currentResponse),
+                isStreaming: false
+            )
         }
+        llmEngine.stopGeneration()
         streamingPrefix = ""
     }    
     private func toggleListening() {
@@ -660,7 +663,8 @@ struct ChatView: View {
         resetSession: Bool = false,
         assistantID: UUID = UUID(),
         existingPrefix: String = "",
-        placeholderContent: String = ""
+        placeholderContent: String = "",
+        missingAnswerRetryCount: Int = 0
     ) async {
         do {
             guard let model = modelManager.selectedModel else {
@@ -716,9 +720,30 @@ struct ChatView: View {
                 return
             }
 
+            let finalizedContent = combinedStreamingContent(for: llmEngine.currentResponse)
+            let finalizedParts = AssistantOutputSanitizer.parts(from: finalizedContent)
+            if finalizedParts.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               finalizedParts.thinkingContent != nil,
+               missingAnswerRetryCount == 0 {
+                llmEngine.currentResponse = ""
+                streamingPrefix = ""
+                await runAssistantResponse(
+                    prompt: """
+                    Provide only the final answer to the user.
+                    Do not include reasoning, thoughts, or <think> tags.
+                    Answer the original request directly.
+                    """,
+                    assistantID: assistantID,
+                    existingPrefix: "",
+                    placeholderContent: finalizedContent,
+                    missingAnswerRetryCount: 1
+                )
+                return
+            }
+
             historyManager.updateMessage(
                 id: assistantID,
-                content: combinedStreamingContent(for: llmEngine.currentResponse),
+                content: finalizedContent,
                 isStreaming: false
             )
 
@@ -752,6 +777,23 @@ struct ChatView: View {
     private func continueResponse(for message: ChatMessage) {
         guard llmEngine.state != .generating else { return }
         guard let lastMessage = historyManager.currentMessages.last, lastMessage.id == message.id else { return }
+        guard hasRecoverableConversationContext else { return }
+
+        if missingFinalAnswer(message) {
+            Task {
+                await runAssistantResponse(
+                    prompt: """
+                    Provide only the final answer to the user.
+                    Do not include reasoning, thoughts, or <think> tags.
+                    Answer the original request directly.
+                    """,
+                    assistantID: message.id,
+                    existingPrefix: "",
+                    placeholderContent: rawAssistantContent(for: message)
+                )
+            }
+            return
+        }
 
         let separator = message.content.hasSuffix("\n") ? "" : "\n\n"
         let prefix = message.content + separator
@@ -776,14 +818,34 @@ struct ChatView: View {
         guard !message.isStreaming else { return false }
         guard llmEngine.state != .generating else { return false }
         guard historyManager.currentMessages.last?.id == message.id else { return false }
+        guard hasRecoverableConversationContext else { return false }
+        if missingFinalAnswer(message) { return true }
         return looksTruncated(message.content)
+    }
+
+    private func missingFinalAnswer(_ message: ChatMessage) -> Bool {
+        message.role == .assistant &&
+        message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !(message.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+    }
+
+    private func rawAssistantContent(for message: ChatMessage) -> String {
+        let thinking = message.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let answer = message.content
+        if thinking.isEmpty {
+            return answer
+        }
+        if answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return "<think>\(thinking)</think>"
+        }
+        return "<think>\(thinking)</think>\n\(answer)"
     }
 
     private func combinedStreamingContent(for response: String) -> String {
         if streamingPrefix.isEmpty {
-            return AssistantOutputSanitizer.sanitize(response)
+            return response
         }
-        return AssistantOutputSanitizer.sanitize(streamingPrefix + response)
+        return streamingPrefix + response
     }
 
     private func failureContent(
@@ -792,16 +854,19 @@ struct ChatView: View {
         errorText: String
     ) -> String {
         if let existingMessage = historyManager.currentMessages.first(where: { $0.id == assistantID }) {
-            let existingContent = existingMessage.content.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !existingContent.isEmpty {
-                return existingMessage.content
+            if let preservedContent = failureContent(
+                preserving: rawAssistantContent(for: existingMessage),
+                errorText: errorText
+            ) {
+                return preservedContent
             }
         }
 
-        let streamedContent = combinedStreamingContent(for: llmEngine.currentResponse)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if !streamedContent.isEmpty {
-            return combinedStreamingContent(for: llmEngine.currentResponse)
+        if let preservedContent = failureContent(
+            preserving: combinedStreamingContent(for: llmEngine.currentResponse),
+            errorText: errorText
+        ) {
+            return preservedContent
         }
 
         if !existingPrefix.isEmpty {
@@ -809,6 +874,25 @@ struct ChatView: View {
         }
 
         return errorText
+    }
+
+    private func failureContent(preserving rawAssistantContent: String, errorText: String) -> String? {
+        let parts = AssistantOutputSanitizer.parts(from: rawAssistantContent)
+        let hasVisibleAnswer = !parts.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasThinking = !(parts.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+
+        guard hasVisibleAnswer || hasThinking else { return nil }
+        if hasVisibleAnswer {
+            return rawAssistantContent
+        }
+
+        let trimmedRawContent = rawAssistantContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "\(trimmedRawContent)\n\n\(errorText)"
+    }
+
+    private var hasRecoverableConversationContext: Bool {
+        guard let model = modelManager.selectedModel else { return false }
+        return llmEngine.hasConversationContext(for: model)
     }
 
     private func looksTruncated(_ content: String) -> Bool {
@@ -868,12 +952,14 @@ struct ChatMessage: Identifiable, Equatable, Codable {
     let id: UUID
     let role: MessageRole
     let content: String
+    let thinkingContent: String?
     var isStreaming: Bool = false
     
-    init(id: UUID = UUID(), role: MessageRole, content: String, isStreaming: Bool = false) {
+    init(id: UUID = UUID(), role: MessageRole, content: String, thinkingContent: String? = nil, isStreaming: Bool = false) {
         self.id = id
         self.role = role
         self.content = content
+        self.thinkingContent = thinkingContent
         self.isStreaming = isStreaming
     }
     

@@ -267,6 +267,7 @@ struct ModelCard: View {
     @Environment(\.openURL) private var openURL
     @State private var isHovered = false
     @State private var testResult: ModelQuickTestResult?
+    @State private var isThinkingEnabled = false
     @State private var showConsentSheet = false
     @State private var pendingAction: (() -> Void)?
     
@@ -332,10 +333,6 @@ struct ModelCard: View {
 
                 healthSection
 
-                if isSelected && model.supportsThinkingToggle {
-                    thinkingToggleSection
-                }
-
                 // Action button
                 actionButton
             }
@@ -375,9 +372,13 @@ struct ModelCard: View {
             isHovered = hovering
         }
         .onAppear {
+            syncThinkingPreference()
             if testResult == nil {
                 testResult = modelManager.quickTestResult(for: model.id)
             }
+        }
+        .onChange(of: modelManager.selectedModelID) { _, _ in
+            syncThinkingPreference()
         }
         .sheet(isPresented: $showConsentSheet) {
             ModelConsentSheet(model: model) {
@@ -489,36 +490,6 @@ struct ModelCard: View {
         }
     }
 
-    private var thinkingToggleSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Toggle(isOn: Binding(
-                get: { modelManager.isThinkingEnabled(for: model) },
-                set: { modelManager.setThinkingEnabled($0, for: model) }
-            )) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Enable Thinking")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color(white: 0.15))
-                    Text("When available, the model can spend extra tokens on reasoning before answering.")
-                        .font(.caption)
-                        .foregroundStyle(Color(white: 0.45))
-                }
-            }
-            .tint(.blue)
-
-            Text("Applies to this model only.")
-                .font(.caption2)
-                .foregroundStyle(Color(white: 0.5))
-        }
-        .padding(14)
-        .background(Color.blue.opacity(0.05))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
-        .overlay(
-            RoundedRectangle(cornerRadius: 14)
-                .stroke(Color.blue.opacity(0.12), lineWidth: 1)
-        )
-    }
-
     @ViewBuilder
     private var modelInfoTags: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -536,6 +507,12 @@ struct ModelCard: View {
                     }
                 }
 
+                if model.supportsThinkingToggle {
+                    HStack(spacing: 10) {
+                        thinkingPill
+                    }
+                }
+
                 if let recommendationTagText = model.recommendationTagText {
                     HStack(spacing: 10) {
                         InfoTag(
@@ -548,6 +525,40 @@ struct ModelCard: View {
 
             }
         }
+    }
+
+    @ViewBuilder
+    private var thinkingPill: some View {
+        if isSelected {
+            Button {
+                let nextValue = !isThinkingEnabled
+                isThinkingEnabled = nextValue
+                modelManager.setThinkingEnabled(nextValue, for: model)
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: isThinkingEnabled ? "brain.head.profile.fill" : "brain.head.profile")
+                        .font(.caption2)
+                    Text(isThinkingEnabled ? "Thinking On" : "Thinking Off")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                }
+                .foregroundStyle(isThinkingEnabled ? .blue : Color(white: 0.5))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(isThinkingEnabled ? Color.blue.opacity(0.1) : Color(white: 0.95))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+        } else {
+            InfoTag(icon: "brain.head.profile", text: "Thinking")
+        }
+    }
+
+    private func syncThinkingPreference() {
+        guard model.supportsThinkingToggle else { return }
+        isThinkingEnabled = modelManager.isThinkingEnabled(for: model)
     }
 
     @ViewBuilder

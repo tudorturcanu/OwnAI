@@ -7,14 +7,17 @@
 
 import SwiftUI
 import MarkdownUI
+import Shimmer
 
 struct MessageBubble: View {
     let message: ChatMessage
     let showsContinue: Bool
     let onContinue: (() -> Void)?
     @State private var appeared = false
+    @State private var isThinkingExpanded = false
     private let userLeadingInset: CGFloat = 60
     private let assistantTrailingInset: CGFloat = 16
+    private let collapsedThinkingHeight: CGFloat = 76
 
     init(
         message: ChatMessage,
@@ -27,6 +30,10 @@ struct MessageBubble: View {
     }
     
     var body: some View {
+        let thinkingText = message.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let hasThinking = !thinkingText.isEmpty
+        let hasAnswerContent = !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
         HStack(alignment: .top, spacing: 12) {
             if message.role == .user {
                 Spacer(minLength: userLeadingInset)
@@ -62,128 +69,13 @@ struct MessageBubble: View {
                 )
             }
             
-            // Message content
             VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 6) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Group {
-                        if message.role == .user {
-                            Text(message.content)
-                        } else {
-                            Markdown(message.content)
-                                .markdownBlockStyle(\.codeBlock) { configuration in
-                                    VStack(spacing: 0) {
-                                        // Header
-                                        HStack {
-                                            Text(configuration.language?.lowercased() ?? "code")
-                                                .font(.caption.bold())
-                                                .foregroundStyle(Color(white: 0.4))
-                                            Spacer()
-                                            Button {
-                                                UIPasteboard.general.string = configuration.content
-                                                let generator = UIImpactFeedbackGenerator(style: .light)
-                                                generator.impactOccurred()
-                                            } label: {
-                                                HStack(spacing: 4) {
-                                                    Image(systemName: "doc.on.doc")
-                                                        .font(.caption2)
-                                                    Text("Copy")
-                                                        .font(.caption.bold())
-                                                }
-                                                .foregroundStyle(Color.black.opacity(0.7))
-                                                .padding(.horizontal, 8)
-                                                .padding(.vertical, 4)
-                                                .background(Color.white)
-                                                .clipShape(Capsule())
-                                                .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
-                                            }
-                                            .buttonStyle(.plain)
-                                        }
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 8)
-                                        .background(Color(white: 0.95))
-                                        
-                                        // Code Content
-                                        ScrollView(.horizontal, showsIndicators: true) {
-                                            Text(SyntaxHighlighter.highlight(configuration.content, language: configuration.language))
-                                                .padding(12)
-                                                .frame(minWidth: 100, alignment: .leading)
-                                        }
-                                        .background(Color(white: 0.98))
-                                    }
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .stroke(Color(white: 0.85), lineWidth: 1)
-                                    )
-                                    .padding(.vertical, 8)
-                                }
-                        }
-                    }
-                    .font(.body)
-                    .foregroundStyle(message.role == .user ? .white : Color(white: 0.15))
-                    
-                    // Streaming indicator inside bubble
-                    if message.isStreaming {
-                        HStack(spacing: 4) {
-                            ForEach(0..<3) { i in
-                                Circle()
-                                    .fill(
-                                        LinearGradient(
-                                            colors: [
-                                                message.role == .user ? .white.opacity(0.8) : .blue.opacity(0.6),
-                                                message.role == .user ? .white.opacity(0.6) : .purple.opacity(0.6)
-                                            ],
-                                            startPoint: .leading,
-                                            endPoint: .trailing
-                                        )
-                                    )
-                                    .frame(width: 4, height: 4)
-                                    .opacity(appeared ? 1.0 : 0.3)
-                                    .scaleEffect(appeared ? 1.0 : 0.7)
-                                    .animation(
-                                        .easeInOut(duration: 0.6)
-                                        .repeatForever()
-                                        .delay(Double(i) * 0.2),
-                                        value: appeared
-                                    )
-                            }
-                        }
-                        .padding(.top, message.content.isEmpty ? 0 : 4)
-                        .transition(.opacity)
-                    }
+                if message.role == .assistant && hasThinking {
+                    thinkingCard(thinkingText: thinkingText, showsStreamingIndicator: message.isStreaming && !hasAnswerContent)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(
-                    message.role == .user ?
-                    AnyShapeStyle(
-                        LinearGradient(
-                            colors: [.blue, .blue.opacity(0.9)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    ) :
-                    AnyShapeStyle(Color.white)
-                )
-                .clipShape(MessageShape(isUser: message.role == .user))
-                .shadow(color: .black.opacity(message.role == .user ? 0.1 : 0.04), radius: 6, y: 3)
-                .contentTransition(.interpolate) // Morph text layout smoothly
-                .animation(.spring(response: 0.4, dampingFraction: 0.9), value: message.content)
-                // Context Menu for Copy
-                .contextMenu {
-                    Button {
-                        UIPasteboard.general.string = message.content
-                    } label: {
-                        Label("Copy", systemImage: "doc.on.doc")
-                    }
-                    
-                    if message.role == .assistant {
-                        Button(role: .destructive) {
-                            reportContent(message.content)
-                        } label: {
-                            Label("Report Inappropriate Content", systemImage: "flag")
-                        }
-                    }
+
+                if message.role == .user || hasAnswerContent || !hasThinking {
+                    messageCard
                 }
 
                 if showsContinue, let onContinue {
@@ -213,6 +105,260 @@ struct MessageBubble: View {
                 appeared = true
             }
         }
+    }
+
+    @ViewBuilder
+    private func thinkingMarkdown(_ thinkingText: String) -> some View {
+        Markdown(thinkingText)
+            .font(.callout)
+            .markdownTextStyle {
+                ForegroundColor(isThinkingExpanded ? Color(white: 0.66) : Color(white: 0.86))
+            }
+            .foregroundStyle(isThinkingExpanded ? Color(white: 0.86) : Color(white: 0.66))
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var messageCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            messageContent
+
+            if message.isStreaming {
+                streamingIndicator
+                    .padding(.top, message.content.isEmpty ? 0 : 4)
+                    .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            message.role == .user ?
+            AnyShapeStyle(
+                LinearGradient(
+                    colors: [.blue, .blue.opacity(0.9)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            ) :
+            AnyShapeStyle(Color.white)
+        )
+        .clipShape(MessageShape(isUser: message.role == .user))
+        .shadow(color: .black.opacity(message.role == .user ? 0.1 : 0.04), radius: 6, y: 3)
+        .contentTransition(.interpolate)
+        .animation(.spring(response: 0.4, dampingFraction: 0.9), value: message.content)
+        .contextMenu {
+            Button {
+                UIPasteboard.general.string = message.content
+            } label: {
+                Label("Copy", systemImage: "doc.on.doc")
+            }
+
+            if message.role == .assistant {
+                Button(role: .destructive) {
+                    reportContent(message.content)
+                } label: {
+                    Label("Report Inappropriate Content", systemImage: "flag")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var messageContent: some View {
+        if message.role == .user {
+            Text(message.content)
+                .font(.body)
+                .foregroundStyle(.white)
+        } else {
+            Markdown(message.content)
+                .font(.body)
+                .foregroundStyle(Color(white: 0.15))
+                .markdownBlockStyle(\.codeBlock) { configuration in
+                    VStack(spacing: 0) {
+                        HStack {
+                            Text(configuration.language?.lowercased() ?? "code")
+                                .font(.caption.bold())
+                                .foregroundStyle(Color(white: 0.4))
+                            Spacer()
+                            Button {
+                                UIPasteboard.general.string = configuration.content
+                                let generator = UIImpactFeedbackGenerator(style: .light)
+                                generator.impactOccurred()
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "doc.on.doc")
+                                        .font(.caption2)
+                                    Text("Copy")
+                                        .font(.caption.bold())
+                                }
+                                .foregroundStyle(Color.black.opacity(0.7))
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.white)
+                                .clipShape(Capsule())
+                                .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(Color(white: 0.95))
+
+                        ScrollView(.horizontal, showsIndicators: true) {
+                            Text(SyntaxHighlighter.highlight(configuration.content, language: configuration.language))
+                                .padding(12)
+                                .frame(minWidth: 100, alignment: .leading)
+                        }
+                        .background(Color(white: 0.98))
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color(white: 0.85), lineWidth: 1)
+                    )
+                    .padding(.vertical, 8)
+                }
+        }
+    }
+
+    private var streamingIndicator: some View {
+        HStack(spacing: 4) {
+            ForEach(0..<3) { i in
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                message.role == .user ? .white.opacity(0.8) : .blue.opacity(0.6),
+                                message.role == .user ? .white.opacity(0.6) : .purple.opacity(0.6)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: 4, height: 4)
+                    .opacity(appeared ? 1.0 : 0.3)
+                    .scaleEffect(appeared ? 1.0 : 0.7)
+                    .animation(
+                        .easeInOut(duration: 0.6)
+                        .repeatForever()
+                        .delay(Double(i) * 0.2),
+                        value: appeared
+                    )
+            }
+        }
+    }
+
+    private func thinkingCard(thinkingText: String, showsStreamingIndicator: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                debugLogThinking("toggle tapped", thinkingText: thinkingText)
+                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                    isThinkingExpanded.toggle()
+                }
+            } label: {
+                HStack {
+                    Text(message.isStreaming ? "Thinking..." : "Thoughts")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(message.isStreaming ? Color.black.opacity(0.8) : Color.black)
+                        .shimmering(active: message.isStreaming, bandSize: 0.18)
+
+                    Spacer()
+
+                    Image(systemName: isThinkingExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 22, weight: .semibold))
+                        .foregroundStyle(Color.black)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Group {
+                if isThinkingExpanded {
+                    thinkingMarkdown(thinkingText)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    ScrollViewReader { proxy in
+                        ScrollView(.vertical, showsIndicators: true) {
+                            thinkingMarkdown(thinkingText)
+
+                            Color.clear
+                                .frame(height: 1)
+                                .id("thinking-bottom")
+                        }
+                        .frame(height: collapsedThinkingHeight)
+                        .onAppear {
+                            debugLogThinking("collapsed scroll appeared", thinkingText: thinkingText)
+                            guard message.isStreaming else { return }
+                            scrollThinkingToBottom(proxy, animated: false)
+                        }
+                        .onChange(of: thinkingText) {
+                            debugLogThinking("collapsed thinking text changed", thinkingText: thinkingText)
+                            guard message.isStreaming else { return }
+                            scrollThinkingToBottom(proxy, animated: true)
+                        }
+                        .overlay(alignment: .top) {
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.985), Color.clear],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .frame(height: 18)
+                            .allowsHitTesting(false)
+                        }
+                        .overlay(alignment: .bottom) {
+                            LinearGradient(
+                                colors: [Color.clear, Color.white.opacity(0.985)],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                            .frame(height: 24)
+                            .allowsHitTesting(false)
+                        }
+                    }
+                }
+            }
+            .onChange(of: isThinkingExpanded) {
+                debugLogThinking("expanded changed", thinkingText: thinkingText)
+            }
+            .onAppear {
+                debugLogThinking("thinking content appeared", thinkingText: thinkingText)
+            }
+            .onChange(of: thinkingText) {
+                if isThinkingExpanded {
+                    debugLogThinking("expanded thinking text changed", thinkingText: thinkingText)
+                }
+            }
+
+            if showsStreamingIndicator {
+                streamingIndicator
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+        .background(Color.white.opacity(0.96))
+        .clipShape(RoundedRectangle(cornerRadius: 28))
+        .overlay(
+            RoundedRectangle(cornerRadius: 28)
+                .stroke(Color.black.opacity(0.05), lineWidth: 1)
+        )
+        .padding(.trailing, 4)
+    }
+
+    private func scrollThinkingToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
+        DispatchQueue.main.async {
+            if animated {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    proxy.scrollTo("thinking-bottom", anchor: .bottom)
+                }
+            } else {
+                proxy.scrollTo("thinking-bottom", anchor: .bottom)
+            }
+        }
+    }
+
+    private func debugLogThinking(_ event: String, thinkingText: String) {
+        #if DEBUG
+        print("[ThinkingBubble] \(event) | expanded=\(isThinkingExpanded) | textLength=\(thinkingText.count)")
+        #endif
     }
 
     private func reportContent(_ content: String) {

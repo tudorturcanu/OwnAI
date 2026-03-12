@@ -10,6 +10,11 @@ import Observation
 import SwiftUI
 
 enum AssistantOutputSanitizer {
+    struct Parts: Equatable {
+        let content: String
+        let thinkingContent: String?
+    }
+
     private static let controlMarkers = [
         "<end_of_turn>",
         "<start_of_turn>",
@@ -23,16 +28,28 @@ enum AssistantOutputSanitizer {
         "[/INST]",
         "[INST]"
     ]
+    private static let thinkingOpenMarker = "<think>"
+    private static let thinkingCloseMarker = "</think>"
 
     static func sanitize(_ content: String) -> String {
-        let truncated = truncateAtFirstControlMarker(in: content)
-        let withoutPartialMarker = stripTrailingPartialMarker(from: truncated)
+        parts(from: content).content
+    }
 
-        if truncated != content {
-            return withoutPartialMarker.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
+    static func parts(from content: String) -> Parts {
+        let withoutPartialMarker = stripTrailingPartialMarker(from: content)
+        let truncated = truncateAtFirstControlMarker(in: withoutPartialMarker)
+        let extracted = extractThinkingSegments(from: truncated)
 
-        return withoutPartialMarker
+        let sanitizedContent = normalizeSegment(
+            extracted.content,
+            trimWhitespace: withoutPartialMarker != content || truncated != withoutPartialMarker || extracted.containsThinking
+        )
+        let sanitizedThinking = normalizeSegment(extracted.thinkingContent, trimWhitespace: true)
+
+        return Parts(
+            content: sanitizedContent,
+            thinkingContent: sanitizedThinking.isEmpty ? nil : sanitizedThinking
+        )
     }
 
     static func containsControlMarker(_ content: String) -> Bool {
@@ -59,7 +76,7 @@ enum AssistantOutputSanitizer {
         let minimumPartialLength = 4
         var longestSuffixLength = 0
 
-        for marker in controlMarkers {
+        for marker in controlMarkers + [thinkingOpenMarker, thinkingCloseMarker] {
             guard marker.count > minimumPartialLength else { continue }
 
             for prefixLength in stride(from: marker.count - 1, through: minimumPartialLength, by: -1) {
@@ -73,6 +90,66 @@ enum AssistantOutputSanitizer {
 
         guard longestSuffixLength > 0 else { return content }
         return String(content.dropLast(longestSuffixLength))
+    }
+
+    private static func extractThinkingSegments(from content: String) -> (content: String, thinkingContent: String, containsThinking: Bool) {
+        guard !content.isEmpty else {
+            return (content: "", thinkingContent: "", containsThinking: false)
+        }
+
+        let firstNonWhitespace = skipLeadingWhitespace(in: content, from: content.startIndex)
+        guard firstNonWhitespace < content.endIndex,
+              content[firstNonWhitespace...].hasPrefix(thinkingOpenMarker) else {
+            return (content: content, thinkingContent: "", containsThinking: false)
+        }
+
+        var cursor = firstNonWhitespace
+        var visibleStart = cursor
+        var thinkingSegments: [String] = []
+
+        while cursor < content.endIndex,
+              content[cursor...].hasPrefix(thinkingOpenMarker) {
+            let thinkingStart = content.index(cursor, offsetBy: thinkingOpenMarker.count)
+
+            guard let closeRange = content.range(of: thinkingCloseMarker, range: thinkingStart..<content.endIndex) else {
+                thinkingSegments.append(String(content[thinkingStart..<content.endIndex]))
+                return (
+                    content: String(content[..<firstNonWhitespace]),
+                    thinkingContent: thinkingSegments.joined(separator: "\n\n"),
+                    containsThinking: true
+                )
+            }
+
+            thinkingSegments.append(String(content[thinkingStart..<closeRange.lowerBound]))
+            cursor = closeRange.upperBound
+            visibleStart = cursor
+
+            let nextTokenStart = skipLeadingWhitespace(in: content, from: cursor)
+            guard nextTokenStart < content.endIndex,
+                  content[nextTokenStart...].hasPrefix(thinkingOpenMarker) else {
+                return (
+                    content: String(content[visibleStart..<content.endIndex]),
+                    thinkingContent: thinkingSegments.joined(separator: "\n\n"),
+                    containsThinking: true
+                )
+            }
+
+            cursor = nextTokenStart
+        }
+
+        return (content: content, thinkingContent: "", containsThinking: false)
+    }
+
+    private static func skipLeadingWhitespace(in content: String, from index: String.Index) -> String.Index {
+        var cursor = index
+        while cursor < content.endIndex, content[cursor].isWhitespace {
+            cursor = content.index(after: cursor)
+        }
+        return cursor
+    }
+
+    private static func normalizeSegment(_ content: String, trimWhitespace: Bool) -> String {
+        trimWhitespace ? content.trimmingCharacters(in: .whitespacesAndNewlines) : content
     }
 }
 
@@ -184,23 +261,30 @@ final class ChatHistoryManager {
             // Sanitize: Fix stuck streaming state
             self.conversations = decoded.map { conversation in
                 var updatedMessages = conversation.messages.compactMap { message -> ChatMessage? in
-                    let sanitizedContent = message.role == .assistant
-                        ? AssistantOutputSanitizer.sanitize(message.content)
-                        : message.content
-
                     if message.isStreaming {
                         // If it was streaming but has content, keep it but stop streaming
-                        if !sanitizedContent.isEmpty {
-                            return ChatMessage(id: message.id, role: message.role, content: sanitizedContent, isStreaming: false)
+                        if message.role == .assistant {
+                            let normalized = normalizedAssistantMessage(message, isStreaming: false)
+                            if !normalized.content.isEmpty || normalized.thinkingContent != nil {
+                                return normalized
+                            }
+                            return nil
+                        }
+                        if !message.content.isEmpty {
+                            return ChatMessage(id: message.id, role: message.role, content: message.content, isStreaming: false)
                         } else {
                             // If it was streaming and empty (interrupted thinking), remove it
                             return nil
                         }
                     }
-                    if message.role == .assistant && sanitizedContent.isEmpty {
-                        return nil
+                    if message.role == .assistant {
+                        let normalized = normalizedAssistantMessage(message, isStreaming: false)
+                        if normalized.content.isEmpty && normalized.thinkingContent == nil {
+                            return nil
+                        }
+                        return normalized
                     }
-                    return ChatMessage(id: message.id, role: message.role, content: sanitizedContent, isStreaming: false)
+                    return ChatMessage(id: message.id, role: message.role, content: message.content, isStreaming: false)
                 }
                 
                 var updatedConversation = conversation
@@ -315,16 +399,20 @@ final class ChatHistoryManager {
         guard let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == id }) else { return }
 
         let role = conversations[convIndex].messages[msgIndex].role
-        let sanitizedContent = role == .assistant
-            ? AssistantOutputSanitizer.sanitize(content)
-            : content
-
-        conversations[convIndex].messages[msgIndex] = ChatMessage(
-            id: id,
-            role: role,
-            content: sanitizedContent,
-            isStreaming: isStreaming
-        )
+        if role == .assistant {
+            conversations[convIndex].messages[msgIndex] = assistantMessage(
+                id: id,
+                content: content,
+                isStreaming: isStreaming
+            )
+        } else {
+            conversations[convIndex].messages[msgIndex] = ChatMessage(
+                id: id,
+                role: role,
+                content: content,
+                isStreaming: isStreaming
+            )
+        }
         
         // Persist partial assistant output as it streams so app refreshes don't
         // discard the in-progress response. Streaming saves stay debounced.
@@ -346,8 +434,33 @@ final class ChatHistoryManager {
             id: message.id,
             role: message.role,
             content: AssistantOutputSanitizer.sanitize(message.content),
+            thinkingContent: message.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines),
             isStreaming: message.isStreaming
         )
+    }
+
+    private func assistantMessage(id: UUID, content: String, isStreaming: Bool) -> ChatMessage {
+        let parts = AssistantOutputSanitizer.parts(from: content)
+        return ChatMessage(
+            id: id,
+            role: .assistant,
+            content: parts.content,
+            thinkingContent: parts.thinkingContent,
+            isStreaming: isStreaming
+        )
+    }
+
+    private func normalizedAssistantMessage(_ message: ChatMessage, isStreaming: Bool) -> ChatMessage {
+        if message.thinkingContent != nil {
+            return ChatMessage(
+                id: message.id,
+                role: .assistant,
+                content: AssistantOutputSanitizer.sanitize(message.content),
+                thinkingContent: message.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines),
+                isStreaming: isStreaming
+            )
+        }
+        return assistantMessage(id: message.id, content: message.content, isStreaming: isStreaming)
     }
 
     private func deduplicateEmptyConversations() -> Bool {

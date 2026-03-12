@@ -82,6 +82,7 @@ final class ModelManager {
     private var downloadTasks: [String: Task<Void, Never>] = [:]
     private var backgroundTaskIDs: [String: UIBackgroundTaskIdentifier] = [:]
     private var downloadFailures: [String: DownloadFailure] = [:]
+    private var thinkingPreferencesVersion = 0
     
     // MARK: - Computed Properties
     
@@ -176,6 +177,7 @@ final class ModelManager {
 
     func isThinkingEnabled(for model: ModelInfo) -> Bool {
         guard model.supportsThinkingToggle else { return false }
+        _ = thinkingPreferencesVersion
         let defaults = UserDefaults.standard
         if defaults.object(forKey: model.thinkingPreferenceKey) == nil {
             return model.defaultThinkingEnabled
@@ -186,6 +188,7 @@ final class ModelManager {
     func setThinkingEnabled(_ enabled: Bool, for model: ModelInfo) {
         guard model.supportsThinkingToggle else { return }
         UserDefaults.standard.set(enabled, forKey: model.thinkingPreferenceKey)
+        thinkingPreferencesVersion += 1
     }
 
     func refreshSelection() {

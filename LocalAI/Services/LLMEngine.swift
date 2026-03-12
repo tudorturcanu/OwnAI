@@ -234,7 +234,7 @@ final class LLMEngine {
                     
                     for try await partialResponse in stream {
                         if Task.isCancelled { break }
-                        lastContent = AssistantOutputSanitizer.sanitize(partialResponse.content)
+                        lastContent = partialResponse.content
                         await self.updateResponseIfNeeded(lastContent, force: false)
                         if AssistantOutputSanitizer.containsControlMarker(partialResponse.content) {
                             break
@@ -267,7 +267,7 @@ final class LLMEngine {
                         let stream = session.streamResponse(to: prompt, options: options)
                         for try await snapshot in stream {
                             if Task.isCancelled { break }
-                            lastContent = AssistantOutputSanitizer.sanitize(snapshot.content)
+                            lastContent = snapshot.content
                             await self.updateResponseIfNeeded(lastContent, force: false)
                             if AssistantOutputSanitizer.containsControlMarker(snapshot.content) {
                                 break
@@ -309,15 +309,14 @@ final class LLMEngine {
     
     /// Throttled UI update
     private func updateResponseIfNeeded(_ content: String, force: Bool) async {
-        let sanitizedContent = AssistantOutputSanitizer.sanitize(content)
         let now = Date()
         if force || now.timeIntervalSince(lastUpdate) >= throttleInterval {
             await MainActor.run {
-                self.currentResponse = sanitizedContent
+                self.currentResponse = content
                 self.lastUpdate = now
                 if let start = self.streamingStartTime {
                     let elapsed = max(0.001, now.timeIntervalSince(start))
-                    let tokens = Double(self.approximateTokenCount(sanitizedContent))
+                    let tokens = Double(self.approximateTokenCount(AssistantOutputSanitizer.sanitize(content)))
                     self.streamingTokensPerSecond = tokens / elapsed
                 }
             }
@@ -334,6 +333,21 @@ final class LLMEngine {
         // Note: The UI layer (ChatView) will handle cleaning up the history message 
         // when currentResponse is cleared or via its own observation.
         currentResponse = "" 
+    }
+
+    func hasConversationContext(for model: ModelInfo?) -> Bool {
+        guard let model, currentModel?.id == model.id else { return false }
+
+        switch model.engine {
+        case .appleFoundation:
+            return appleSession != nil
+        case .mlx:
+            #if targetEnvironment(simulator)
+            return false
+            #else
+            return mlxSession != nil
+            #endif
+        }
     }
     
     /// Check if selected model is available
@@ -378,7 +392,8 @@ extension LLMEngine {
                 prompt: "Reply with a single word: OK.",
                 overrides: GenerationOverrides(temperature: 0.2, topP: 1.0, maxTokens: 16)
             )
-            let response = currentResponse.trimmingCharacters(in: .whitespacesAndNewlines)
+            let response = AssistantOutputSanitizer.sanitize(currentResponse)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
             let success = response.lowercased().contains("ok")
             currentResponse = previousResponse
