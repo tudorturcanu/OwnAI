@@ -2,7 +2,7 @@
 //  RAGEngine.swift
 //  LocalAI
 //
-//  Created by ANTIGRAVITY on 01.02.2026.
+//  Created by Codex on 15.03.2026.
 //
 
 import Foundation
@@ -10,112 +10,115 @@ import NaturalLanguage
 
 struct TextChunk: Identifiable, Codable {
     let id: UUID
+    let conversationID: UUID
     let documentID: UUID
     let content: String
     let embedding: [Double]
-    
-    init(documentID: UUID, content: String, embedding: [Double]) {
+
+    init(conversationID: UUID, documentID: UUID, content: String, embedding: [Double]) {
         self.id = UUID()
+        self.conversationID = conversationID
         self.documentID = documentID
         self.content = content
         self.embedding = embedding
     }
 }
 
+struct RetrievedChunk: Identifiable, Equatable {
+    let id: UUID
+    let conversationID: UUID
+    let documentID: UUID
+    let content: String
+    let score: Double
+}
+
 actor RAGEngine {
     static let shared = RAGEngine()
-    
+
     private var chunks: [TextChunk] = []
-    
-    // NLEmbedding is thread-safe
-    private var embeddingModel = NLEmbedding.wordEmbedding(for: .english)
-    
+    private let embeddingModel = NLEmbedding.wordEmbedding(for: .english)
+
     private init() {}
-    
-    // MARK: - Ingestion
-    
-    func ingest(text: String, documentID: UUID) async {
-        // 1. Chunking (Simple character based for now, can improve to sentence based)
+
+    func ingest(text: String, documentID: UUID, conversationID: UUID) async {
         let rawChunks = chunkText(text, size: 800, overlap: 100)
-        
-        // 2. Embedding
-        // NLEmbedding is synchronous, so we run it here.
-        // Ideally we'd batch this or run in detached task if very large.
-        
+
         for chunkContent in rawChunks {
             if let vector = embeddingModel?.vector(for: chunkContent) {
-                let chunk = TextChunk(documentID: documentID, content: chunkContent, embedding: vector)
+                let chunk = TextChunk(
+                    conversationID: conversationID,
+                    documentID: documentID,
+                    content: chunkContent,
+                    embedding: vector
+                )
                 chunks.append(chunk)
             }
         }
-        
-        print("RAG: Ingested \(rawChunks.count) chunks for doc \(documentID)")
     }
-    
-    func clear(documentID: UUID) {
-        chunks.removeAll { $0.documentID == documentID }
+
+    func clear(documentID: UUID, conversationID: UUID) {
+        chunks.removeAll { $0.documentID == documentID && $0.conversationID == conversationID }
     }
-    
+
+    func clearConversation(_ conversationID: UUID) {
+        chunks.removeAll { $0.conversationID == conversationID }
+    }
+
     func clearAll() {
         chunks.removeAll()
     }
-    
-    // MARK: - Retrieval
-    
-    func retrieve(query: String, limit: Int = 3) -> [String] {
+
+    func retrieveDetailed(query: String, limit: Int = 3, conversationID: UUID) -> [RetrievedChunk] {
         guard let queryVector = embeddingModel?.vector(for: query) else { return [] }
-        
-        // Calculate Cosine Similarity
-        // Sim(A,B) = (A . B) / (|A| * |B|)
-        // NLEmbedding vectors are usually normalized? Let's check documentation or assume not.
-        // Actually usually they are not normalized in NLEmbedding unless specified. 
-        // But for performance, let's just do dot product if we assume normalized, or full cosine.
-        
-        // Let's do full cosine similarity
-        let sortedChunks = chunks.map { chunk -> (TextChunk, Double) in
-            let score = cosineSimilarity(queryVector, chunk.embedding)
-            return (chunk, score)
-        }
-        .sorted { $0.1 > $1.1 }
-        
-        return sortedChunks.prefix(limit).map { $0.0.content }
+
+        return chunks
+            .filter { $0.conversationID == conversationID }
+            .map { chunk in
+                let score = cosineSimilarity(queryVector, chunk.embedding)
+                return RetrievedChunk(
+                    id: chunk.id,
+                    conversationID: chunk.conversationID,
+                    documentID: chunk.documentID,
+                    content: chunk.content,
+                    score: score
+                )
+            }
+            .sorted { $0.score > $1.score }
+            .prefix(limit)
+            .map { $0 }
     }
-    
-    // MARK: - Helpers
-    
+
     private func chunkText(_ text: String, size: Int, overlap: Int) -> [String] {
-        var chunks: [String] = []
+        var result: [String] = []
         let characters = Array(text)
         var startIndex = 0
-        
+
         while startIndex < characters.count {
             let endIndex = min(startIndex + size, characters.count)
-            let chunk = String(characters[startIndex..<endIndex])
-            chunks.append(chunk)
-            
+            result.append(String(characters[startIndex..<endIndex]))
+
             if endIndex == characters.count { break }
             startIndex += (size - overlap)
         }
-        
-        return chunks
+
+        return result
     }
-    
+
     private func cosineSimilarity(_ v1: [Double], _ v2: [Double]) -> Double {
         guard v1.count == v2.count else { return 0 }
-        
+
         var dotProduct = 0.0
-        var mag1 = 0.0
-        var mag2 = 0.0
-        
-        for i in 0..<v1.count {
-            dotProduct += v1[i] * v2[i]
-            mag1 += v1[i] * v1[i]
-            mag2 += v2[i] * v2[i]
+        var magnitude1 = 0.0
+        var magnitude2 = 0.0
+
+        for index in 0..<v1.count {
+            dotProduct += v1[index] * v2[index]
+            magnitude1 += v1[index] * v1[index]
+            magnitude2 += v2[index] * v2[index]
         }
-        
-        let magnitude = sqrt(mag1) * sqrt(mag2)
-        if magnitude == 0 { return 0 }
-        
+
+        let magnitude = sqrt(magnitude1) * sqrt(magnitude2)
+        guard magnitude > 0 else { return 0 }
         return dotProduct / magnitude
     }
 }

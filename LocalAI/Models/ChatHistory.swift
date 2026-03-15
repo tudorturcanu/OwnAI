@@ -210,7 +210,7 @@ final class ChatHistoryManager {
         applyRetentionPolicy()
         
         // Start with a new conversation on app launch if the current one isn't already empty
-        if conversations.isEmpty || !conversations[0].messages.isEmpty {
+        if conversations.isEmpty || !isReusableDraftConversation(conversations[0]) {
             newConversation()
         } else {
             currentConversationID = conversations.first?.id
@@ -271,7 +271,7 @@ final class ChatHistoryManager {
                             return nil
                         }
                         if !message.content.isEmpty {
-                            return ChatMessage(id: message.id, role: message.role, content: message.content, isStreaming: false)
+                            return ChatMessage(id: message.id, role: message.role, content: message.content, sourceTitles: message.sourceTitles, isStreaming: false)
                         } else {
                             // If it was streaming and empty (interrupted thinking), remove it
                             return nil
@@ -284,7 +284,7 @@ final class ChatHistoryManager {
                         }
                         return normalized
                     }
-                    return ChatMessage(id: message.id, role: message.role, content: message.content, isStreaming: false)
+                    return ChatMessage(id: message.id, role: message.role, content: message.content, sourceTitles: message.sourceTitles, isStreaming: false)
                 }
                 
                 var updatedConversation = conversation
@@ -300,8 +300,18 @@ final class ChatHistoryManager {
         guard historyRetentionDays > 0 else { return }
 
         let cutoffDate = Calendar.current.date(byAdding: .day, value: -historyRetentionDays, to: Date()) ?? .distantPast
+        let expiredConversationIDs = conversations
+            .filter { $0.updatedAt < cutoffDate }
+            .map(\.id)
         let originalCount = conversations.count
         conversations.removeAll { $0.updatedAt < cutoffDate }
+
+        if !expiredConversationIDs.isEmpty {
+            let documentManager = DocumentManager.shared
+            expiredConversationIDs.forEach { conversationID in
+                documentManager.clearDocuments(for: conversationID)
+            }
+        }
 
         if conversations.isEmpty {
             currentConversationID = nil
@@ -324,6 +334,10 @@ final class ChatHistoryManager {
     }
 
     func clearAllConversations() {
+        let documentManager = DocumentManager.shared
+        conversations.forEach { conversation in
+            documentManager.clearDocuments(for: conversation.id)
+        }
         conversations.removeAll()
         currentConversationID = nil
         newConversation()
@@ -334,7 +348,7 @@ final class ChatHistoryManager {
     func newConversation() {
         _ = deduplicateEmptyConversations()
 
-        if let existingEmptyIndex = conversations.firstIndex(where: \.messages.isEmpty) {
+        if let existingEmptyIndex = conversations.firstIndex(where: isReusableDraftConversation) {
             let existingEmptyConversation = conversations.remove(at: existingEmptyIndex)
             conversations.insert(existingEmptyConversation, at: 0)
             currentConversationID = existingEmptyConversation.id
@@ -356,6 +370,7 @@ final class ChatHistoryManager {
     
     /// Delete a conversation
     func deleteConversation(_ id: UUID) {
+        DocumentManager.shared.clearDocuments(for: id)
         conversations.removeAll { $0.id == id }
         
         // If we deleted the current conversation, select another or create new
@@ -394,22 +409,25 @@ final class ChatHistoryManager {
     }
     
     /// Update a message in the current conversation
-    func updateMessage(id: UUID, content: String, isStreaming: Bool) {
+    func updateMessage(id: UUID, content: String, isStreaming: Bool, sourceTitles: [String]? = nil) {
         guard let convIndex = conversations.firstIndex(where: { $0.id == currentConversationID }) else { return }
         guard let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == id }) else { return }
 
         let role = conversations[convIndex].messages[msgIndex].role
+        let preservedSourceTitles = sourceTitles ?? conversations[convIndex].messages[msgIndex].sourceTitles
         if role == .assistant {
             conversations[convIndex].messages[msgIndex] = assistantMessage(
                 id: id,
                 content: content,
-                isStreaming: isStreaming
+                isStreaming: isStreaming,
+                sourceTitles: preservedSourceTitles
             )
         } else {
             conversations[convIndex].messages[msgIndex] = ChatMessage(
                 id: id,
                 role: role,
                 content: content,
+                sourceTitles: preservedSourceTitles,
                 isStreaming: isStreaming
             )
         }
@@ -435,17 +453,19 @@ final class ChatHistoryManager {
             role: message.role,
             content: AssistantOutputSanitizer.sanitize(message.content),
             thinkingContent: message.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines),
+            sourceTitles: message.sourceTitles,
             isStreaming: message.isStreaming
         )
     }
 
-    private func assistantMessage(id: UUID, content: String, isStreaming: Bool) -> ChatMessage {
+    private func assistantMessage(id: UUID, content: String, isStreaming: Bool, sourceTitles: [String] = []) -> ChatMessage {
         let parts = AssistantOutputSanitizer.parts(from: content)
         return ChatMessage(
             id: id,
             role: .assistant,
             content: parts.content,
             thinkingContent: parts.thinkingContent,
+            sourceTitles: sourceTitles,
             isStreaming: isStreaming
         )
     }
@@ -457,17 +477,18 @@ final class ChatHistoryManager {
                 role: .assistant,
                 content: AssistantOutputSanitizer.sanitize(message.content),
                 thinkingContent: message.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines),
+                sourceTitles: message.sourceTitles,
                 isStreaming: isStreaming
             )
         }
-        return assistantMessage(id: message.id, content: message.content, isStreaming: isStreaming)
+        return assistantMessage(id: message.id, content: message.content, isStreaming: isStreaming, sourceTitles: message.sourceTitles)
     }
 
     private func deduplicateEmptyConversations() -> Bool {
         var keptEmptyConversationID: UUID?
         var removedDuplicates = false
         conversations.removeAll { conversation in
-            guard conversation.messages.isEmpty else { return false }
+            guard isReusableDraftConversation(conversation) else { return false }
             if keptEmptyConversationID == nil {
                 keptEmptyConversationID = conversation.id
                 return false
@@ -479,5 +500,9 @@ final class ChatHistoryManager {
             return true
         }
         return removedDuplicates
+    }
+
+    private func isReusableDraftConversation(_ conversation: ChatConversation) -> Bool {
+        conversation.messages.isEmpty && !DocumentManager.shared.hasDocuments(in: conversation.id)
     }
 }

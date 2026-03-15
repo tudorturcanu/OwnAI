@@ -14,8 +14,13 @@ import AVFoundation
 class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     var isListening = false
     var transcribedText = ""
+    var lastFinalTranscription = ""
+    var finalTranscriptionVersion = 0
     var isSpeaking = false
+    var speechCompletionVersion = 0
     var showPermissionAlert = false
+    var errorMessage: String?
+    var errorVersion = 0
     
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
@@ -33,6 +38,12 @@ class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     }
     
     func startListening() throws {
+        guard !isListening else { return }
+        guard speechRecognizer?.isAvailable == true else {
+            publishError("Speech recognition is currently unavailable.")
+            return
+        }
+
         let authStatus = SFSpeechRecognizer.authorizationStatus()
         let audioStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         
@@ -78,7 +89,7 @@ class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         inputNode.removeTap(onBus: 0)
         
         guard let recognitionRequest = recognitionRequest else {
-            print("Unable to create request")
+            publishError("Could not start speech recognition.")
             return
         }
         recognitionRequest.shouldReportPartialResults = true
@@ -94,14 +105,26 @@ class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
             var isFinal = false
             
             if let result = result {
-                DispatchQueue.main.async {
+                Task { @MainActor in
                     self.transcribedText = result.bestTranscription.formattedString
+                    if result.isFinal {
+                        self.lastFinalTranscription = result.bestTranscription.formattedString
+                        self.finalTranscriptionVersion += 1
+                    }
                 }
                 isFinal = result.isFinal
             }
             
             if error != nil || isFinal {
-                self.stopListening()
+                Task { @MainActor in
+                    if let error {
+                        let nsError = error as NSError
+                        if nsError.domain != "kAFAssistantErrorDomain" || nsError.code != 216 {
+                            self.publishError(error.localizedDescription)
+                        }
+                    }
+                    self.stopListening()
+                }
             }
         }
         
@@ -115,6 +138,7 @@ class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         
         isListening = true
         transcribedText = ""
+        errorMessage = nil
     }
 
     private func requestPermissionsIfNeeded() async -> Bool {
@@ -150,9 +174,13 @@ class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     }
     
     func stopListening() {
+        guard isListening || recognitionTask != nil || recognitionRequest != nil else { return }
         audioEngine.stop()
+        recognitionTask?.cancel()
         recognitionRequest?.endAudio()
         audioEngine.inputNode.removeTap(onBus: 0)
+        recognitionTask = nil
+        recognitionRequest = nil
         isListening = false
     }
     
@@ -175,12 +203,19 @@ class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     func stopSpeaking() {
         synthesizer.stopSpeaking(at: .immediate)
         isSpeaking = false
+        speechCompletionVersion += 1
+    }
+
+    private func publishError(_ message: String) {
+        errorMessage = message
+        errorVersion += 1
     }
 }
 
 extension SpeechManager: AVSpeechSynthesizerDelegate {
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         isSpeaking = false
+        speechCompletionVersion += 1
         // Reset audio session category to play back
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
         try? AVAudioSession.sharedInstance().setActive(false)
@@ -188,5 +223,10 @@ extension SpeechManager: AVSpeechSynthesizerDelegate {
     
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
         isSpeaking = true
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        isSpeaking = false
+        speechCompletionVersion += 1
     }
 }

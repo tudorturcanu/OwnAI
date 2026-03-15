@@ -292,6 +292,19 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Gemma 3 1B Instruct QAT (4-bit MLX)
+    static let gemma3_1b_qat_4bit = ModelInfo(
+        id: "mlx-community/gemma-3-1b-it-qat-4bit",
+        name: "Gemma 3 1B",
+        description: "A newer Gemma tuned for strong small-model quality on Apple devices, with a very light download and responsive local chat.",
+        family: .gemma,
+        sizeGB: 0.73,
+        engine: .mlx,
+        termsURL: URL(string: "https://ai.google.dev/gemma/terms"),
+        privacyURL: nil,
+        downloadState: .notDownloaded
+    )
+
     /// Qwen3 0.6B MLX (4-bit)
     static let qwen3_0_6b_4bit = ModelInfo(
         id: "Qwen/Qwen3-0.6B-MLX-4bit",
@@ -331,6 +344,19 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Qwen2.5 1.5B Instruct (4-bit MLX)
+    static let qwen25_1_5b_instruct_4bit = ModelInfo(
+        id: "mlx-community/Qwen2.5-1.5B-Instruct-4bit",
+        name: "Qwen2.5 1.5B",
+        description: "A compact multilingual model that balances speed and answer quality well for everyday iPhone and iPad use.",
+        family: .qwen,
+        sizeGB: 0.87,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct"),
+        privacyURL: nil,
+        downloadState: .notDownloaded
+    )
+
     /// DeepSeek R1 Distill Qwen 1.5B (4-bit MLX)
     static let deepseek_r1_distill_qwen_1_5b_4bit = ModelInfo(
         id: "mlx-community/DeepSeek-R1-Distill-Qwen-1.5B-4bit",
@@ -340,6 +366,19 @@ extension ModelInfo {
         sizeGB: 1.01,
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"),
+        privacyURL: nil,
+        downloadState: .notDownloaded
+    )
+
+    /// Qwen2.5 3B Instruct (4-bit MLX)
+    static let qwen25_3b_instruct_4bit = ModelInfo(
+        id: "mlx-community/Qwen2.5-3B-Instruct-4bit",
+        name: "Qwen2.5 3B",
+        description: "One of the best quality-per-GB options for local chat on newer iPhones and iPads, with stronger reasoning and multilingual output.",
+        family: .qwen,
+        sizeGB: 1.74,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct"),
         privacyURL: nil,
         downloadState: .notDownloaded
     )
@@ -383,6 +422,19 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Phi 4 Mini Instruct (4-bit MLX)
+    static let phi4_mini_4bit = ModelInfo(
+        id: "mlx-community/Phi-4-mini-instruct-4bit",
+        name: "Phi 4 Mini",
+        description: "Microsoft's newer compact Phi model, offering stronger general reasoning and coding ability while still fitting modern iOS devices.",
+        family: .phi,
+        sizeGB: 2.16,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/microsoft/Phi-4-mini-instruct"),
+        privacyURL: nil,
+        downloadState: .notDownloaded
+    )
+
     /// Phi 3.5 Mini Instruct (4-bit MLX)
     static let phi35_mini_4bit = ModelInfo(
         id: "mlx-community/Phi-3.5-mini-instruct-4bit",
@@ -414,12 +466,16 @@ extension ModelInfo {
         .qwen3_0_6b_4bit,
         .tinyllama11b_chat_4bit,
         .llama32_1b_4bit,
+        .gemma3_1b_qat_4bit,
         .gemma2_2b_4bit,
+        .qwen25_1_5b_instruct_4bit,
         .qwen3_1_7b_4bit,
         .deepseek_r1_distill_qwen_1_5b_4bit,
+        .qwen25_3b_instruct_4bit,
         .qwen3_4b_4bit,
         .llama32_3b_4bit,
         .phi3_mini_4k_4bit,
+        .phi4_mini_4bit,
         .phi35_mini_4bit
     ]
 }

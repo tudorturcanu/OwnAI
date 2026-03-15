@@ -29,8 +29,8 @@ struct DataPrivacySheet: View {
                         title: "Data the App Processes"
                     ) {
                         bulletRow("Chat messages and prompts you type")
-                        bulletRow("Text from documents you import")
-                        bulletRow("Voice input (speech-to-text transcription)")
+                        bulletRow("Text from documents you import into a chat")
+                        bulletRow("Voice input (speech-to-text transcription, when enabled)")
                         bulletRow("Conversation history (stored on-device)")
                         bulletRow("App settings and preferences")
                     }
@@ -47,11 +47,25 @@ struct DataPrivacySheet: View {
                         
                         VStack(alignment: .leading, spacing: 6) {
                             privacyCheckRow("Prompts stay on-device")
-                            privacyCheckRow("Documents stay on-device")
+                            privacyCheckRow("Documents stay on-device and remain only in the chat where you added them")
                             privacyCheckRow("Voice input stays on-device")
                             privacyCheckRow("No data sent to Google LLC")
                         }
                         .padding(.top, 4)
+                    }
+
+                    sectionCard(
+                        icon: "waveform",
+                        iconColor: .orange,
+                        title: "Voice Conversation Mode"
+                    ) {
+                        Text("If you enable Conversation Mode, the app can keep listening between turns and speak replies aloud on-device.")
+                            .font(.subheadline)
+                            .foregroundStyle(Color(white: 0.45))
+
+                        Text("You can turn this off at any time in Chat or Settings.")
+                            .font(.caption)
+                            .foregroundStyle(Color(white: 0.5))
                     }
                     
                     if modelManager.isAppleIntelligenceDeviceSupported {

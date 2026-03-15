@@ -1,19 +1,3 @@
-//
-//  ChatView.swift
-//  LocalAI
-//
-//  Created by Tudor on 29.01.2026.
-//
-
-import SwiftUI
-
-//
-//  ChatView.swift
-//  LocalAI
-//
-//  Created by Tudor on 29.01.2026.
-//
-
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -26,18 +10,125 @@ struct ChatView: View {
     
     @State private var messageText = ""
     @State private var isFileImporterPresented = false
-    @State private var attachedDocument: AttachedDocument?
     @State private var isExtractingDocument = false
     @AppStorage("autoRead") private var autoRead = false
+    @AppStorage("voiceConversationMode") private var voiceConversationMode = false
     @State private var showExportSheet = false
     @FocusState private var isInputFocused: Bool
     @State private var showModelDownloadSheet = false
     @State private var showModelConsentSheet = false
     @State private var shouldSendAfterConsent = false
     @State private var documentError: String?
+    @State private var voiceError: String?
     @State private var streamingPrefix = ""
     
     var body: some View {
+        alertContent
+    }
+
+    private var alertContent: some View {
+        modalContent
+            .alert("Document Error", isPresented: documentErrorBinding) {
+                Button("OK", role: .cancel) { documentError = nil }
+            } message: {
+                Text(documentError ?? "An unknown error occurred.")
+            }
+            .alert("Voice Error", isPresented: voiceErrorBinding) {
+                Button("OK", role: .cancel) { voiceError = nil }
+            } message: {
+                Text(voiceError ?? "Voice input is unavailable.")
+            }
+            .onChange(of: voiceConversationMode) {
+                if voiceConversationMode {
+                    startListeningIfPossible()
+                } else {
+                    speechManager.stopListening()
+                    speechManager.stopSpeaking()
+                }
+            }
+    }
+
+    private var modalContent: some View {
+        lifecycleContent
+            .fileImporter(
+                isPresented: $isFileImporterPresented,
+                allowedContentTypes: [.pdf, .text, .plainText, .sourceCode, .rtf, .rtfd, .docx],
+                allowsMultipleSelection: false
+            ) { result in
+                handleFileImport(result: result)
+            }
+            .alert("Microphone Access Required", isPresented: Bindable(speechManager).showPermissionAlert) {
+                Button("Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Please enable microphone and speech recognition access in Settings to use voice input.")
+            }
+            .sheet(isPresented: $showModelDownloadSheet) {
+                NavigationStack {
+                    ModelDownloadView()
+                }
+            }
+            .sheet(isPresented: $showModelConsentSheet) {
+                if let selectedModel = modelManager.selectedModel {
+                    ModelConsentSheet(model: selectedModel) {
+                        setConsent(for: selectedModel.id)
+                        showModelConsentSheet = false
+                        if shouldSendAfterConsent {
+                            shouldSendAfterConsent = false
+                            performSendMessage()
+                        }
+                    } onCancel: {
+                        showModelConsentSheet = false
+                        shouldSendAfterConsent = false
+                    }
+                } else {
+                    Text("No model selected.")
+                        .padding()
+                }
+            }
+    }
+
+    private var lifecycleContent: some View {
+        baseContent
+            .onAppear {
+                prewarmModel()
+            }
+            .onChange(of: modelManager.selectedModelID) {
+                prewarmModel()
+            }
+            .onChange(of: historyManager.currentConversationID) {
+                llmEngine.resetSession()
+            }
+            .onChange(of: speechManager.transcribedText) {
+                if !speechManager.transcribedText.isEmpty {
+                    messageText = speechManager.transcribedText
+                }
+            }
+            .onChange(of: speechManager.finalTranscriptionVersion) {
+                guard voiceConversationMode else { return }
+                let transcription = speechManager.lastFinalTranscription.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !transcription.isEmpty else { return }
+                messageText = transcription
+                sendMessage()
+            }
+            .onChange(of: speechManager.errorVersion) {
+                guard let message = speechManager.errorMessage, !message.isEmpty else { return }
+                voiceError = message
+                voiceConversationMode = false
+            }
+            .onChange(of: speechManager.speechCompletionVersion) {
+                guard voiceConversationMode else { return }
+                guard llmEngine.state != .generating else { return }
+                guard !speechManager.isListening else { return }
+                startListeningIfPossible()
+            }
+    }
+
+    private var baseContent: some View {
         ZStack {
             // Background Gradient
             backgroundView
@@ -51,65 +142,20 @@ struct ChatView: View {
                 inputView
             }
         }
-        .onAppear {
-            prewarmModel()
-        }
-        .onChange(of: modelManager.selectedModelID) {
-            prewarmModel()
-        }
-        .onChange(of: speechManager.transcribedText) {
-            if !speechManager.transcribedText.isEmpty {
-                messageText = speechManager.transcribedText
-            }
-        }
-        .fileImporter(
-            isPresented: $isFileImporterPresented,
-            allowedContentTypes: [.pdf, .text, .plainText, .sourceCode, .rtf, .rtfd, .init(filenameExtension: "docx")!],
-            allowsMultipleSelection: false
-        ) { result in
-            handleFileImport(result: result)
-        }
-        .alert("Microphone Access Required", isPresented: Bindable(speechManager).showPermissionAlert) {
-            Button("Settings") {
-                if let url = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(url)
-                }
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("Please enable microphone and speech recognition access in Settings to use voice input.")
-        }
-        .sheet(isPresented: $showModelDownloadSheet) {
-            NavigationStack {
-                ModelDownloadView()
-            }
-        }
-        .sheet(isPresented: $showModelConsentSheet) {
-            if let selectedModel = modelManager.selectedModel {
-                ModelConsentSheet(model: selectedModel) {
-                    setConsent(for: selectedModel.id)
-                    showModelConsentSheet = false
-                    if shouldSendAfterConsent {
-                        shouldSendAfterConsent = false
-                        performSendMessage()
-                    }
-                } onCancel: {
-                    showModelConsentSheet = false
-                    shouldSendAfterConsent = false
-                }
-            } else {
-                Text("No model selected.")
-                    .padding()
-            }
-        }
-        .alert("Document Error", isPresented: Binding(
+    }
+
+    private var documentErrorBinding: Binding<Bool> {
+        Binding(
             get: { documentError != nil },
             set: { if !$0 { documentError = nil } }
-        )) {
-            Button("OK", role: .cancel) { documentError = nil }
-        } message: {
-            Text(documentError ?? "An unknown error occurred.")
-        }
+        )
+    }
+
+    private var voiceErrorBinding: Binding<Bool> {
+        Binding(
+            get: { voiceError != nil },
+            set: { if !$0 { voiceError = nil } }
+        )
     }
     
     private func prewarmModel() {
@@ -148,10 +194,12 @@ struct ChatView: View {
                         emptyStateView
                     } else {
                         ForEach(historyManager.currentMessages) { message in
+                            let recoveryAction = retryAction(for: message)
                             MessageBubble(
                                 message: message,
                                 showsContinue: canContinue(message),
-                                onContinue: canContinue(message) ? { continueResponse(for: message) } : nil
+                                onContinue: canContinue(message) ? { continueResponse(for: message) } : nil,
+                                recoveryAction: recoveryAction
                             )
                                 .id(message.id)
                         }
@@ -319,7 +367,11 @@ struct ChatView: View {
             }
             
             VStack(spacing: 8) {
-                // Attached Document Pill
+                if voiceConversationMode {
+                    voiceModeBanner
+                }
+
+                // Documents scoped to the current chat
                 if isExtractingDocument {
                     HStack(spacing: 8) {
                         ProgressView(value: documentManager.extractionProgress)
@@ -332,67 +384,11 @@ struct ChatView: View {
                     .padding(.horizontal, 20)
                     .padding(.top, 12)
                     .transition(.opacity)
-                } else if let document = attachedDocument {
-                    HStack {
-                        HStack(spacing: 8) {
-                            Image(systemName: document.iconName)
-                                .font(.title3)
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [.blue, .blue.opacity(0.7)],
-                                        startPoint: .top,
-                                        endPoint: .bottom
-                                    )
-                                )
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(document.name)
-                                    .font(.caption.weight(.medium))
-                                    .lineLimit(1)
-                                HStack(spacing: 4) {
-                                    Text(document.fileSizeText)
-                                    if let pageInfo = document.pageInfo {
-                                        Text("·")
-                                        Text(pageInfo)
-                                    }
-                                }
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                            }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.blue.opacity(0.08))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .stroke(Color.blue.opacity(0.15), lineWidth: 1)
-                                )
-                        )
-                        .overlay(
-                            Button {
-                                withAnimation(.spring(response: 0.3)) {
-                                    attachedDocument = nil
-                                }
-                            } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.caption)
-                                    .foregroundStyle(.white)
-                                    .background(Color.gray.opacity(0.7).clipShape(Circle()))
-                            }
-                            .offset(x: 6, y: -6),
-                            alignment: .topTrailing
-                        )
-                        
-                        Spacer()
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                } else if !currentConversationDocuments.isEmpty {
+                    conversationDocumentsStrip
                 }
 
                 HStack(spacing: 10) {
-                    // Plus button
                     Button {
                         isFileImporterPresented = true
                     } label: {
@@ -453,18 +449,8 @@ struct ChatView: View {
                                         )
                                 )
                         }
-                    } else if messageText.isEmpty && attachedDocument == nil {
-                        // Microphone button
-                        Button {
-                            toggleListening()
-                        } label: {
-                            Image(systemName: "mic.fill")
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(.white)
-                                .frame(width: 36, height: 36)
-                                .background(Color.black)
-                                .clipShape(Circle())
-                        }
+                    } else if messageText.isEmpty && currentConversationDocuments.isEmpty {
+                        microphoneControls
                     } else {
                         // Send button
                         Button(action: sendMessage) {
@@ -480,7 +466,7 @@ struct ChatView: View {
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
-                .padding(.top, attachedDocument == nil ? 12 : 4)
+                .padding(.top, currentConversationDocuments.isEmpty ? 12 : 4)
             }
             .background(Color.clear)
         }
@@ -494,9 +480,115 @@ struct ChatView: View {
     }
     
     private var canSend: Bool {
-        let hasInput = !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || attachedDocument != nil
+        let hasInput = !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !currentConversationDocuments.isEmpty
         let hasModel = modelManager.selectedModel != nil
         return hasInput && hasModel && llmEngine.state != .generating && llmEngine.state != .loading
+    }
+
+    private var currentConversationDocuments: [ConversationDocument] {
+        documentManager.documents(for: historyManager.currentConversationID)
+    }
+
+    private var conversationDocumentsStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                Text(currentConversationDocuments.count == 1 ? "1 doc in this chat" : "\(currentConversationDocuments.count) docs in this chat")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(white: 0.35))
+
+                ForEach(currentConversationDocuments) { document in
+                    HStack(spacing: 8) {
+                        Image(systemName: documentIconName(for: document))
+                            .font(.caption)
+                            .foregroundStyle(.blue)
+
+                        Text(document.name)
+                            .font(.caption)
+                            .lineLimit(1)
+
+                        Button {
+                            guard let conversationID = historyManager.currentConversationID else { return }
+                            withAnimation(.spring(response: 0.3)) {
+                                documentManager.removeDocument(id: document.id, from: conversationID)
+                            }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.caption)
+                                .foregroundStyle(Color(white: 0.6))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.blue.opacity(0.08))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.blue.opacity(0.15), lineWidth: 1)
+                            )
+                    )
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 12)
+        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    private var voiceModeBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: speechManager.isListening ? "waveform.circle.fill" : "waveform.circle")
+                .foregroundStyle(speechManager.isListening ? .red : .blue)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Conversation Mode")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(white: 0.15))
+                Text(speechManager.isListening ? "Listening for your next turn" : "Replies are spoken and listening restarts automatically")
+                    .font(.caption2)
+                    .foregroundStyle(Color(white: 0.5))
+            }
+
+            Spacer()
+
+            Toggle("Conversation Mode", isOn: $voiceConversationMode)
+                .labelsHidden()
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+    }
+
+    private var microphoneControls: some View {
+        HStack(spacing: 8) {
+            if voiceConversationMode {
+                Button {
+                    voiceConversationMode = false
+                } label: {
+                    Image(systemName: "waveform.slash")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Color(white: 0.35))
+                        .frame(width: 36, height: 36)
+                        .background(Color.white.opacity(0.9))
+                        .clipShape(Circle())
+                }
+            }
+
+            Button {
+                if voiceConversationMode {
+                    startListeningIfPossible()
+                } else {
+                    toggleListening()
+                }
+            } label: {
+                Image(systemName: voiceConversationMode ? "waveform" : "mic.fill")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 36, height: 36)
+                    .background(Color.black)
+                    .clipShape(Circle())
+            }
+        }
     }
     
     // MARK: - Model Status
@@ -545,18 +637,16 @@ struct ChatView: View {
     
     private func handleFileImport(result: Result<[URL], Error>) {
         guard case .success(let urls) = result, let url = urls.first else { return }
+        guard let conversationID = historyManager.currentConversationID else { return }
         
         withAnimation(.spring(response: 0.3)) {
             isExtractingDocument = true
-            attachedDocument = nil
         }
         
         Task {
             do {
                 let document = try await documentManager.processFile(at: url)
-                withAnimation(.spring(response: 0.3)) {
-                    attachedDocument = document
-                }
+                await documentManager.addDocumentToConversation(from: document, conversationID: conversationID)
             } catch {
                 print("Error processing file: \(error)")
                 documentError = error.localizedDescription
@@ -582,7 +672,18 @@ struct ChatView: View {
         if speechManager.isListening {
             speechManager.stopListening()
         } else {
-            try? speechManager.startListening()
+            startListeningIfPossible()
+        }
+    }
+
+    private func startListeningIfPossible() {
+        guard llmEngine.state != .generating else { return }
+        guard !speechManager.isSpeaking else { return }
+        do {
+            try speechManager.startListening()
+        } catch {
+            voiceError = error.localizedDescription
+            voiceConversationMode = false
         }
     }
     
@@ -609,52 +710,30 @@ struct ChatView: View {
             return
         }
         
-        var text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let documentContent = attachedDocument?.content
-        let documentName = attachedDocument?.name
+        let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let conversationID = historyManager.currentConversationID
         
-        // If there's a document but no text, we can still send
-        if text.isEmpty && attachedDocument == nil { return }
+        if text.isEmpty && currentConversationDocuments.isEmpty { return }
         
-        // construct display text
-        var displayText = text
-        if let name = documentName {
-            if displayText.isEmpty {
-                displayText = "Sent a document: \(name)"
-            } else {
-                displayText = "[\(name)] " + displayText
-            }
-        }
+        let displayText = text.isEmpty && !currentConversationDocuments.isEmpty ? "Summarize the documents in this chat." : text
         
         // Add user message
         let userMessage = ChatMessage(role: .user, content: displayText)
         historyManager.addMessage(userMessage)
         
         messageText = ""
-        attachedDocument = nil
         
         // Generate response
         Task {
-            // Prepare prompt (Async if using RAG)
-            var fullPrompt = text
-            
-            if let docName = documentName, let docContent = documentContent, !docContent.isEmpty {
-                // Direct injection — truncate to fit model context window
-                let maxChars = 3000
-                let truncatedContent = String(docContent.prefix(maxChars))
-                
-                fullPrompt = """
-                Below is text from the document "\(docName)":
-                ---
-                \(truncatedContent)
-                ---
-                
-                \(text.isEmpty ? "Summarize this document." : text)
-                """
-            }
-
-            let shouldResetSession = documentName != nil
-            await runAssistantResponse(prompt: fullPrompt, resetSession: shouldResetSession)
+            let promptContext = await buildPromptContext(
+                userText: text,
+                conversationID: conversationID
+            )
+            await runAssistantResponse(
+                prompt: promptContext.prompt,
+                resetSession: false,
+                assistantSourceTitles: promptContext.sourceTitles
+            )
         }
     }
 
@@ -664,7 +743,8 @@ struct ChatView: View {
         assistantID: UUID = UUID(),
         existingPrefix: String = "",
         placeholderContent: String = "",
-        missingAnswerRetryCount: Int = 0
+        missingAnswerRetryCount: Int = 0,
+        assistantSourceTitles: [String] = []
     ) async {
         do {
             guard let model = modelManager.selectedModel else {
@@ -680,13 +760,15 @@ struct ChatView: View {
                 historyManager.updateMessage(
                     id: assistantID,
                     content: placeholderContent,
-                    isStreaming: true
+                    isStreaming: true,
+                    sourceTitles: assistantSourceTitles
                 )
             } else {
                 let assistantPlaceholder = ChatMessage(
                     id: assistantID,
                     role: .assistant,
                     content: placeholderContent,
+                    sourceTitles: assistantSourceTitles,
                     isStreaming: true
                 )
                 historyManager.addMessage(assistantPlaceholder)
@@ -701,10 +783,7 @@ struct ChatView: View {
             try await llmEngine.generate(prompt: prompt)
 
             if case .error(let message) = llmEngine.state {
-                var errorText = "Sorry, I encountered an error: \(message)"
-                if message.contains("unsupported language") || message.contains("locale") {
-                    errorText = "This document's language is not supported by Apple Intelligence. Try switching to an MLX model (like Gemma) in Settings → Models for multi-language support."
-                }
+                let errorText = userFacingErrorText(from: message)
                 let fallbackContent = failureContent(
                     assistantID: assistantID,
                     existingPrefix: existingPrefix,
@@ -713,7 +792,8 @@ struct ChatView: View {
                 historyManager.updateMessage(
                     id: assistantID,
                     content: fallbackContent,
-                    isStreaming: false
+                    isStreaming: false,
+                    sourceTitles: assistantSourceTitles
                 )
                 llmEngine.currentResponse = ""
                 streamingPrefix = ""
@@ -736,7 +816,8 @@ struct ChatView: View {
                     assistantID: assistantID,
                     existingPrefix: "",
                     placeholderContent: finalizedContent,
-                    missingAnswerRetryCount: 1
+                    missingAnswerRetryCount: 1,
+                    assistantSourceTitles: assistantSourceTitles
                 )
                 return
             }
@@ -744,17 +825,21 @@ struct ChatView: View {
             historyManager.updateMessage(
                 id: assistantID,
                 content: finalizedContent,
-                isStreaming: false
+                isStreaming: false,
+                sourceTitles: assistantSourceTitles
             )
 
             llmEngine.currentResponse = ""
             streamingPrefix = ""
 
-            if autoRead {
-                speechManager.speak(historyManager.currentMessages.last?.content ?? "")
+            let spokenReply = historyManager.currentMessages.last?.content.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if (autoRead || voiceConversationMode), !spokenReply.isEmpty {
+                speechManager.speak(spokenReply)
+            } else if voiceConversationMode {
+                startListeningIfPossible()
             }
         } catch {
-            let errorText = "Sorry, I encountered an error: \(error.localizedDescription)"
+            let errorText = userFacingErrorText(from: error.localizedDescription)
             if historyManager.currentMessages.contains(where: { $0.id == assistantID }) {
                 let fallbackContent = failureContent(
                     assistantID: assistantID,
@@ -764,13 +849,17 @@ struct ChatView: View {
                 historyManager.updateMessage(
                     id: assistantID,
                     content: fallbackContent,
-                    isStreaming: false
+                    isStreaming: false,
+                    sourceTitles: assistantSourceTitles
                 )
             } else {
-                historyManager.addMessage(ChatMessage(role: .assistant, content: errorText))
+                historyManager.addMessage(ChatMessage(role: .assistant, content: errorText, sourceTitles: assistantSourceTitles))
             }
             llmEngine.currentResponse = ""
             streamingPrefix = ""
+            if voiceConversationMode {
+                speechManager.speak(errorText)
+            }
         }
     }
 
@@ -789,7 +878,8 @@ struct ChatView: View {
                     """,
                     assistantID: message.id,
                     existingPrefix: "",
-                    placeholderContent: rawAssistantContent(for: message)
+                    placeholderContent: rawAssistantContent(for: message),
+                    assistantSourceTitles: message.sourceTitles
                 )
             }
             return
@@ -808,7 +898,38 @@ struct ChatView: View {
                 prompt: prompt,
                 assistantID: message.id,
                 existingPrefix: prefix,
-                placeholderContent: prefix
+                placeholderContent: prefix,
+                assistantSourceTitles: message.sourceTitles
+            )
+        }
+    }
+
+    private func retryAction(for message: ChatMessage) -> MessageBubble.RecoveryAction? {
+        guard canRetryAfterReset(message) else { return nil }
+        return MessageBubble.RecoveryAction(
+            title: "Retry",
+            systemImage: "arrow.clockwise",
+            action: { retryResponseAfterReset(for: message) }
+        )
+    }
+
+    private func retryResponseAfterReset(for message: ChatMessage) {
+        guard llmEngine.state != .generating else { return }
+        guard historyManager.currentMessages.last?.id == message.id else { return }
+        guard let promptSeed = retryPromptSeed(for: message) else { return }
+
+        Task {
+            let promptContext = await buildPromptContext(
+                userText: promptSeed,
+                conversationID: historyManager.currentConversationID
+            )
+            await runAssistantResponse(
+                prompt: promptContext.prompt,
+                resetSession: true,
+                assistantID: message.id,
+                existingPrefix: "",
+                placeholderContent: "",
+                assistantSourceTitles: promptContext.sourceTitles
             )
         }
     }
@@ -821,6 +942,52 @@ struct ChatView: View {
         guard hasRecoverableConversationContext else { return false }
         if missingFinalAnswer(message) { return true }
         return looksTruncated(message.content)
+    }
+
+    private func canRetryAfterReset(_ message: ChatMessage) -> Bool {
+        guard message.role == .assistant else { return false }
+        guard !message.isStreaming else { return false }
+        guard historyManager.currentMessages.last?.id == message.id else { return false }
+        guard retryPromptSeed(for: message) != nil else { return false }
+
+        let content = message.content.lowercased()
+        let thinking = message.thinkingContent?.lowercased() ?? ""
+        return [
+            "jinja.templateexception",
+            "sorry, i encountered an error:",
+            "sorry, i hit a model template error",
+            "tap retry to clear the current chat context and try again",
+            "the operation couldn’t be completed",
+            "the operation couldn't be completed"
+        ]
+        .contains(where: { marker in
+            content.contains(marker) || thinking.contains(marker)
+        })
+    }
+
+    private func retryPromptSeed(for message: ChatMessage) -> String? {
+        guard let messageIndex = historyManager.currentMessages.firstIndex(where: { $0.id == message.id }) else {
+            return nil
+        }
+
+        return historyManager.currentMessages[..<messageIndex]
+            .reversed()
+            .first(where: { $0.role == .user })?
+            .content
+    }
+
+    private func userFacingErrorText(from message: String) -> String {
+        let lowercased = message.lowercased()
+
+        if lowercased.contains("unsupported language") || lowercased.contains("locale") {
+            return "This document's language is not supported by Apple Intelligence. Try switching to an MLX model (like Gemma) in Settings -> Models for multi-language support."
+        }
+
+        if lowercased.contains("jinja.templateexception") {
+            return "Sorry, I hit a model template error. Tap Retry to clear the current chat context and try again."
+        }
+
+        return "Sorry, I encountered an error: \(message)"
     }
 
     private func missingFinalAnswer(_ message: ChatMessage) -> Bool {
@@ -944,6 +1111,81 @@ struct ChatView: View {
         UserDefaults.standard.set(true, forKey: "modelConsent.\(modelID)")
     }
 
+    private func buildPromptContext(userText: String, conversationID: UUID?) async -> (prompt: String, sourceTitles: [String]) {
+        let trimmedText = userText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let effectiveRequest = trimmedText.isEmpty ? "Summarize the documents in this chat." : trimmedText
+
+        guard let conversationID, documentManager.hasDocuments(in: conversationID) else {
+            return (trimmedText, [])
+        }
+
+        let snippets = await documentManager.retrieveRelevantSnippets(
+            for: effectiveRequest,
+            conversationID: conversationID,
+            limit: 4
+        )
+
+        if !snippets.isEmpty {
+            let context = snippets.enumerated().map { index, item in
+                """
+                [Source \(index + 1): \(item.document.name)]
+                \(item.chunk.content)
+                """
+            }
+            .joined(separator: "\n\n")
+
+            return (
+                """
+                You have access to documents that belong only to this chat.
+                Use the retrieved passages when they are relevant to the user's request.
+                If the snippets are insufficient, say that briefly instead of guessing.
+
+                Chat documents:
+                \(context)
+
+                User request: \(effectiveRequest)
+                """,
+                []
+            )
+        }
+
+        let fallbackDocuments = documentManager.documents(for: conversationID).prefix(2)
+        let fallbackContext = fallbackDocuments.map { document in
+            """
+            [Document: \(document.name)]
+            \(String(document.content.prefix(2_000)))
+            """
+        }
+        .joined(separator: "\n\n")
+
+        return (
+            """
+            You have access to documents that belong only to this chat.
+            Use them when they help answer the request, and say briefly if the available text is limited.
+
+            Chat documents:
+            \(fallbackContext)
+
+            User request: \(effectiveRequest)
+            """,
+            []
+        )
+    }
+
+    private func documentIconName(for document: ConversationDocument) -> String {
+        let ext = document.sourceURL?.pathExtension.lowercased() ?? ""
+        switch ext {
+        case "pdf":
+            return "doc.richtext.fill"
+        case "rtf", "rtfd":
+            return "doc.richtext"
+        case "doc", "docx":
+            return "doc.text.fill"
+        default:
+            return "doc.plaintext"
+        }
+    }
+
 }
 
 // MARK: - Chat Message Model
@@ -953,14 +1195,35 @@ struct ChatMessage: Identifiable, Equatable, Codable {
     let role: MessageRole
     let content: String
     let thinkingContent: String?
+    let sourceTitles: [String]
     var isStreaming: Bool = false
     
-    init(id: UUID = UUID(), role: MessageRole, content: String, thinkingContent: String? = nil, isStreaming: Bool = false) {
+    init(id: UUID = UUID(), role: MessageRole, content: String, thinkingContent: String? = nil, sourceTitles: [String] = [], isStreaming: Bool = false) {
         self.id = id
         self.role = role
         self.content = content
         self.thinkingContent = thinkingContent
+        self.sourceTitles = sourceTitles
         self.isStreaming = isStreaming
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case role
+        case content
+        case thinkingContent
+        case sourceTitles
+        case isStreaming
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        role = try container.decode(MessageRole.self, forKey: .role)
+        content = try container.decode(String.self, forKey: .content)
+        thinkingContent = try container.decodeIfPresent(String.self, forKey: .thinkingContent)
+        sourceTitles = try container.decodeIfPresent([String].self, forKey: .sourceTitles) ?? []
+        isStreaming = try container.decodeIfPresent(Bool.self, forKey: .isStreaming) ?? false
     }
     
     enum MessageRole: String, Codable {
@@ -977,6 +1240,10 @@ struct SendButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.9 : 1.0)
             .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
     }
+}
+
+private extension UTType {
+    static let docx = UTType(filenameExtension: "docx") ?? .data
 }
 
 #Preview {

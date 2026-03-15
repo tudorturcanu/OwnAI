@@ -13,6 +13,7 @@ struct MessageBubble: View {
     let message: ChatMessage
     let showsContinue: Bool
     let onContinue: (() -> Void)?
+    let recoveryAction: RecoveryAction?
     @State private var appeared = false
     @State private var isThinkingExpanded = false
     private let userLeadingInset: CGFloat = 60
@@ -22,17 +23,20 @@ struct MessageBubble: View {
     init(
         message: ChatMessage,
         showsContinue: Bool = false,
-        onContinue: (() -> Void)? = nil
+        onContinue: (() -> Void)? = nil,
+        recoveryAction: RecoveryAction? = nil
     ) {
         self.message = message
         self.showsContinue = showsContinue
         self.onContinue = onContinue
+        self.recoveryAction = recoveryAction
     }
     
     var body: some View {
         let thinkingText = message.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let hasThinking = !thinkingText.isEmpty
         let hasAnswerContent = !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let sourceTitles = message.sourceTitles
 
         HStack(alignment: .top, spacing: 12) {
             if message.role == .user {
@@ -78,18 +82,24 @@ struct MessageBubble: View {
                     messageCard
                 }
 
+                if message.role == .assistant && !sourceTitles.isEmpty {
+                    sourceChips(sourceTitles)
+                }
+
                 if showsContinue, let onContinue {
-                    Button(action: onContinue) {
-                        Label("Continue", systemImage: "arrow.trianglehead.clockwise")
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(.blue)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(Color.white.opacity(0.85))
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.leading, 4)
+                    actionButton(
+                        title: "Continue",
+                        systemImage: "arrow.trianglehead.clockwise",
+                        action: onContinue
+                    )
+                }
+
+                if let recoveryAction {
+                    actionButton(
+                        title: recoveryAction.title,
+                        systemImage: recoveryAction.systemImage,
+                        action: recoveryAction.action
+                    )
                 }
             }
             
@@ -105,6 +115,30 @@ struct MessageBubble: View {
                 appeared = true
             }
         }
+    }
+
+    private func actionButton(
+        title: String,
+        systemImage: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.blue)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.white.opacity(0.85))
+                .clipShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .padding(.leading, 4)
+    }
+
+    struct RecoveryAction {
+        let title: String
+        let systemImage: String
+        let action: () -> Void
     }
 
     @ViewBuilder
@@ -245,6 +279,27 @@ struct MessageBubble: View {
                     )
             }
         }
+    }
+
+    private func sourceChips(_ sourceTitles: [String]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(sourceTitles, id: \.self) { title in
+                    HStack(spacing: 6) {
+                        Image(systemName: "doc.text")
+                        Text(title)
+                            .lineLimit(1)
+                    }
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(Color(white: 0.4))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.92))
+                    .clipShape(Capsule())
+                }
+            }
+        }
+        .frame(maxWidth: 280, alignment: .leading)
     }
 
     private func thinkingCard(thinkingText: String, showsStreamingIndicator: Bool) -> some View {

@@ -14,9 +14,13 @@ struct SettingsView: View {
     @Environment(LLMEngine.self) private var llmEngine
     @Environment(ChatHistoryManager.self) private var historyManager
     @Environment(ModelManager.self) private var modelManager
+    @State private var documentManager = DocumentManager.shared
     @AppStorage("lowPowerMode") private var lowPowerMode = false
     @AppStorage("historyRetentionDays") private var historyRetentionDays = 0
+    @AppStorage("autoRead") private var autoRead = false
+    @AppStorage("voiceConversationMode") private var voiceConversationMode = false
     @State private var showClearHistoryConfirmation = false
+    @State private var showClearDocumentsConfirmation = false
     
     private let retentionOptions = [0, 7, 30, 90]
     
@@ -52,6 +56,9 @@ struct SettingsView: View {
 
                     // Privacy Controls
                     privacyControlsSection
+
+                    // Voice
+                    voiceSection
 
                     // Performance
                     performanceSection
@@ -279,6 +286,32 @@ struct SettingsView: View {
 
                 Divider().padding(.leading, 56)
 
+                Button {
+                    showClearDocumentsConfirmation = true
+                } label: {
+                    HStack(spacing: 16) {
+                        Image(systemName: "doc.text.magnifyingglass")
+                            .font(.body)
+                            .foregroundStyle(.orange)
+                            .frame(width: 24)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Cleanup")
+                                .font(.body)
+                                .foregroundStyle(Color(white: 0.1))
+                            Text(cleanupSizeText)
+                                .font(.caption)
+                                .foregroundStyle(Color(white: 0.5))
+                        }
+
+                        Spacer()
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 16)
+                }
+
+                Divider().padding(.leading, 56)
+
                 HStack(spacing: 16) {
                     Image(systemName: "clock.arrow.circlepath")
                         .font(.body)
@@ -339,6 +372,14 @@ struct SettingsView: View {
         } message: {
             Text("This permanently deletes every saved conversation on this device.")
         }
+        .alert("Cleanup", isPresented: $showClearDocumentsConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Clean Up", role: .destructive) {
+                documentManager.clearAllDocuments()
+            }
+        } message: {
+            Text("This won’t delete your chats.")
+        }
     }
 
     // MARK: - Performance Section
@@ -355,6 +396,32 @@ struct SettingsView: View {
                 }
                 .padding(.trailing, 16)
             }
+        }
+    }
+
+    private var voiceSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Voice")
+                .font(.headline)
+                .foregroundStyle(Color(white: 0.2))
+
+            settingsGroup {
+                Toggle(isOn: $voiceConversationMode) {
+                    settingsRow(title: "Conversation Mode", icon: "waveform", iconColor: .blue, trailingIcon: "")
+                }
+                .padding(.trailing, 16)
+
+                Divider().padding(.leading, 56)
+
+                Toggle(isOn: $autoRead) {
+                    settingsRow(title: "Read Replies Aloud", icon: "speaker.wave.2.fill", iconColor: .orange, trailingIcon: "")
+                }
+                .padding(.trailing, 16)
+            }
+
+            Text("Conversation Mode keeps listening between turns and speaks replies automatically.")
+                .font(.caption)
+                .foregroundStyle(Color(white: 0.5))
         }
     }
 
@@ -434,6 +501,13 @@ struct SettingsView: View {
         default:
             return "\(days) days"
         }
+    }
+
+    private var cleanupSizeText: String {
+        ByteCountFormatter.string(
+            fromByteCount: documentManager.totalStoredDocumentBytes,
+            countStyle: .file
+        )
     }
 
     // MARK: - About Section

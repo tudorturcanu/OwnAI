@@ -59,6 +59,7 @@ final class LLMEngine {
     private var loadingModelID: String?
     private var loadTaskID: UUID?
     private var currentModel: ModelInfo?
+    private var isSceneActive = true
     var streamingTokensPerSecond: Double = 0
     private var streamingStartTime: Date?
     
@@ -78,6 +79,8 @@ final class LLMEngine {
     
     /// Load a specific model
     func loadModel(_ model: ModelInfo) async throws {
+        try ensureGPUWorkAllowed(for: model)
+
         // If same model is already ready, skip
         if state == .ready && currentModel?.id == model.id {
             return
@@ -139,6 +142,7 @@ final class LLMEngine {
     func resetSession() {
         appleSession = nil
         #if !targetEnvironment(simulator)
+        guard isSceneActive else { return }
         // Recreate MLX session with same model to clear conversation history
         if let session = mlxSession, let modelID = mlxModelID {
             let persistentPath = MLXStorage.modelDirectory(for: modelID)
@@ -179,6 +183,8 @@ final class LLMEngine {
         guard let model = currentModel else {
             throw LLMError.modelNotLoaded
         }
+
+        try ensureGPUWorkAllowed(for: model)
         
         state = .generating
         currentResponse = ""
@@ -335,6 +341,27 @@ final class LLMEngine {
         currentResponse = "" 
     }
 
+    func handleScenePhaseChange(_ phase: ScenePhase) {
+        let isActive = phase == .active
+        isSceneActive = isActive
+
+        guard !isActive else { return }
+
+        generationTask?.cancel()
+        generationTask = nil
+        loadTask?.cancel()
+        loadTask = nil
+        loadingModelID = nil
+        loadTaskID = nil
+        streamingStartTime = nil
+        streamingTokensPerSecond = 0
+        currentResponse = ""
+
+        if state == .generating || state == .loading {
+            state = hasLoadedSession(for: currentModel) ? .ready : .idle
+        }
+    }
+
     func hasConversationContext(for model: ModelInfo?) -> Bool {
         guard let model, currentModel?.id == model.id else { return false }
 
@@ -417,9 +444,12 @@ extension LLMEngine {
     }
 
     func prewarmIfNeeded(model: ModelInfo) async {
+        guard isSceneActive else { return }
+
         if currentModel?.id == model.id {
             #if !targetEnvironment(simulator)
             if let session = mlxSession {
+                guard model.engine != .mlx || isSceneActive else { return }
                 session.prewarm()
                 return
             }
@@ -443,6 +473,8 @@ private extension LLMEngine {
             state = .idle
             throw CancellationError()
         }
+
+        try ensureGPUWorkAllowed(for: model)
         
         print("[LLMEngine] loadModel start id=\(model.id) engine=\(model.engine.rawValue) state=\(state)")
         state = .loading
@@ -499,6 +531,7 @@ private extension LLMEngine {
             do {
                 if mlxModelID != model.id || mlxSession == nil {
                     try Task.checkCancellation()
+                    try ensureGPUWorkAllowed(for: model)
                     print("[LLMEngine] MLX loading model id=\(model.id)")
                     let persistentPath = MLXStorage.modelDirectory(for: model.id)
                     let mlxModel: MLXLanguageModel
@@ -511,6 +544,7 @@ private extension LLMEngine {
                         model: mlxModel,
                         instructions: UserDefaults.standard.string(forKey: "systemPrompt") ?? "You are a helpful AI assistant."
                     )
+                    try ensureGPUWorkAllowed(for: model)
                     mlxSession?.prewarm()
                     mlxModelID = model.id
                     print("[LLMEngine] MLX session ready id=\(model.id)")
@@ -529,6 +563,28 @@ private extension LLMEngine {
             #endif
         }
     }
+
+    func ensureGPUWorkAllowed(for model: ModelInfo) throws {
+        guard model.engine == .mlx else { return }
+        guard isSceneActive else {
+            throw LLMError.backgroundGPUWorkNotAllowed
+        }
+    }
+
+    func hasLoadedSession(for model: ModelInfo?) -> Bool {
+        guard let model else { return false }
+
+        switch model.engine {
+        case .appleFoundation:
+            return appleSession != nil
+        case .mlx:
+            #if targetEnvironment(simulator)
+            return false
+            #else
+            return mlxSession != nil
+            #endif
+        }
+    }
 }
 
 
@@ -539,6 +595,7 @@ enum LLMError: LocalizedError {
     case modelNotAvailable(String)
     case engineBusy
     case generationFailed(String)
+    case backgroundGPUWorkNotAllowed
     
     var errorDescription: String? {
         switch self {
@@ -550,6 +607,8 @@ enum LLMError: LocalizedError {
             return "The engine is busy. Please wait for the current operation to complete."
         case .generationFailed(let message):
             return "Generation failed: \(message)"
+        case .backgroundGPUWorkNotAllowed:
+            return "Bring the app to the foreground before using a local MLX model."
         }
     }
 }

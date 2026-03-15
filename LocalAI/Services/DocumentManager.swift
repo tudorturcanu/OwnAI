@@ -16,6 +16,7 @@ struct AttachedDocument: Identifiable, Equatable {
     let extractedPages: Int
     let totalPages: Int
     let fileSize: Int64
+    let isTrimmed: Bool
     
     var name: String {
         url.lastPathComponent.removingPercentEncoding ?? url.lastPathComponent
@@ -33,6 +34,10 @@ struct AttachedDocument: Identifiable, Equatable {
     /// Human-readable file size, e.g. "1.2 MB"
     var fileSizeText: String {
         ByteCountFormatter.string(fromByteCount: fileSize, countStyle: .file)
+    }
+
+    var storageNote: String? {
+        isTrimmed ? "Only for this chat, trimmed locally" : "Only for this chat"
     }
     
     /// File type icon name
@@ -65,12 +70,27 @@ enum DocumentError: LocalizedError {
 
 @MainActor
 @Observable
-class DocumentManager {
+final class DocumentManager {
     static let shared = DocumentManager()
-    
+    static let maxStoredCharacters = 20_000
+
     var extractionProgress: Double = 0
-    
-    private init() {}
+    var documentsByConversationID: [UUID: [ConversationDocument]] = [:]
+
+    private let ragEngine = RAGEngine.shared
+
+    private init() {
+        loadPersistedDocuments()
+        removeLegacyLibraryIfNeeded()
+        Task {
+            await reindexAllDocuments()
+        }
+    }
+
+    private var documentsURL: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("conversation_documents.json")
+    }
     
     func processFile(at url: URL) async throws -> AttachedDocument {
         // Start accessing security scoped resource
@@ -93,33 +113,15 @@ class DocumentManager {
         
         extractionProgress = 0.1
         
-        let content: String
-        var extractedPages = 0
-        var totalPages = 0
         let ext = url.pathExtension.lowercased()
-        
-        switch ext {
-        case "pdf":
-            let result = try extractTextFromPDF(at: url)
-            content = result.text
-            extractedPages = result.extractedPages
-            totalPages = result.totalPages
-            
-        case "rtf", "rtfd":
-            content = try extractTextFromRTF(at: url)
-            
-        case "doc", "docx":
-            content = try extractTextFromWord(at: url)
-            
-        default:
-            // Plain text, source code, etc.
-            content = try String(contentsOf: url, encoding: .utf8)
-        }
+        let extraction = try await Task.detached(priority: .userInitiated) {
+            try Self.extractContent(at: url, fileExtension: ext)
+        }.value
         
         extractionProgress = 0.9
         
         // Check for empty content
-        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !extraction.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             extractionProgress = 0
             throw DocumentError.emptyDocument
         }
@@ -132,18 +134,171 @@ class DocumentManager {
         
         return AttachedDocument(
             url: url,
-            content: content,
-            extractedPages: extractedPages,
-            totalPages: totalPages,
-            fileSize: fileSize
+            content: extraction.text,
+            extractedPages: extraction.extractedPages,
+            totalPages: extraction.totalPages,
+            fileSize: fileSize,
+            isTrimmed: extraction.text.count > Self.maxStoredCharacters
         )
+    }
+
+    func documents(for conversationID: UUID?) -> [ConversationDocument] {
+        guard let conversationID else { return [] }
+        return documentsByConversationID[conversationID] ?? []
+    }
+
+    func hasDocuments(in conversationID: UUID?) -> Bool {
+        !documents(for: conversationID).isEmpty
+    }
+
+    var totalStoredDocumentCount: Int {
+        documentsByConversationID.values.reduce(0) { $0 + $1.count }
+    }
+
+    var totalStoredDocumentBytes: Int64 {
+        documentsByConversationID.values
+            .flatMap { $0 }
+            .reduce(into: Int64(0)) { partialResult, document in
+                partialResult += Int64(document.content.lengthOfBytes(using: .utf8))
+            }
+    }
+
+    func addDocumentToConversation(from attachedDocument: AttachedDocument, conversationID: UUID) async {
+        let document = ConversationDocument(from: attachedDocument, maxCharacters: Self.maxStoredCharacters)
+        guard !document.content.isEmpty else { return }
+
+        var documents = documentsByConversationID[conversationID] ?? []
+        if let existingIndex = documents.firstIndex(where: {
+            $0.name == document.name && $0.content == document.content
+        }) {
+            let existing = documents.remove(at: existingIndex)
+            documents.insert(existing, at: 0)
+            documentsByConversationID[conversationID] = documents
+            savePersistedDocuments()
+            await ragEngine.clear(documentID: existing.id, conversationID: conversationID)
+            await ragEngine.ingest(text: existing.content, documentID: existing.id, conversationID: conversationID)
+            return
+        }
+
+        documents.insert(document, at: 0)
+        documentsByConversationID[conversationID] = documents
+        savePersistedDocuments()
+        await ragEngine.ingest(text: document.content, documentID: document.id, conversationID: conversationID)
+    }
+
+    func removeDocument(id: UUID, from conversationID: UUID) {
+        guard var documents = documentsByConversationID[conversationID] else { return }
+        documents.removeAll { $0.id == id }
+        if documents.isEmpty {
+            documentsByConversationID.removeValue(forKey: conversationID)
+        } else {
+            documentsByConversationID[conversationID] = documents
+        }
+        savePersistedDocuments()
+        Task {
+            await ragEngine.clear(documentID: id, conversationID: conversationID)
+        }
+    }
+
+    func clearDocuments(for conversationID: UUID) {
+        documentsByConversationID.removeValue(forKey: conversationID)
+        savePersistedDocuments()
+        Task {
+            await ragEngine.clearConversation(conversationID)
+        }
+    }
+
+    func clearAllDocuments() {
+        documentsByConversationID.removeAll()
+        savePersistedDocuments()
+        Task {
+            await ragEngine.clearAll()
+        }
+    }
+
+    func retrieveRelevantSnippets(
+        for query: String,
+        conversationID: UUID,
+        limit: Int = 3
+    ) async -> [(document: ConversationDocument, chunk: RetrievedChunk)] {
+        let retrieved = await ragEngine.retrieveDetailed(query: query, limit: limit, conversationID: conversationID)
+        let documents = documentsByConversationID[conversationID] ?? []
+        return retrieved.compactMap { chunk in
+            guard let document = documents.first(where: { $0.id == chunk.documentID }) else {
+                return nil
+            }
+            return (document: document, chunk: chunk)
+        }
     }
     
     // MARK: - Extractors
     
     private static let maxPages = 5
+
+    private func removeLegacyLibraryIfNeeded() {
+        let legacyURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("saved_documents.json")
+        if FileManager.default.fileExists(atPath: legacyURL.path) {
+            try? FileManager.default.removeItem(at: legacyURL)
+        }
+    }
+
+    private func loadPersistedDocuments() {
+        do {
+            let data = try Data(contentsOf: documentsURL)
+            let persistedEntries = try JSONDecoder().decode([PersistedConversationDocuments].self, from: data)
+            documentsByConversationID = Dictionary(uniqueKeysWithValues: persistedEntries.map {
+                ($0.conversationID, $0.documents)
+            })
+        } catch {
+            documentsByConversationID = [:]
+        }
+    }
+
+    private func savePersistedDocuments() {
+        do {
+            let entries = documentsByConversationID.map { conversationID, documents in
+                PersistedConversationDocuments(conversationID: conversationID, documents: documents)
+            }
+            let data = try JSONEncoder().encode(entries)
+            try data.write(to: documentsURL, options: .atomic)
+        } catch {
+            print("Failed to save conversation documents: \(error)")
+        }
+    }
+
+    private func reindexAllDocuments() async {
+        await ragEngine.clearAll()
+        for (conversationID, documents) in documentsByConversationID {
+            for document in documents {
+                await ragEngine.ingest(
+                    text: document.content,
+                    documentID: document.id,
+                    conversationID: conversationID
+                )
+            }
+        }
+    }
+
+    nonisolated
+    private static func extractContent(
+        at url: URL,
+        fileExtension: String
+    ) throws -> (text: String, extractedPages: Int, totalPages: Int) {
+        return switch fileExtension {
+        case "pdf":
+            try extractTextFromPDF(at: url)
+        case "rtf", "rtfd":
+            (try extractTextFromRTF(at: url), 0, 0)
+        case "doc", "docx":
+            (try extractTextFromWord(at: url), 0, 0)
+        default:
+            (try String(contentsOf: url, encoding: .utf8), 0, 0)
+        }
+    }
     
-    private func extractTextFromPDF(at url: URL) throws -> (text: String, extractedPages: Int, totalPages: Int) {
+    nonisolated
+    private static func extractTextFromPDF(at url: URL) throws -> (text: String, extractedPages: Int, totalPages: Int) {
         guard let pdfDocument = PDFDocument(url: url) else {
             throw DocumentError.extractionFailed
         }
@@ -153,12 +308,6 @@ class DocumentManager {
         var fullText = ""
         
         for i in 0..<pagesToExtract {
-            // Update progress proportionally
-            let progress = 0.1 + (Double(i + 1) / Double(pagesToExtract)) * 0.7
-            Task { @MainActor in
-                self.extractionProgress = progress
-            }
-            
             if let page = pdfDocument.page(at: i), let pageText = page.string {
                 fullText += pageText + "\n"
             }
@@ -167,7 +316,8 @@ class DocumentManager {
         return (fullText.trimmingCharacters(in: .whitespacesAndNewlines), pagesToExtract, totalPages)
     }
     
-    private func extractTextFromRTF(at url: URL) throws -> String {
+    nonisolated
+    private static func extractTextFromRTF(at url: URL) throws -> String {
         let data = try Data(contentsOf: url)
         
         guard let attributed = try? NSAttributedString(
@@ -189,7 +339,8 @@ class DocumentManager {
         return attributed.string
     }
     
-    private func extractTextFromWord(at url: URL) throws -> String {
+    nonisolated
+    private static func extractTextFromWord(at url: URL) throws -> String {
         let data = try Data(contentsOf: url)
         
         // NSAttributedString can handle .docx files via the .docFormat option
@@ -207,4 +358,9 @@ class DocumentManager {
         
         throw DocumentError.extractionFailed
     }
+}
+
+private struct PersistedConversationDocuments: Codable {
+    let conversationID: UUID
+    let documents: [ConversationDocument]
 }
