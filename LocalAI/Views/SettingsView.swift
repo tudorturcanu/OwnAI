@@ -7,7 +7,6 @@
 
 import SwiftUI
 import LocalAIKit
-import FoundationModels
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss

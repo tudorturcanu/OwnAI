@@ -7,7 +7,6 @@
 
 import Foundation
 import LocalAIKit
-import FoundationModels
 import Hub
 import SwiftUI
 import UIKit
@@ -110,18 +109,12 @@ final class ModelManager {
     }
     
     var isAppleIntelligenceAvailable: Bool {
-        if case .available = FoundationModels.SystemLanguageModel.default.availability {
-            return true
-        }
-        return false
+        AppleFoundationModelBridge().isAvailable
     }
     
     /// Returns true if the device hardware supports Apple Intelligence, even if disabled
     var isAppleIntelligenceDeviceSupported: Bool {
-        if case .unavailable(.deviceNotEligible) = FoundationModels.SystemLanguageModel.default.availability {
-            return false
-        }
-        return true
+        AppleFoundationModelBridge().isDeviceSupported
     }
     
     /// Returns a user-friendly hint explaining why Apple Intelligence is unavailable
@@ -504,22 +497,11 @@ final class ModelManager {
     private func checkAvailability() async {
         // Check Apple Foundation availability
         if let index = models.firstIndex(where: { $0.engine == .appleFoundation }) {
-            let availability = FoundationModels.SystemLanguageModel.default.availability
-            switch availability {
-            case .available:
+            let availability = AppleFoundationModelBridge().availability
+            if availability == .available {
                 models[index].downloadState = .builtin
-            case .unavailable(let reason):
-                let message: String
-                switch reason {
-                case .deviceNotEligible:
-                    message = "Device not supported"
-                case .modelNotReady:
-                    message = "Model not ready"
-                case .appleIntelligenceNotEnabled:
-                    message = "Not enabled"
-                @unknown default:
-                    message = "Unavailable"
-                }
+            } else {
+                let message = availability.modelStateMessage
                 models[index].downloadState = .error(message: message)
             }
         }

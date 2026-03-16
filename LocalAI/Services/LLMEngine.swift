@@ -8,7 +8,6 @@
 import Foundation
 import SwiftUI
 import LocalAIKit
-import FoundationModels
 import UIKit
 
 #if !targetEnvironment(simulator)
@@ -42,11 +41,10 @@ final class LLMEngine {
     @ObservationIgnored @AppStorage("maxTokens") var maxTokens: Int = 512
     @ObservationIgnored @AppStorage("lowPowerMode") var lowPowerMode: Bool = false
     
-    private typealias AppleSession = FoundationModels.LanguageModelSession
     private typealias LocalSession = AnyLanguageModel.LanguageModelSession
     
     // Apple Foundation
-    private var appleSession: AppleSession?
+    private let appleFoundationBridge = AppleFoundationModelBridge()
     
     #if !targetEnvironment(simulator)
     // MLX
@@ -123,7 +121,7 @@ final class LLMEngine {
     
     /// Unload the current model
     func unloadModel() {
-        appleSession = nil
+        appleFoundationBridge.resetSession()
         #if !targetEnvironment(simulator)
         mlxSession = nil
         mlxModelID = nil
@@ -140,7 +138,7 @@ final class LLMEngine {
     /// Call this before generating with a new document so the model
     /// doesn't answer from old conversation context.
     func resetSession() {
-        appleSession = nil
+        appleFoundationBridge.resetSession()
         #if !targetEnvironment(simulator)
         guard isSceneActive else { return }
         // Recreate MLX session with same model to clear conversation history
@@ -152,10 +150,10 @@ final class LLMEngine {
             } else {
                 mlxModel = MLXLanguageModel(modelId: modelID)
             }
-            mlxSession = LocalSession(
-                model: mlxModel,
-                instructions: UserDefaults.standard.string(forKey: "systemPrompt") ?? "You are a helpful AI assistant."
-            )
+            let instructions: AnyLanguageModel.Instructions? = mlxSessionInstructions(for: modelID).map {
+                AnyLanguageModel.Instructions($0)
+            }
+            mlxSession = LocalSession(model: mlxModel, instructions: instructions)
             mlxSession?.prewarm()
         }
         #endif
@@ -195,10 +193,18 @@ final class LLMEngine {
         print("[LLMEngine] generate start id=\(model.id) engine=\(model.engine.rawValue)")
         
         // Capture state on MainActor
-        let currentAppleSession = self.appleSession
         #if !targetEnvironment(simulator)
         let currentMlxSession = self.mlxSession
         #endif
+        let usesEphemeralMlxSession = model.engine == .mlx && !mlxModelSupportsSystemRole(modelID: model.id)
+        let effectiveSystemPrompt = systemPrompt == "You are a helpful AI assistant."
+            ? (UserDefaults.standard.string(forKey: "systemPrompt") ?? systemPrompt)
+            : systemPrompt
+        let effectiveMlxPrompt = mlxPrompt(
+            from: prompt,
+            systemPrompt: effectiveSystemPrompt,
+            modelID: model.id
+        )
         let currentTopP = overrides?.topP ?? self.topP
         let currentTemperature = overrides?.temperature ?? self.temperature
         let currentMaxTokens = overrides?.maxTokens ?? self.maxTokens
@@ -213,50 +219,35 @@ final class LLMEngine {
             do {
                 if model.engine == .appleFoundation {
                     // Apple Foundation Path
-                    
-                    // Retrieve system prompt from settings if using default
-                    let effectiveSystemPrompt = systemPrompt == "You are a helpful AI assistant." 
-                        ? (UserDefaults.standard.string(forKey: "systemPrompt") ?? systemPrompt)
-                        : systemPrompt
-                        
-                    let session: FoundationModels.LanguageModelSession
-                    if let existingSession = currentAppleSession {
-                        session = existingSession
-                    } else {
-                        session = FoundationModels.LanguageModelSession(
-                            model: FoundationModels.SystemLanguageModel.default,
-                            instructions: effectiveSystemPrompt
-                        )
-                    }
-                    
-                    let options = FoundationModels.GenerationOptions(
-                        sampling: .random(probabilityThreshold: effectiveTopP),
+
+                    try await self.appleFoundationBridge.streamResponse(
+                        to: prompt,
+                        systemPrompt: effectiveSystemPrompt,
+                        topP: effectiveTopP,
                         temperature: effectiveTemperature,
-                        maximumResponseTokens: effectiveMaxTokens
-                    )
-                    
-                    let stream = session.streamResponse(to: prompt, options: options)
-                    var lastContent = ""
-                    
-                    for try await partialResponse in stream {
-                        if Task.isCancelled { break }
-                        lastContent = partialResponse.content
-                        await self.updateResponseIfNeeded(lastContent, force: false)
-                        if AssistantOutputSanitizer.containsControlMarker(partialResponse.content) {
-                            break
-                        }
-                    }
-                    
-                    await self.updateResponseIfNeeded(lastContent, force: true)
-                    
-                    await MainActor.run {
-                        self.appleSession = session
+                        maxTokens: effectiveMaxTokens
+                    ) { [weak self] content in
+                        guard let self else { return true }
+                        await self.updateResponseIfNeeded(content, force: false)
+                        return AssistantOutputSanitizer.containsControlMarker(content)
                     }
                 } else if model.engine == .mlx {
                     #if targetEnvironment(simulator)
                     throw LLMError.generationFailed("MLX is not available on the simulator.")
                     #else
-                    guard let session = currentMlxSession else {
+                    let session: LocalSession
+                    if usesEphemeralMlxSession {
+                        let persistentPath = MLXStorage.modelDirectory(for: model.id)
+                        let mlxModel: MLXLanguageModel
+                        if FileManager.default.fileExists(atPath: persistentPath.path) {
+                            mlxModel = MLXLanguageModel(modelId: model.id, directory: persistentPath)
+                        } else {
+                            mlxModel = MLXLanguageModel(modelId: model.id)
+                        }
+                        session = LocalSession(model: mlxModel, transcript: Transcript())
+                    } else if let currentMlxSession {
+                        session = currentMlxSession
+                    } else {
                         print("[LLMEngine] MLX session missing id=\(model.id)")
                         throw LLMError.modelNotLoaded
                     }
@@ -266,11 +257,10 @@ final class LLMEngine {
                         temperature: effectiveTemperature,
                         maximumResponseTokens: effectiveMaxTokens
                     )
-                    
                     // Stream MLX output so users see first tokens sooner and keep MLX errors throwable.
                     var lastContent = ""
                     try await withError {
-                        let stream = session.streamResponse(to: prompt, options: options)
+                        let stream = session.streamResponse(to: effectiveMlxPrompt, options: options)
                         for try await snapshot in stream {
                             if Task.isCancelled { break }
                             lastContent = snapshot.content
@@ -367,7 +357,7 @@ final class LLMEngine {
 
         switch model.engine {
         case .appleFoundation:
-            return appleSession != nil
+            return appleFoundationBridge.hasConversationContext
         case .mlx:
             #if targetEnvironment(simulator)
             return false
@@ -381,16 +371,10 @@ final class LLMEngine {
     var isAvailable: Bool {
         guard let model = currentModel else {
             // If no model selected, check if Apple Intelligence is available as fallback
-            if case .available = FoundationModels.SystemLanguageModel.default.availability {
-                return true
-            }
-            return false
+            return appleFoundationBridge.isAvailable
         }
         if model.engine == .appleFoundation {
-            if case .available = FoundationModels.SystemLanguageModel.default.availability {
-                return true
-            }
-            return false
+            return appleFoundationBridge.isAvailable
         }
         return true
     }
@@ -482,32 +466,17 @@ private extension LLMEngine {
         
         switch model.engine {
         case .appleFoundation:
-            // Check availability using SystemLanguageModel
-            let availability = FoundationModels.SystemLanguageModel.default.availability
-            switch availability {
-            case .available:
+            let availability = appleFoundationBridge.availability
+            if availability == .available {
                 let instructions = UserDefaults.standard.string(forKey: "systemPrompt") ?? "You are a helpful AI assistant."
-                appleSession = AppleSession(
-                    model: FoundationModels.SystemLanguageModel.default,
-                    instructions: instructions
-                )
+                try appleFoundationBridge.loadSession(instructions: instructions)
                 #if !targetEnvironment(simulator)
                 mlxSession = nil
                 mlxModelID = nil
                 #endif
                 state = .ready
-            case .unavailable(let reason):
-                let message: String
-                switch reason {
-                case .deviceNotEligible:
-                    message = "This device doesn't support Apple Intelligence."
-                case .modelNotReady:
-                    message = "Apple Intelligence model is not ready. Please check Settings."
-                case .appleIntelligenceNotEnabled:
-                    message = "Apple Intelligence is not enabled. Enable it in Settings > Apple Intelligence."
-                @unknown default:
-                    message = "Apple Intelligence is unavailable."
-                }
+            } else {
+                let message = availability.engineErrorMessage
                 state = .error(message: message)
                 throw LLMError.modelNotAvailable(message)
             }
@@ -540,16 +509,16 @@ private extension LLMEngine {
                     } else {
                         mlxModel = MLXLanguageModel(modelId: model.id)
                     }
-                    mlxSession = LocalSession(
-                        model: mlxModel,
-                        instructions: UserDefaults.standard.string(forKey: "systemPrompt") ?? "You are a helpful AI assistant."
-                    )
+                    let instructions: AnyLanguageModel.Instructions? = mlxSessionInstructions(for: model.id).map {
+                        AnyLanguageModel.Instructions($0)
+                    }
+                    mlxSession = LocalSession(model: mlxModel, instructions: instructions)
                     try ensureGPUWorkAllowed(for: model)
                     mlxSession?.prewarm()
                     mlxModelID = model.id
                     print("[LLMEngine] MLX session ready id=\(model.id)")
                 }
-                appleSession = nil
+                appleFoundationBridge.resetSession()
                 state = .ready
             } catch {
                 if error is CancellationError {
@@ -576,7 +545,7 @@ private extension LLMEngine {
 
         switch model.engine {
         case .appleFoundation:
-            return appleSession != nil
+            return appleFoundationBridge.hasConversationContext
         case .mlx:
             #if targetEnvironment(simulator)
             return false
@@ -584,6 +553,37 @@ private extension LLMEngine {
             return mlxSession != nil
             #endif
         }
+    }
+
+    func mlxSessionInstructions(for modelID: String) -> String? {
+        guard mlxModelSupportsSystemRole(modelID: modelID) else {
+            return nil
+        }
+
+        return UserDefaults.standard.string(forKey: "systemPrompt") ?? "You are a helpful AI assistant."
+    }
+
+    func mlxPrompt(from prompt: String, systemPrompt: String, modelID: String) -> String {
+        guard !mlxModelSupportsSystemRole(modelID: modelID) else {
+            return prompt
+        }
+
+        let trimmedSystemPrompt = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSystemPrompt.isEmpty else {
+            return prompt
+        }
+
+        return """
+        System instructions:
+        \(trimmedSystemPrompt)
+
+        User request:
+        \(prompt)
+        """
+    }
+
+    func mlxModelSupportsSystemRole(modelID: String) -> Bool {
+        !modelID.lowercased().contains("gemma")
     }
 }
 
