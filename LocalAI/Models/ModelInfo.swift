@@ -110,6 +110,88 @@ enum ModelDeviceFit: Equatable {
     }
 }
 
+enum ModelBadge: Equatable, Hashable {
+    case recommended
+    case fastest
+    case bestForCoding
+    case bestForWriting
+    case everydayChat
+    case multilingual
+    case reasoning
+    case fullyOnDevice
+    case mayUseAppleProcessing
+    case smallDownload
+    case higherQuality
+    case newerDevices
+
+    var title: String {
+        switch self {
+        case .recommended:
+            return "Recommended"
+        case .fastest:
+            return "Fastest"
+        case .bestForCoding:
+            return "Coding"
+        case .bestForWriting:
+            return "Writing"
+        case .everydayChat:
+            return "Everyday"
+        case .multilingual:
+            return "Multilingual"
+        case .reasoning:
+            return "Reasoning"
+        case .fullyOnDevice:
+            return "On-Device"
+        case .mayUseAppleProcessing:
+            return "Apple Processing"
+        case .smallDownload:
+            return "Small Download"
+        case .higherQuality:
+            return "Higher Quality"
+        case .newerDevices:
+            return "Newer Devices"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .recommended:
+            return "star.fill"
+        case .fastest:
+            return "bolt.fill"
+        case .bestForCoding:
+            return "terminal"
+        case .bestForWriting:
+            return "text.book.closed"
+        case .everydayChat:
+            return "bubble.left.and.bubble.right.fill"
+        case .multilingual:
+            return "globe"
+        case .reasoning:
+            return "brain.head.profile"
+        case .fullyOnDevice:
+            return "lock.shield"
+        case .mayUseAppleProcessing:
+            return "apple.logo"
+        case .smallDownload:
+            return "arrow.down.circle"
+        case .higherQuality:
+            return "sparkles"
+        case .newerDevices:
+            return "iphone.gen3"
+        }
+    }
+
+    var isHighlighted: Bool {
+        switch self {
+        case .recommended, .fastest, .bestForCoding, .bestForWriting:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 private struct CurrentDeviceProfile {
     let idiom: UIUserInterfaceIdiom
     let hardwareIdentifier: String
@@ -178,6 +260,9 @@ struct ModelInfo: Identifiable, Equatable {
     let engine: ModelEngine // Which engine to use
     let termsURL: URL?
     let privacyURL: URL?
+    let shortDescription: String
+    let recommendedFor: String
+    let badges: [ModelBadge]
     var downloadState: DownloadState
     
     static func == (lhs: ModelInfo, rhs: ModelInfo) -> Bool {
@@ -262,6 +347,10 @@ struct ModelInfo: Identifiable, Equatable {
     var defaultThinkingEnabled: Bool {
         false
     }
+
+    var privacyLabel: String {
+        isAppleFoundation ? "May use Apple processing" : "Fully on-device"
+    }
 }
 
 // MARK: - Available Models
@@ -276,6 +365,9 @@ extension ModelInfo {
         engine: .appleFoundation,
         termsURL: URL(string: "https://www.apple.com/legal/privacy/data/en/intelligence-engine/"),
         privacyURL: URL(string: "https://www.apple.com/legal/privacy/data/en/intelligence-engine/"),
+        shortDescription: "Built in, quick to start, and best for everyday use.",
+        recommendedFor: "Best for everyday questions when Apple Intelligence is available.",
+        badges: [.recommended, .everydayChat, .mayUseAppleProcessing],
         downloadState: .builtin
     )
 
@@ -289,6 +381,9 @@ extension ModelInfo {
         engine: .mlx,
         termsURL: URL(string: "https://ai.google.dev/gemma/terms"),
         privacyURL: nil,
+        shortDescription: "Balanced local model for reliable everyday chats.",
+        recommendedFor: "Good default for private everyday chat on most devices.",
+        badges: [.everydayChat, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -302,6 +397,9 @@ extension ModelInfo {
         engine: .mlx,
         termsURL: URL(string: "https://ai.google.dev/gemma/terms"),
         privacyURL: nil,
+        shortDescription: "Very light, responsive, and easy on storage.",
+        recommendedFor: "Best when you want a quick local model with a tiny download.",
+        badges: [.fastest, .smallDownload, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -315,6 +413,9 @@ extension ModelInfo {
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/Qwen/Qwen3-0.6B-MLX-4bit"),
         privacyURL: nil,
+        shortDescription: "Extremely small and fast with multilingual support.",
+        recommendedFor: "Best for the smallest possible download and basic multilingual chat.",
+        badges: [.smallDownload, .multilingual, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -328,6 +429,9 @@ extension ModelInfo {
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0"),
         privacyURL: nil,
+        shortDescription: "Fast to install, but output quality is more limited.",
+        recommendedFor: "Useful when storage matters more than answer quality.",
+        badges: [.smallDownload, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -341,6 +445,9 @@ extension ModelInfo {
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/Qwen/Qwen3-1.7B-MLX-4bit"),
         privacyURL: nil,
+        shortDescription: "Strong compact model for chat, writing, and languages.",
+        recommendedFor: "Great all-around local option for multilingual everyday use.",
+        badges: [.recommended, .everydayChat, .multilingual, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -354,6 +461,9 @@ extension ModelInfo {
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct"),
         privacyURL: nil,
+        shortDescription: "Balanced multilingual model that stays light on storage.",
+        recommendedFor: "Good for mixed everyday tasks with a smaller local footprint.",
+        badges: [.everydayChat, .multilingual, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -367,6 +477,9 @@ extension ModelInfo {
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"),
         privacyURL: nil,
+        shortDescription: "Compact reasoning-focused model for step-by-step answers.",
+        recommendedFor: "Best for explanations and more deliberate reasoning at a small size.",
+        badges: [.reasoning, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -380,6 +493,9 @@ extension ModelInfo {
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/Qwen/Qwen2.5-3B-Instruct"),
         privacyURL: nil,
+        shortDescription: "High quality per GB with stronger reasoning and writing.",
+        recommendedFor: "Best balance of quality and size for newer iPhones and iPads.",
+        badges: [.higherQuality, .bestForWriting, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -393,6 +509,9 @@ extension ModelInfo {
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/Qwen/Qwen3-4B-MLX-4bit"),
         privacyURL: nil,
+        shortDescription: "More capable Qwen tier for better reasoning and output quality.",
+        recommendedFor: "Best when you want stronger local quality and have a newer device.",
+        badges: [.higherQuality, .multilingual, .newerDevices, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -406,6 +525,9 @@ extension ModelInfo {
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct"),
         privacyURL: nil,
+        shortDescription: "A higher-quality local chat model with solid writing ability.",
+        recommendedFor: "Good for polished general responses on devices with a bit more headroom.",
+        badges: [.higherQuality, .bestForWriting, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -419,6 +541,9 @@ extension ModelInfo {
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct"),
         privacyURL: nil,
+        shortDescription: "Lightweight modern chat model with a small local footprint.",
+        recommendedFor: "Good if you want a small but modern-feeling local assistant.",
+        badges: [.smallDownload, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -432,6 +557,9 @@ extension ModelInfo {
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/microsoft/Phi-4-mini-instruct"),
         privacyURL: nil,
+        shortDescription: "One of the stronger compact options for coding and reasoning.",
+        recommendedFor: "Best for technical tasks and coding on newer devices.",
+        badges: [.bestForCoding, .reasoning, .newerDevices, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -445,6 +573,9 @@ extension ModelInfo {
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/microsoft/Phi-3.5-mini-instruct"),
         privacyURL: nil,
+        shortDescription: "Efficient reasoning-focused Phi model with solid technical output.",
+        recommendedFor: "Good for problem-solving and technical prompts fully on-device.",
+        badges: [.reasoning, .bestForCoding, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -458,6 +589,9 @@ extension ModelInfo {
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/microsoft/Phi-3-mini-4k-instruct"),
         privacyURL: nil,
+        shortDescription: "Compact Phi model with structured answers and good instruction following.",
+        recommendedFor: "Good for concise technical help on-device.",
+        badges: [.bestForCoding, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 

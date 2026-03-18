@@ -129,7 +129,7 @@ struct ModelFamilyDetailView: View {
                         .font(.subheadline)
                         .foregroundStyle(Color(white: 0.45))
 
-                    Text("Choose a specific \(family.title) variant to download or use.")
+                    Text(familyGuidance)
                         .font(.caption)
                         .foregroundStyle(Color(white: 0.5))
                 }
@@ -150,6 +150,16 @@ struct ModelFamilyDetailView: View {
         .background(Color(white: 0.96))
         .navigationTitle(family.title)
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var familyGuidance: String {
+        if let recommendedModel = models.first(where: { $0.badges.contains(.recommended) }) {
+            return "Start with \(recommendedModel.name) if you want the easiest pick."
+        }
+        if let codingModel = models.first(where: { $0.badges.contains(.bestForCoding) }) {
+            return "\(codingModel.name) is the strongest option here for technical tasks."
+        }
+        return "Choose a specific \(family.title) variant to download or use."
     }
 }
 
@@ -317,7 +327,7 @@ struct ModelCard: View {
                             .foregroundStyle(Color(white: 0.5))
                             .lineLimit(3)
                     } else {
-                        Text(model.description)
+                        Text(model.shortDescription)
                             .font(.subheadline)
                             .foregroundStyle(Color(white: 0.5))
                             .lineLimit(4)
@@ -493,36 +503,49 @@ struct ModelCard: View {
     @ViewBuilder
     private var modelInfoTags: some View {
         VStack(alignment: .leading, spacing: 8) {
-            if model.isAppleFoundation {
-                HStack(spacing: 10) {
-                    InfoTag(icon: "apple.logo", text: "Built-in", isHighlighted: true)
-                    InfoTag(icon: "lock.shield", text: "Private")
-                }
-            } else {
-                HStack(spacing: 10) {
-                    InfoTag(icon: "externaldrive", text: String(format: "%.1f GB", model.sizeGB))
-                    InfoTag(icon: "cpu", text: "On-Device")
+            Text(model.recommendedFor)
+                .font(.caption)
+                .foregroundStyle(Color(white: 0.42))
+                .fixedSize(horizontal: false, vertical: true)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    if model.isAppleFoundation {
+                        InfoTag(icon: "apple.logo", text: "Built-in", isHighlighted: true)
+                    } else {
+                        InfoTag(icon: "externaldrive", text: String(format: "%.1f GB", model.sizeGB))
+                    }
+
+                    InfoTag(
+                        icon: model.isAppleFoundation ? "hand.raised.fill" : "lock.shield",
+                        text: model.privacyLabel,
+                        isHighlighted: !model.isAppleFoundation
+                    )
+
+                    ForEach(Array(model.badges.prefix(3)), id: \.self) { badge in
+                        InfoTag(
+                            icon: badge.iconName,
+                            text: badge.title,
+                            isHighlighted: badge.isHighlighted
+                        )
+                    }
+
                     if model.downloadState.isDownloaded {
                         InfoTag(icon: "checkmark.circle.fill", text: "Ready", isHighlighted: true)
                     }
-                }
 
-                if model.supportsThinkingToggle {
-                    HStack(spacing: 10) {
-                        thinkingPill
-                    }
-                }
-
-                if let recommendationTagText = model.recommendationTagText {
-                    HStack(spacing: 10) {
+                    if let recommendationTagText = model.recommendationTagText {
                         InfoTag(
                             icon: model.currentDeviceFit.iconName,
                             text: recommendationTagText,
                             isHighlighted: model.currentDeviceFit.isHighlighted
                         )
                     }
-                }
 
+                    if model.supportsThinkingToggle {
+                        thinkingPill
+                    }
+                }
             }
         }
     }
