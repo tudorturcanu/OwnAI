@@ -114,32 +114,36 @@ final class DocumentManager {
         extractionProgress = 0.1
         
         let ext = url.pathExtension.lowercased()
-        let extraction = try await Task.detached(priority: .userInitiated) {
-            try Self.extractContent(at: url, fileExtension: ext)
-        }.value
-        
-        extractionProgress = 0.9
-        
-        // Check for empty content
-        guard !extraction.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        let attachedDocument = try await MemoryProfiler.measure("DocumentManager.processFile(\(url.lastPathComponent))") {
+            let extraction = try await Task.detached(priority: .userInitiated) {
+                try Self.extractContent(at: url, fileExtension: ext)
+            }.value
+            
+            extractionProgress = 0.9
+            
+            // Check for empty content
+            guard !extraction.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                extractionProgress = 0
+                throw DocumentError.emptyDocument
+            }
+            
+            extractionProgress = 1.0
+            
+            // Small delay so the user sees the completed progress
+            try? await Task.sleep(for: .milliseconds(200))
             extractionProgress = 0
-            throw DocumentError.emptyDocument
+            
+            return AttachedDocument(
+                url: url,
+                content: extraction.text,
+                extractedPages: extraction.extractedPages,
+                totalPages: extraction.totalPages,
+                fileSize: fileSize,
+                isTrimmed: extraction.text.count > Self.maxStoredCharacters
+            )
         }
         
-        extractionProgress = 1.0
-        
-        // Small delay so the user sees the completed progress
-        try? await Task.sleep(for: .milliseconds(200))
-        extractionProgress = 0
-        
-        return AttachedDocument(
-            url: url,
-            content: extraction.text,
-            extractedPages: extraction.extractedPages,
-            totalPages: extraction.totalPages,
-            fileSize: fileSize,
-            isTrimmed: extraction.text.count > Self.maxStoredCharacters
-        )
+        return attachedDocument
     }
 
     func documents(for conversationID: UUID?) -> [ConversationDocument] {

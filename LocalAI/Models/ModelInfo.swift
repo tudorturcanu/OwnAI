@@ -302,7 +302,7 @@ struct ModelInfo: Identifiable, Equatable {
     var recommendationTagText: String? {
         switch currentDeviceFit {
         case .recommended:
-            return "Recommended"
+            return nil
         case .supported:
             return nil
         case .unsupported:
@@ -403,6 +403,22 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Gemma 3 270M Instruct QAT (4-bit MLX)
+    static let gemma3_270m_qat_4bit = ModelInfo(
+        id: "mlx-community/gemma-3-270m-it-qat-4bit",
+        name: "Gemma 3 270M",
+        description: "An extremely small Gemma variant tuned for very fast startup and minimal storage on iPhone.",
+        family: .gemma,
+        sizeGB: 0.28,
+        engine: .mlx,
+        termsURL: URL(string: "https://ai.google.dev/gemma/terms"),
+        privacyURL: nil,
+        shortDescription: "Ultra-light Gemma option for the smallest local install.",
+        recommendedFor: "Best when you want a tiny iPhone-friendly model for short everyday prompts.",
+        badges: [.fastest, .smallDownload, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// Qwen3 0.6B MLX (4-bit)
     static let qwen3_0_6b_4bit = ModelInfo(
         id: "Qwen/Qwen3-0.6B-MLX-4bit",
@@ -416,6 +432,22 @@ extension ModelInfo {
         shortDescription: "Extremely small and fast with multilingual support.",
         recommendedFor: "Best for the smallest possible download and basic multilingual chat.",
         badges: [.smallDownload, .multilingual, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Qwen2.5 0.5B Instruct (4-bit MLX)
+    static let qwen25_0_5b_instruct_4bit = ModelInfo(
+        id: "mlx-community/Qwen2.5-0.5B-Instruct-4bit",
+        name: "Qwen2.5 0.5B",
+        description: "An ultra-light Qwen2.5 variant for the smallest downloads and fastest local startup on older or storage-constrained devices.",
+        family: .qwen,
+        sizeGB: 0.28,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct"),
+        privacyURL: nil,
+        shortDescription: "Tiny multilingual model with a very small local footprint.",
+        recommendedFor: "Best when you want the lightest possible install for simple chats.",
+        badges: [.fastest, .smallDownload, .multilingual, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -598,8 +630,10 @@ extension ModelInfo {
     static let allModels: [ModelInfo] = [
         .appleFoundation,  // Default - first in list
         .qwen3_0_6b_4bit,
+        .qwen25_0_5b_instruct_4bit,
         .tinyllama11b_chat_4bit,
         .llama32_1b_4bit,
+        .gemma3_270m_qat_4bit,
         .gemma3_1b_qat_4bit,
         .gemma2_2b_4bit,
         .qwen25_1_5b_instruct_4bit,

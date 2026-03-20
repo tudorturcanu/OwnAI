@@ -10,6 +10,7 @@ import SwiftUI
 struct ContentView: View {
     @Environment(ChatHistoryManager.self) private var historyManager
     @Environment(ModelManager.self) private var modelManager
+    @Environment(SpeechManager.self) private var speechManager
     @State private var showHistory = false
     @State private var showSettings = false
     @AppStorage("hasShownOnboarding") private var hasShownOnboarding = false
@@ -25,6 +26,7 @@ struct ContentView: View {
                     ToolbarItemGroup(placement: .topBarLeading) {
                         HStack(spacing: 0) {
                             Button {
+                                speechManager.stopSpeaking()
                                 showSettings = true
                             } label: {
                                 Image(systemName: "gearshape")
@@ -38,6 +40,7 @@ struct ContentView: View {
                                 .padding(.horizontal, 4)
                             
                             Button {
+                                speechManager.stopSpeaking()
                                 showHistory = true
                             } label: {
                                 Image(systemName: "bubble.left")
@@ -54,6 +57,7 @@ struct ContentView: View {
                     ToolbarItem(placement: .principal) {
                         HStack(spacing: 12) {
                             Button {
+                                speechManager.stopSpeaking()
                                 showSettings = true
                             } label: {
                                 VStack(spacing: 2) {
@@ -80,6 +84,7 @@ struct ContentView: View {
                     // Right: New Chat
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
+                            speechManager.stopSpeaking()
                             withAnimation {
                                 historyManager.newConversation()
                             }
@@ -109,8 +114,38 @@ struct ContentView: View {
                 showOnboarding = true
             }
         }
+        .onOpenURL { url in
+            handleIncomingURL(url)
+        }
     }
-    
+
+    private func handleIncomingURL(_ url: URL) {
+        showHistory = false
+        showSettings = false
+        showOnboarding = false
+
+        if let conversationID = conversationID(from: url),
+           historyManager.conversations.contains(where: { $0.id == conversationID }) {
+            historyManager.selectConversation(conversationID)
+        }
+    }
+
+    private func conversationID(from url: URL) -> UUID? {
+        guard url.scheme?.localizedCaseInsensitiveCompare("ownai") == .orderedSame else {
+            return nil
+        }
+
+        guard url.host?.localizedCaseInsensitiveCompare("conversation") == .orderedSame else {
+            return nil
+        }
+
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let idValue = components.queryItems?.first(where: { $0.name == "id" })?.value else {
+            return nil
+        }
+
+        return UUID(uuidString: idValue)
+    }
 
 }
 

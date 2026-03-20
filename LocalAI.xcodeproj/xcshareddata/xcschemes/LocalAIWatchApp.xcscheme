@@ -15,9 +15,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "8B8A3DBB2F2B75380010461E"
-               BuildableName = "LocalAI.app"
-               BlueprintName = "LocalAI"
+               BlueprintIdentifier = "C25D6C91C8ADB8E23A69AE3C"
+               BuildableName = "LocalAIWatchApp.app"
+               BlueprintName = "LocalAIWatchApp"
                ReferencedContainer = "container:LocalAI.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -44,19 +44,12 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "8B8A3DBB2F2B75380010461E"
-            BuildableName = "LocalAI.app"
-            BlueprintName = "LocalAI"
+            BlueprintIdentifier = "C25D6C91C8ADB8E23A69AE3C"
+            BuildableName = "LocalAIWatchApp.app"
+            BlueprintName = "LocalAIWatchApp"
             ReferencedContainer = "container:LocalAI.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
-      <EnvironmentVariables>
-         <EnvironmentVariable
-            key = "OS_ACTIVITY_MODE"
-            value = "disable"
-            isEnabled = "YES">
-         </EnvironmentVariable>
-      </EnvironmentVariables>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -68,9 +61,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "8B8A3DBB2F2B75380010461E"
-            BuildableName = "LocalAI.app"
-            BlueprintName = "LocalAI"
+            BlueprintIdentifier = "C25D6C91C8ADB8E23A69AE3C"
+            BuildableName = "LocalAIWatchApp.app"
+            BlueprintName = "LocalAIWatchApp"
             ReferencedContainer = "container:LocalAI.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

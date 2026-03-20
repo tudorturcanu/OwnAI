@@ -10,11 +10,28 @@ import UserNotifications
 
 final class NotificationManager {
     static let shared = NotificationManager()
+    
+    private let launchCountKey = "appLaunchCount"
+    private(set) var launchCount: Int {
+        get { UserDefaults.standard.integer(forKey: launchCountKey) }
+        set { UserDefaults.standard.set(newValue, forKey: launchCountKey) }
+    }
 
     private init() {}
+    
+    func incrementLaunchCount() {
+        launchCount += 1
+        print("[NotificationManager] Launch count incremented to \(launchCount)")
+    }
 
     @MainActor
     func requestAuthorizationIfNeeded() async -> Bool {
+        // Only ask on the 2nd launch or later
+        guard launchCount >= 2 else {
+            print("[NotificationManager] Skipping notification request (launchCount: \(launchCount))")
+            return false
+        }
+        
         let center = UNUserNotificationCenter.current()
         let settings = await center.notificationSettings()
         switch settings.authorizationStatus {

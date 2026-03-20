@@ -7,6 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		35450596CFE909F4695C7907 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3A8EE3D327FDFFA223930871 /* Assets.xcassets */; };
+		510D70D6AED3A9878F57BB80 /* WatchConnectivityClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DBCDC802F936048FF3DE499 /* WatchConnectivityClient.swift */; };
+		54FE08D92FBD8D7F203EECCC /* LocalAIWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60CB243AFDB195EF86D1CBB /* LocalAIWatchApp.swift */; };
+		6CFE0F75F748001302991B02 /* WatchConnectivityModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C48F86F5CC1AACA464AFB06 /* WatchConnectivityModels.swift */; };
+		7A1C45F0A9B24E5EBF2C3D11 /* WatchConnectivityModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C48F86F5CC1AACA464AFB06 /* WatchConnectivityModels.swift */; };
 		8B8A3DFD2F2B9BF70010461E /* MetalPerformanceShaders.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B8A3DFB2F2B9BF70010461E /* MetalPerformanceShaders.framework */; };
 		8B8A3DFE2F2B9BF70010461E /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B8A3DFC2F2B9BF70010461E /* Metal.framework */; };
 		8B8A3E092F2CCB980010461E /* Shimmer in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E082F2CCB980010461E /* Shimmer */; };
@@ -14,14 +19,59 @@
 		8B8A3E1A2F2D00010010461E /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E1D2F2D00010010461E /* MLXLMCommon */; };
 		8B8A3E1B2F2D00010010461E /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E1E2F2D00010010461E /* MLXLLM */; };
 		8B8A3F012F2B9C000010461E /* MetalPerformanceShadersGraph.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B8A3F002F2B9C000010461E /* MetalPerformanceShadersGraph.framework */; };
-		8BA1440A2F36200400EAAC6F /* LocalAIKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8BA144092F36200400EAAC6F /* LocalAIKit */; };
+		8EFFB0F2133ABDDAC075499D /* WatchAppView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91B85A67CC4B2D94DE6FCB4D /* WatchAppView.swift */; };
+		A3092C03ADE84812355F315F /* LocalAIWatchApp.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = EAB0C704B6924ED8F744E8E9 /* LocalAIWatchApp.app */; };
+		ABC594792F6CA7FC009F73AF /* AnyLanguageModel in Frameworks */ = {isa = PBXBuildFile; productRef = D1E000082F5000010010461E /* AnyLanguageModel */; };
+		D1E000022F5000010010461E /* MLXUtilsLibrary in Frameworks */ = {isa = PBXBuildFile; productRef = D1E000062F5000010010461E /* MLXUtilsLibrary */; };
+		F28C5059FAD018D9339B8132 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EE087FDCA43529C4708F4FE2 /* Foundation.framework */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		F5D6290DE433681D4CDBF5EB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8B8A3DB42F2B75380010461E /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C25D6C91C8ADB8E23A69AE3C;
+			remoteInfo = LocalAIWatchApp;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		B781217A2D87E60444C42B89 /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				A3092C03ADE84812355F315F /* LocalAIWatchApp.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C14E2F305162738495A6B7C8 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		3A8EE3D327FDFFA223930871 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = ../LocalAI/Assets.xcassets; sourceTree = "<group>"; };
+		5C48F86F5CC1AACA464AFB06 /* WatchConnectivityModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchConnectivityModels.swift; sourceTree = "<group>"; };
+		6DBCDC802F936048FF3DE499 /* WatchConnectivityClient.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchConnectivityClient.swift; sourceTree = "<group>"; };
 		8B8A3DBC2F2B75380010461E /* LocalAI.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LocalAI.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		8B8A3DFB2F2B9BF70010461E /* MetalPerformanceShaders.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalPerformanceShaders.framework; path = System/Library/Frameworks/MetalPerformanceShaders.framework; sourceTree = SDKROOT; };
 		8B8A3DFC2F2B9BF70010461E /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		8B8A3F002F2B9C000010461E /* MetalPerformanceShadersGraph.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetalPerformanceShadersGraph.framework; path = System/Library/Frameworks/MetalPerformanceShadersGraph.framework; sourceTree = SDKROOT; };
+		91B85A67CC4B2D94DE6FCB4D /* WatchAppView.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchAppView.swift; sourceTree = "<group>"; };
+		D60CB243AFDB195EF86D1CBB /* LocalAIWatchApp.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocalAIWatchApp.swift; sourceTree = "<group>"; };
+		EAB0C704B6924ED8F744E8E9 /* LocalAIWatchApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = LocalAIWatchApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EE087FDCA43529C4708F4FE2 /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS11.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -46,30 +96,58 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		6BE77C9A7C00E591EA0C28BA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F28C5059FAD018D9339B8132 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		8B8A3DB92F2B75380010461E /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				ABC594792F6CA7FC009F73AF /* AnyLanguageModel in Frameworks */,
 				8B8A3E092F2CCB980010461E /* Shimmer in Frameworks */,
 				8B8A3F012F2B9C000010461E /* MetalPerformanceShadersGraph.framework in Frameworks */,
 				8B8A3DFD2F2B9BF70010461E /* MetalPerformanceShaders.framework in Frameworks */,
 				8B8A3DFE2F2B9BF70010461E /* Metal.framework in Frameworks */,
-				8BA1440A2F36200400EAAC6F /* LocalAIKit in Frameworks */,
 				8B8A3E0C2F2CCBE90010461E /* MarkdownUI in Frameworks */,
 				8B8A3E1A2F2D00010010461E /* MLXLMCommon in Frameworks */,
 				8B8A3E1B2F2D00010010461E /* MLXLLM in Frameworks */,
+				D1E000022F5000010010461E /* MLXUtilsLibrary in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		36F609E71D4183A265906863 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				5C48F86F5CC1AACA464AFB06 /* WatchConnectivityModels.swift */,
+				3A8EE3D327FDFFA223930871 /* Assets.xcassets */,
+			);
+			path = Shared;
+			sourceTree = "<group>";
+		};
+		456034DCCBAE92254A3CDFED /* watchOS */ = {
+			isa = PBXGroup;
+			children = (
+				EE087FDCA43529C4708F4FE2 /* Foundation.framework */,
+			);
+			name = watchOS;
+			sourceTree = "<group>";
+		};
 		8B8A3DB32F2B75380010461E = {
 			isa = PBXGroup;
 			children = (
 				8B8A3DBE2F2B75380010461E /* LocalAI */,
 				8B8A3DFA2F2B9BF60010461E /* Frameworks */,
 				8B8A3DBD2F2B75380010461E /* Products */,
+				36F609E71D4183A265906863 /* Shared */,
+				AA78A2F3B7FC729B067F100E /* LocalAIWatchApp */,
 			);
 			sourceTree = "<group>";
 		};
@@ -77,6 +155,7 @@
 			isa = PBXGroup;
 			children = (
 				8B8A3DBC2F2B75380010461E /* LocalAI.app */,
+				EAB0C704B6924ED8F744E8E9 /* LocalAIWatchApp.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -87,8 +166,19 @@
 				8B8A3DFC2F2B9BF70010461E /* Metal.framework */,
 				8B8A3DFB2F2B9BF70010461E /* MetalPerformanceShaders.framework */,
 				8B8A3F002F2B9C000010461E /* MetalPerformanceShadersGraph.framework */,
+				456034DCCBAE92254A3CDFED /* watchOS */,
 			);
 			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		AA78A2F3B7FC729B067F100E /* LocalAIWatchApp */ = {
+			isa = PBXGroup;
+			children = (
+				D60CB243AFDB195EF86D1CBB /* LocalAIWatchApp.swift */,
+				6DBCDC802F936048FF3DE499 /* WatchConnectivityClient.swift */,
+				91B85A67CC4B2D94DE6FCB4D /* WatchAppView.swift */,
+			);
+			path = LocalAIWatchApp;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -101,10 +191,13 @@
 				8B8A3DB82F2B75380010461E /* Sources */,
 				8B8A3DB92F2B75380010461E /* Frameworks */,
 				8B8A3DBA2F2B75380010461E /* Resources */,
+				C14E2F305162738495A6B7C8 /* Embed Frameworks */,
+				B781217A2D87E60444C42B89 /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				B601CD699EEF9148428F22D6 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				8B8A3DBE2F2B75380010461E /* LocalAI */,
@@ -115,10 +208,28 @@
 				8B8A3E0B2F2CCBE90010461E /* MarkdownUI */,
 				8B8A3E1D2F2D00010010461E /* MLXLMCommon */,
 				8B8A3E1E2F2D00010010461E /* MLXLLM */,
-				8BA144092F36200400EAAC6F /* LocalAIKit */,
+				D1E000082F5000010010461E /* AnyLanguageModel */,
+				D1E000062F5000010010461E /* MLXUtilsLibrary */,
 			);
 			productName = LocalAI;
 			productReference = 8B8A3DBC2F2B75380010461E /* LocalAI.app */;
+			productType = "com.apple.product-type.application";
+		};
+		C25D6C91C8ADB8E23A69AE3C /* LocalAIWatchApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B592D6C7105FA391A3E79B0F /* Build configuration list for PBXNativeTarget "LocalAIWatchApp" */;
+			buildPhases = (
+				0772D29571F58D96BFF73DB4 /* Sources */,
+				6BE77C9A7C00E591EA0C28BA /* Frameworks */,
+				6A58F7B4253F06ABED38E28D /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = LocalAIWatchApp;
+			productName = LocalAIWatchApp;
+			productReference = EAB0C704B6924ED8F744E8E9 /* LocalAIWatchApp.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -129,9 +240,12 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
 				LastSwiftUpdateCheck = 2620;
-				LastUpgradeCheck = 2620;
+				LastUpgradeCheck = 2630;
 				TargetAttributes = {
 					8B8A3DBB2F2B75380010461E = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					C25D6C91C8ADB8E23A69AE3C = {
 						CreatedOnToolsVersion = 26.2;
 					};
 				};
@@ -149,7 +263,8 @@
 				8B8A3E072F2CCB980010461E /* XCRemoteSwiftPackageReference "SwiftUI-Shimmer" */,
 				8B8A3E0A2F2CCBE90010461E /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 				8B8A3E1C2F2D00010010461E /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
-				8BA144082F36200400EAAC6F /* XCLocalSwiftPackageReference "Packages/LocalAIKit" */,
+				D1E000072F5000010010461E /* XCRemoteSwiftPackageReference "AnyLanguageModel" */,
+				D1E000042F5000010010461E /* XCRemoteSwiftPackageReference "MLXUtilsLibrary" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8B8A3DBD2F2B75380010461E /* Products */;
@@ -157,11 +272,20 @@
 			projectRoot = "";
 			targets = (
 				8B8A3DBB2F2B75380010461E /* LocalAI */,
+				C25D6C91C8ADB8E23A69AE3C /* LocalAIWatchApp */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		6A58F7B4253F06ABED38E28D /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				35450596CFE909F4695C7907 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		8B8A3DBA2F2B75380010461E /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -172,16 +296,66 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		0772D29571F58D96BFF73DB4 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6CFE0F75F748001302991B02 /* WatchConnectivityModels.swift in Sources */,
+				54FE08D92FBD8D7F203EECCC /* LocalAIWatchApp.swift in Sources */,
+				510D70D6AED3A9878F57BB80 /* WatchConnectivityClient.swift in Sources */,
+				8EFFB0F2133ABDDAC075499D /* WatchAppView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		8B8A3DB82F2B75380010461E /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7A1C45F0A9B24E5EBF2C3D11 /* WatchConnectivityModels.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		B601CD699EEF9148428F22D6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = LocalAIWatchApp;
+			target = C25D6C91C8ADB8E23A69AE3C /* LocalAIWatchApp */;
+			targetProxy = F5D6290DE433681D4CDBF5EB /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		4A6C1592CD440D1F56943E86 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 75YTB67VJZ;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Own Ai";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = alice.turcanu.LocalAI;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited)";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = alice.turcanu.LocalAI.watchapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				VALIDATE_PRODUCT = YES;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Release;
+		};
 		8B8A3DC52F2B753A0010461E /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -241,6 +415,7 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 			};
@@ -298,6 +473,7 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				VALIDATE_PRODUCT = YES;
 			};
@@ -381,6 +557,34 @@
 			};
 			name = Release;
 		};
+		B0E4C219CB5433C76E7DB29E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 75YTB67VJZ;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Own Ai";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = alice.turcanu.LocalAI;
+				LD_RUNPATH_SEARCH_PATHS = "$(inherited)";
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = alice.turcanu.LocalAI.watchapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 11.0;
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -402,14 +606,16 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-/* End XCConfigurationList section */
-
-/* Begin XCLocalSwiftPackageReference section */
-		8BA144082F36200400EAAC6F /* XCLocalSwiftPackageReference "Packages/LocalAIKit" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = Packages/LocalAIKit;
+		B592D6C7105FA391A3E79B0F /* Build configuration list for PBXNativeTarget "LocalAIWatchApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4A6C1592CD440D1F56943E86 /* Release */,
+				B0E4C219CB5433C76E7DB29E /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
 		};
-/* End XCLocalSwiftPackageReference section */
+/* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
 		8B8A3E072F2CCB980010461E /* XCRemoteSwiftPackageReference "SwiftUI-Shimmer" */ = {
@@ -436,6 +642,22 @@
 				minimumVersion = 2.30.3;
 			};
 		};
+		D1E000042F5000010010461E /* XCRemoteSwiftPackageReference "MLXUtilsLibrary" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mlalma/MLXUtilsLibrary.git";
+			requirement = {
+				kind = exactVersion;
+				version = 0.0.6;
+			};
+		};
+		D1E000072F5000010010461E /* XCRemoteSwiftPackageReference "AnyLanguageModel" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/mattt/AnyLanguageModel";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.7.1;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -459,10 +681,15 @@
 			package = 8B8A3E1C2F2D00010010461E /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
 			productName = MLXLLM;
 		};
-		8BA144092F36200400EAAC6F /* LocalAIKit */ = {
+		D1E000062F5000010010461E /* MLXUtilsLibrary */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 8BA144082F36200400EAAC6F /* XCLocalSwiftPackageReference "Packages/LocalAIKit" */;
-			productName = LocalAIKit;
+			package = D1E000042F5000010010461E /* XCRemoteSwiftPackageReference "MLXUtilsLibrary" */;
+			productName = MLXUtilsLibrary;
+		};
+		D1E000082F5000010010461E /* AnyLanguageModel */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D1E000072F5000010010461E /* XCRemoteSwiftPackageReference "AnyLanguageModel" */;
+			productName = AnyLanguageModel;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

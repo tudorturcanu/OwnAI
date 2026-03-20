@@ -13,7 +13,12 @@ struct LocalAIApp: App {
     @State private var historyManager = ChatHistoryManager()
     @State private var modelManager = ModelManager()
     @State private var speechManager = SpeechManager()
+    @State private var watchSessionManager = WatchConnectivitySessionManager()
     @Environment(\.scenePhase) private var scenePhase
+    
+    init() {
+        NotificationManager.shared.incrementLaunchCount()
+    }
     
     var body: some Scene {
         WindowGroup {
@@ -22,12 +27,22 @@ struct LocalAIApp: App {
                 .environment(historyManager)
                 .environment(modelManager)
                 .environment(speechManager)
+                .environment(watchSessionManager)
                 .preferredColorScheme(.light)
                 .onAppear {
+                    watchSessionManager.configure(
+                        llmEngine: llmEngine,
+                        historyManager: historyManager,
+                        modelManager: modelManager
+                    )
+                    watchSessionManager.handleScenePhaseChange(scenePhase)
                     llmEngine.handleScenePhaseChange(scenePhase)
+                    speechManager.handleScenePhaseChange(scenePhase)
                 }
                 .onChange(of: scenePhase) {
+                    watchSessionManager.handleScenePhaseChange(scenePhase)
                     llmEngine.handleScenePhaseChange(scenePhase)
+                    speechManager.handleScenePhaseChange(scenePhase)
                     if scenePhase == .active {
                         historyManager.applyRetentionPolicy()
                     }

@@ -7,7 +7,7 @@
 
 import Foundation
 import SwiftUI
-import LocalAIKit
+import AnyLanguageModel
 import UIKit
 
 #if !targetEnvironment(simulator)
@@ -61,6 +61,9 @@ final class LLMEngine {
     var streamingTokensPerSecond: Double = 0
     private var streamingStartTime: Date?
     
+    private var idleTimerTask: Task<Void, Never>?
+    private let idleTimeout: TimeInterval = 600 // 10 minutes
+    
     // Throttling
     private var lastUpdate: Date = .distantPast
     private var throttleInterval: TimeInterval {
@@ -112,15 +115,41 @@ final class LLMEngine {
             }
         }
         do {
-            try await task.value
+            try await MemoryProfiler.measure("LLMEngine.loadModel(\(model.id))") {
+                try await task.value
+            }
+            resetIdleTimer()
         } catch is CancellationError {
             // Canceled loads shouldn't surface as errors.
             return
         }
     }
     
-    /// Unload the current model
+    private func resetIdleTimer() {
+        idleTimerTask?.cancel()
+        idleTimerTask = Task { [weak self] in
+            guard let self = self else { return }
+            do {
+                try await Task.sleep(nanoseconds: UInt64(idleTimeout * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    self.unloadModelIfIdle()
+                }
+            } catch {
+                // Task cancelled
+            }
+        }
+    }
+
+    private func unloadModelIfIdle() {
+        guard state == .ready || state == .idle else { return }
+        // We unload even if active if no generation has happened for idleTimeout
+        MemoryProfiler.log("LLMEngine", message: "Auto-unloading model due to 10m inactivity.")
+        unloadModel()
+    }
+    
     func unloadModel() {
+        MemoryProfiler.log("LLMEngine.unloadModel", message: "BEFORE - state: \(state), model: \(currentModel?.id ?? "none")")
         appleFoundationBridge.resetSession()
         #if !targetEnvironment(simulator)
         mlxSession = nil
@@ -132,6 +161,9 @@ final class LLMEngine {
         loadTaskID = nil
         currentModel = nil
         state = .idle
+        idleTimerTask?.cancel()
+        idleTimerTask = nil
+        MemoryProfiler.log("LLMEngine.unloadModel", message: "AFTER")
     }
     
     /// Reset conversation session (keeps model loaded).
@@ -185,6 +217,7 @@ final class LLMEngine {
         try ensureGPUWorkAllowed(for: model)
         
         state = .generating
+        IdleTimerCoordinator.shared.setReason("llmGenerating", enabled: true)
         currentResponse = ""
         streamingMessageID = UUID() // New unique ID for this generation session
         lastUpdate = .distantPast
@@ -277,6 +310,7 @@ final class LLMEngine {
                 // Finalize state
                 await MainActor.run {
                     self.state = .ready
+                    IdleTimerCoordinator.shared.setReason("llmGenerating", enabled: false)
                     self.generationTask = nil
                     self.streamingStartTime = nil
                     self.streamingTokensPerSecond = 0
@@ -284,6 +318,7 @@ final class LLMEngine {
             } catch is CancellationError {
                 await MainActor.run {
                     self.state = .ready
+                    IdleTimerCoordinator.shared.setReason("llmGenerating", enabled: false)
                     self.generationTask = nil
                     self.streamingStartTime = nil
                     self.streamingTokensPerSecond = 0
@@ -292,6 +327,7 @@ final class LLMEngine {
                 print("[LLMEngine] generate failed id=\(model.id) error=\(error.localizedDescription)")
                 await MainActor.run {
                     self.state = .error(message: error.localizedDescription)
+                    IdleTimerCoordinator.shared.setReason("llmGenerating", enabled: false)
                     self.generationTask = nil
                     self.streamingStartTime = nil
                     self.streamingTokensPerSecond = 0
@@ -300,7 +336,10 @@ final class LLMEngine {
         }
         
         generationTask = task
-        await task.value
+        await MemoryProfiler.measure("LLMEngine.generate(\(model.id))") {
+            await task.value
+        }
+        resetIdleTimer()
     }
     
     /// Throttled UI update
@@ -324,11 +363,13 @@ final class LLMEngine {
         generationTask?.cancel()
         generationTask = nil
         state = .ready
+        IdleTimerCoordinator.shared.setReason("llmGenerating", enabled: false)
         streamingStartTime = nil
         streamingTokensPerSecond = 0
         // Note: The UI layer (ChatView) will handle cleaning up the history message 
         // when currentResponse is cleared or via its own observation.
         currentResponse = "" 
+        resetIdleTimer()
     }
 
     func handleScenePhaseChange(_ phase: ScenePhase) {
@@ -349,6 +390,7 @@ final class LLMEngine {
 
         if state == .generating || state == .loading {
             state = hasLoadedSession(for: currentModel) ? .ready : .idle
+            IdleTimerCoordinator.shared.setReason("llmGenerating", enabled: false)
         }
     }
 

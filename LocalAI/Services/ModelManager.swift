@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import LocalAIKit
 import Hub
 import SwiftUI
 import UIKit
@@ -345,7 +344,7 @@ final class ModelManager {
     /// Keeps the screen awake while any download is in progress
     private func updateIdleTimer() {
         let hasActiveDownloads = !downloadTasks.isEmpty
-        UIApplication.shared.isIdleTimerDisabled = hasActiveDownloads
+        IdleTimerCoordinator.shared.setReason("downloads", enabled: hasActiveDownloads)
     }
     
     // MARK: - Background Task

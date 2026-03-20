@@ -41,17 +41,19 @@ actor RAGEngine {
     private init() {}
 
     func ingest(text: String, documentID: UUID, conversationID: UUID) async {
-        let rawChunks = chunkText(text, size: 800, overlap: 100)
+        await MemoryProfiler.measure("RAGEngine.ingest(doc: \(documentID))") {
+            let rawChunks = chunkText(text, size: 800, overlap: 100)
 
-        for chunkContent in rawChunks {
-            if let vector = embeddingModel?.vector(for: chunkContent) {
-                let chunk = TextChunk(
-                    conversationID: conversationID,
-                    documentID: documentID,
-                    content: chunkContent,
-                    embedding: vector
-                )
-                chunks.append(chunk)
+            for chunkContent in rawChunks {
+                if let vector = embeddingModel?.vector(for: chunkContent) {
+                    let chunk = TextChunk(
+                        conversationID: conversationID,
+                        documentID: documentID,
+                        content: chunkContent,
+                        embedding: vector
+                    )
+                    chunks.append(chunk)
+                }
             }
         }
     }

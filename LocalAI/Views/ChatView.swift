@@ -21,6 +21,7 @@ struct ChatView: View {
     @State private var documentError: String?
     @State private var voiceError: String?
     @State private var streamingPrefix = ""
+    @State private var speechStreamingSpokenCharCount: Int = 0
     
     var body: some View {
         alertContent
@@ -97,10 +98,14 @@ struct ChatView: View {
             .onAppear {
                 prewarmModel()
             }
+            .onDisappear {
+                speechManager.stopSpeaking()
+            }
             .onChange(of: modelManager.selectedModelID) {
                 prewarmModel()
             }
             .onChange(of: historyManager.currentConversationID) {
+                speechManager.stopSpeaking()
                 llmEngine.resetSession()
             }
             .onChange(of: speechManager.transcribedText) {
@@ -124,7 +129,12 @@ struct ChatView: View {
                 guard voiceConversationMode else { return }
                 guard llmEngine.state != .generating else { return }
                 guard !speechManager.isListening else { return }
+                guard speechManager.isSpeechQueueEmpty else { return }
                 startListeningIfPossible()
+            }
+            .onChange(of: llmEngine.currentResponse) {
+                guard llmEngine.state == .generating else { return }
+                guard voiceConversationMode else { return }
             }
     }
 
@@ -202,6 +212,10 @@ struct ChatView: View {
                                 recoveryAction: recoveryAction
                             )
                                 .id(message.id)
+                        }
+
+                        if let speakableMessage = latestSpeakableAssistantMessage {
+                            speakReplyButton(for: speakableMessage)
                         }
                     }
                     
@@ -489,6 +503,15 @@ struct ChatView: View {
         documentManager.documents(for: historyManager.currentConversationID)
     }
 
+    private var latestSpeakableAssistantMessage: ChatMessage? {
+        guard autoRead else { return nil }
+        guard let lastMessage = historyManager.currentMessages.last else { return nil }
+        guard lastMessage.role == .assistant, !lastMessage.isStreaming else { return nil }
+        let trimmedContent = lastMessage.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedContent.isEmpty else { return nil }
+        return lastMessage
+    }
+
     private var conversationDocumentsStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
@@ -557,6 +580,28 @@ struct ChatView: View {
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
+    }
+
+    private func speakReplyButton(for message: ChatMessage) -> some View {
+        Button {
+            toggleSpeechPlayback(for: message)
+        } label: {
+            Label(
+                speechManager.isSpeaking ? "Stop Speaking" : "Speak Reply",
+                systemImage: speechManager.isSpeaking ? "speaker.slash.fill" : "speaker.wave.2.fill"
+            )
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.blue)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(Color.white.opacity(0.9))
+            .clipShape(Capsule())
+            .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
+        }
+        .buttonStyle(.plain)
+        .padding(.top, 4)
+        .padding(.bottom, 6)
+        .accessibilityHint("Reads the latest assistant reply aloud.")
     }
 
     private var microphoneControls: some View {
@@ -679,6 +724,7 @@ struct ChatView: View {
     private func startListeningIfPossible() {
         guard llmEngine.state != .generating else { return }
         guard !speechManager.isSpeaking else { return }
+        guard speechManager.isSpeechQueueEmpty else { return }
         do {
             try speechManager.startListening()
         } catch {
@@ -754,6 +800,9 @@ struct ChatView: View {
             }
 
             streamingPrefix = existingPrefix
+            speechStreamingSpokenCharCount = AssistantOutputSanitizer.sanitize(existingPrefix)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .count
             llmEngine.currentResponse = ""
 
             if historyManager.currentMessages.contains(where: { $0.id == assistantID }) {
@@ -833,7 +882,7 @@ struct ChatView: View {
             streamingPrefix = ""
 
             let spokenReply = historyManager.currentMessages.last?.content.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if (autoRead || voiceConversationMode), !spokenReply.isEmpty {
+            if voiceConversationMode, !spokenReply.isEmpty {
                 speechManager.speak(spokenReply)
             } else if voiceConversationMode {
                 startListeningIfPossible()
@@ -861,6 +910,105 @@ struct ChatView: View {
                 speechManager.speak(errorText)
             }
         }
+    }
+
+    private func toggleSpeechPlayback(for message: ChatMessage) {
+        if speechManager.isSpeaking || !speechManager.isSpeechQueueEmpty {
+            speechManager.stopSpeaking()
+            return
+        }
+
+        if speechManager.isListening {
+            speechManager.stopListening()
+        }
+
+        let text = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        speechManager.speak(text)
+    }
+
+    private func maybeEnqueueKokoroSpeechWhileStreaming() {
+        // SpeechManager handles the actual synthesis/playback queue; here we only decide *what* chunk to enqueue.
+        let visibleText = AssistantOutputSanitizer
+            .sanitize(combinedStreamingContent(for: llmEngine.currentResponse))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        guard !visibleText.isEmpty else { return }
+        guard speechStreamingSpokenCharCount < visibleText.count else { return }
+        
+        let spokenCount = min(speechStreamingSpokenCharCount, visibleText.count)
+        let startIndex = visibleText.index(visibleText.startIndex, offsetBy: spokenCount)
+        let tail = visibleText[startIndex...]
+        
+        // Kokoro chunk size needs to be small enough that sentence 2 can start
+        // before the model finishes generating the whole sentence.
+        let minChunkChars = 6
+        
+        // Prefer sentence-like boundaries (end punctuation / newline).
+        if let boundaryEnd = lastSpeakableBoundaryEndIndex(in: tail) {
+            let chunk = tail[..<boundaryEnd]
+            let trimmedChunk = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            // Avoid enqueuing tiny fragments that make Kokoro feel sluggish.
+            guard trimmedChunk.count >= minChunkChars else { return }
+            
+            speechManager.enqueueSpeak(String(trimmedChunk))
+            speechStreamingSpokenCharCount = visibleText.distance(from: visibleText.startIndex, to: boundaryEnd)
+            return
+        }
+        
+        // If we don't have an end boundary yet, enqueue an earlier chunk so sentence 2 can start sooner.
+        // (Lower threshold helps avoid silence gaps in short sentences.)
+        let fallbackTriggerChars = 30
+        guard tail.count >= fallbackTriggerChars else { return }
+        
+        let fallbackMaxChars = 90
+        let desiredEndCount = min(fallbackMaxChars, tail.count)
+        let desiredEnd = tail.index(tail.startIndex, offsetBy: desiredEndCount)
+        let prefix = tail[..<desiredEnd]
+        
+        // Cut at the last whitespace before `desiredEnd` to avoid chopping words.
+        let endForChunk = lastWhitespaceEndIndex(in: prefix) ?? desiredEnd
+        guard endForChunk > tail.startIndex else { return }
+        
+        let chunk = tail[..<endForChunk]
+        let trimmedChunk = chunk.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedChunk.count >= minChunkChars else { return }
+        
+        speechManager.enqueueSpeak(String(trimmedChunk))
+        speechStreamingSpokenCharCount = visibleText.distance(from: visibleText.startIndex, to: endForChunk)
+    }
+
+    private func lastSpeakableBoundaryEndIndex(in text: Substring) -> String.Index? {
+        var lastEnd: String.Index? = nil
+        var idx = text.startIndex
+        
+        while idx < text.endIndex {
+            let ch = text[idx]
+            if ch == "\n" {
+                lastEnd = text.index(after: idx)
+            } else if ch == "." || ch == "!" || ch == "?" {
+                let next = text.index(after: idx)
+                if next == text.endIndex || text[next].isWhitespace {
+                    lastEnd = text.index(after: idx)
+                }
+            }
+            idx = text.index(after: idx)
+        }
+        
+        return lastEnd
+    }
+    
+    private func lastWhitespaceEndIndex(in text: Substring) -> String.Index? {
+        guard !text.isEmpty else { return nil }
+        var idx = text.endIndex
+        while idx > text.startIndex {
+            idx = text.index(before: idx)
+            if text[idx].isWhitespace {
+                return text.index(after: idx)
+            }
+        }
+        return nil
     }
 
     private func continueResponse(for message: ChatMessage) {

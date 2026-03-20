@@ -66,18 +66,25 @@ struct ModelDownloadView: View {
     }
     
     private var headerView: some View {
-        VStack(spacing: 8) {
-            HStack {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "info.circle.fill")
                     .foregroundStyle(.blue.opacity(0.8))
-                
+
                 Text(modelManager.isAppleIntelligenceDeviceSupported ?
                      "Choose a model family first. Apple Intelligence is built-in, while other families open into downloadable variants." :
                      "Choose a model family first, then pick a variant to download and run on your device.")
                     .font(.subheadline)
                     .foregroundStyle(Color(white: 0.4))
-                
-                Spacer()
+            }
+
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "applewatch.radiowaves.left.and.right")
+                    .foregroundStyle(.orange.opacity(0.85))
+
+                Text("Using Apple Watch too? Smaller models usually reply faster because requests still run on your iPhone.")
+                    .font(.caption)
+                    .foregroundStyle(Color(white: 0.45))
             }
         }
         .padding(16)
