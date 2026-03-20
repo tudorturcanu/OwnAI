@@ -11,12 +11,10 @@ struct SettingsView: View {
     @Environment(LLMEngine.self) private var llmEngine
     @Environment(ChatHistoryManager.self) private var historyManager
     @Environment(ModelManager.self) private var modelManager
-    @Environment(SpeechManager.self) private var speechManager
     @State private var documentManager = DocumentManager.shared
     @AppStorage("lowPowerMode") private var lowPowerMode = false
     @AppStorage("historyRetentionDays") private var historyRetentionDays = 0
     @AppStorage("autoRead") private var autoRead = false
-    @AppStorage("voiceConversationMode") private var voiceConversationMode = false
     @State private var showClearHistoryConfirmation = false
     @State private var showClearDocumentsConfirmation = false
     
@@ -49,9 +47,6 @@ struct SettingsView: View {
                         }
                     }
                     
-                    // Content Safety
-                    contentSafetySection
-
                     // Privacy Controls
                     privacyControlsSection
 
@@ -60,6 +55,9 @@ struct SettingsView: View {
 
                     // Performance
                     performanceSection
+
+                    // Content Safety
+                    contentSafetySection
                     
                     // Legal Section
                     legalSection
@@ -257,7 +255,7 @@ struct SettingsView: View {
 
     private var privacyControlsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Privacy Controls")
+            Text("Privacy")
                 .font(.headline)
                 .foregroundStyle(Color(white: 0.2))
 
@@ -269,10 +267,10 @@ struct SettingsView: View {
                         .frame(width: 24)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Storage")
+                        Text("Your Data Stays on This Device")
                             .font(.body)
                             .foregroundStyle(Color(white: 0.1))
-                        Text("Chats stay on this device.")
+                        Text("Chats and imported files stay on this device.")
                             .font(.caption)
                             .foregroundStyle(Color(white: 0.5))
                     }
@@ -294,10 +292,10 @@ struct SettingsView: View {
                             .frame(width: 24)
 
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Cleanup")
+                            Text("Clear Memory")
                                 .font(.body)
                                 .foregroundStyle(Color(white: 0.1))
-                            Text(cleanupSizeText)
+                            Text("Free up \(cleanupSizeText) without deleting chats.")
                                 .font(.caption)
                                 .foregroundStyle(Color(white: 0.5))
                         }
@@ -316,13 +314,18 @@ struct SettingsView: View {
                         .foregroundStyle(.orange)
                         .frame(width: 24)
 
-                    Text("Auto-Delete History")
-                        .font(.body)
-                        .foregroundStyle(Color(white: 0.1))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Auto-Delete Chats")
+                            .font(.body)
+                            .foregroundStyle(Color(white: 0.1))
+                        Text("Delete saved chats after")
+                            .font(.caption)
+                            .foregroundStyle(Color(white: 0.5))
+                    }
 
                     Spacer()
 
-                    Picker("Auto-Delete History", selection: $historyRetentionDays) {
+                    Picker("Auto-Delete Chats", selection: $historyRetentionDays) {
                         ForEach(retentionOptions, id: \.self) { days in
                             Text(retentionLabel(for: days)).tag(days)
                         }
@@ -347,9 +350,14 @@ struct SettingsView: View {
                             .foregroundStyle(.red)
                             .frame(width: 24)
 
-                        Text("Clear All History")
-                            .font(.body)
-                            .foregroundStyle(.red)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Delete All Chats")
+                                .font(.body)
+                                .foregroundStyle(.red)
+                            Text("Permanently removes every saved conversation from this device.")
+                                .font(.caption)
+                                .foregroundStyle(Color(white: 0.5))
+                        }
 
                         Spacer()
                     }
@@ -357,26 +365,22 @@ struct SettingsView: View {
                     .padding(.vertical, 16)
                 }
             }
-
-            Text("Auto-delete removes conversations after their last activity date.")
-                .font(.caption)
-                .foregroundStyle(Color(white: 0.5))
         }
-        .alert("Clear all chat history?", isPresented: $showClearHistoryConfirmation) {
+        .alert("Delete all chats?", isPresented: $showClearHistoryConfirmation) {
             Button("Cancel", role: .cancel) { }
-            Button("Clear", role: .destructive) {
+            Button("Delete", role: .destructive) {
                 historyManager.clearAllConversations()
             }
         } message: {
-            Text("This permanently deletes every saved conversation on this device.")
+            Text("This permanently removes every saved conversation from this device.")
         }
-        .alert("Cleanup", isPresented: $showClearDocumentsConfirmation) {
+        .alert("Clear memory?", isPresented: $showClearDocumentsConfirmation) {
             Button("Cancel", role: .cancel) { }
-            Button("Clean Up", role: .destructive) {
+            Button("Clear", role: .destructive) {
                 documentManager.clearAllDocuments()
             }
         } message: {
-            Text("This won’t delete your chats.")
+            Text("This clears imported files to free up storage. Your chats will stay on this device.")
         }
     }
 
@@ -393,15 +397,6 @@ struct SettingsView: View {
                     settingsRow(title: "Low Power Mode", icon: "battery.25", iconColor: .green, trailingIcon: "")
                 }
                 .padding(.trailing, 16)
-                
-                Divider().padding(.leading, 56)
-                
-                Button {
-                    llmEngine.unloadModel()
-                    speechManager.unloadKokoro()
-                } label: {
-                    settingsRow(title: "Release Memory", icon: "leaf.fill", iconColor: .green, trailingIcon: "")
-                }
             }
         }
     }
@@ -412,146 +407,13 @@ struct SettingsView: View {
                 .font(.headline)
                 .foregroundStyle(Color(white: 0.2))
 
-            if autoRead {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Voice models are separate from chat models.")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color(white: 0.15))
-
-                    Text("Your chat model writes the answer. The voice model only reads that answer aloud and does not change reply quality.")
-                        .font(.caption)
-                        .foregroundStyle(Color(white: 0.5))
-                }
-                .padding(14)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: 14))
-                .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
-            }
-
             settingsGroup {
-//                Toggle(isOn: $voiceConversationMode) {
-//                    settingsRow(title: "Conversation Mode", icon: "waveform", iconColor: .blue, trailingIcon: "")
-//                }
-//                .padding(.trailing, 16)
-
-//                Divider().padding(.leading, 56)
-
                 Toggle(isOn: $autoRead) {
-                    settingsRow(title: "Show Speak Reply Button", icon: "speaker.wave.2.fill", iconColor: .orange, trailingIcon: "")
+                    settingsRow(title: "Speak Button", icon: "speaker.wave.2.fill", iconColor: .orange, trailingIcon: "")
                 }
                 .padding(.trailing, 16)
-
-                if autoRead {
-                    Divider().padding(.leading, 56)
-
-                    VStack(alignment: .leading, spacing: 14) {
-                        HStack(alignment: .top, spacing: 16) {
-                            Image(systemName: "person.wave.2.fill")
-                                .font(.body)
-                                .foregroundStyle(.pink)
-                                .frame(width: 24)
-
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Voice Model")
-                                    .font(.body)
-                                    .foregroundStyle(Color(white: 0.1))
-                                Text("Choose how replies should sound when you tap the Speak Reply button.")
-                                    .font(.caption)
-                                    .foregroundStyle(Color(white: 0.5))
-                            }
-
-                            Spacer(minLength: 0)
-
-                            Text("System Voice")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(voiceAccentColor)
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 6)
-                                .background(voiceAccentColor.opacity(0.12))
-                                .clipShape(Capsule())
-                        }
-
-                        voiceBackendButton(for: .system)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 16)
-                }
-            }
-
-            if autoRead {
-                Text(voiceFooterText)
-                    .font(.caption)
-                    .foregroundStyle(Color(white: 0.5))
             }
         }
-    }
-
-    private var speechOutputBackendBinding: Binding<SpeechOutputBackend> {
-        Binding(
-            get: { speechManager.speechOutputBackend },
-            set: { speechManager.speechOutputBackend = $0 }
-        )
-    }
-
-    private var voiceAccentColor: Color {
-        .orange
-    }
-
-    private var voiceFooterText: String {
-        "Show Speak Reply Button adds a Speak Reply button after each finished answer and uses the built-in system voice for speed and reliability."
-    }
-
-    private func voiceBackendButton(for backend: SpeechOutputBackend) -> some View {
-        Button {
-            speechOutputBackendBinding.wrappedValue = backend
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "speaker.wave.2.fill")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.orange)
-                    .frame(width: 20)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(backend.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color(white: 0.1))
-                    Text(backend.subtitle)
-                        .font(.caption)
-                        .foregroundStyle(Color(white: 0.5))
-                }
-
-                Spacer()
-
-                Image(systemName: speechManager.speechOutputBackend == backend ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    .foregroundStyle(speechManager.speechOutputBackend == backend ? voiceAccentColor : Color(white: 0.8))
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(voiceButtonBackground(for: backend))
-            .overlay {
-                RoundedRectangle(cornerRadius: 14)
-                    .stroke(voiceButtonBorder(for: backend), lineWidth: 1)
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(backend.title), \(backend.subtitle)")
-        .accessibilityAddTraits(speechManager.speechOutputBackend == backend ? .isSelected : [])
-    }
-
-    private func voiceButtonBackground(for backend: SpeechOutputBackend) -> Color {
-        speechManager.speechOutputBackend == backend ? voiceButtonTint(for: backend).opacity(0.08) : Color(white: 0.98)
-    }
-
-    private func voiceButtonBorder(for backend: SpeechOutputBackend) -> Color {
-        speechManager.speechOutputBackend == backend ? voiceButtonTint(for: backend).opacity(0.35) : Color.black.opacity(0.05)
-    }
-
-    private func voiceButtonTint(for backend: SpeechOutputBackend) -> Color {
-        .orange
     }
 
     // MARK: - Legal Section

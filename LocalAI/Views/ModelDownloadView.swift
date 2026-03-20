@@ -27,11 +27,17 @@ struct ModelDownloadView: View {
             return ModelFamilyGroup(family: family, models: models)
         }
     }
+
+    private var shouldShowHeaderTips: Bool {
+        NotificationManager.shared.launchCount <= 2
+    }
     
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                headerView
+                if shouldShowHeaderTips {
+                    headerView
+                }
 
                 ForEach(appleModels) { model in
                     ModelCard(model: model)
