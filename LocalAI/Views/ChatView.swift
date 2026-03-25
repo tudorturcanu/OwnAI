@@ -22,6 +22,7 @@ struct ChatView: View {
     @State private var voiceError: String?
     @State private var streamingPrefix = ""
     @State private var speechStreamingSpokenCharCount: Int = 0
+    @AppStorage("systemPrompt") private var systemPrompt = "You are a helpful AI assistant."
     
     var body: some View {
         alertContent
@@ -176,17 +177,7 @@ struct ChatView: View {
     }
     
     private var backgroundView: some View {
-        LinearGradient(
-            stops: [
-                .init(color: Color(red: 0.9, green: 0.85, blue: 1.0), location: 0),     // Soft purple top
-                .init(color: Color(red: 1.0, green: 0.95, blue: 0.9), location: 0.5),   // Soft orange middle
-                .init(color: Color.white, location: 1.0)                                // White bottom
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-        .opacity(historyManager.currentMessages.isEmpty ? 1 : 0.3)
-        .animation(.default, value: historyManager.currentMessages.isEmpty)
+        AnimatedChatBackgroundView(isEmpty: historyManager.currentMessages.isEmpty)
     }
     
     // MARK: - Messages View
@@ -212,6 +203,15 @@ struct ChatView: View {
                                 recoveryAction: recoveryAction
                             )
                                 .id(message.id)
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button(role: .destructive) {
+                                        withAnimation(.spring(response: 0.3)) {
+                                            historyManager.deleteMessage(id: message.id)
+                                        }
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
                         }
 
                         if let speakableMessage = latestSpeakableAssistantMessage {
@@ -285,91 +285,19 @@ struct ChatView: View {
     // MARK: - Empty State
     
     private var emptyStateView: some View {
-        VStack(spacing: 32) {
-            // Top Status Capsule (Floating)
-            modelStatusView
-                .padding(.top, isInputFocused ? 10 : 20)
-            
-            if !isInputFocused {
-                Spacer()
+        ChatEmptyStateView(
+            isInputFocused: isInputFocused,
+            selectedModelName: modelManager.selectedModel?.name,
+            isAppleIntelligenceAvailable: modelManager.isAppleIntelligenceAvailable,
+            personalityLabel: currentPersonalityLabel,
+            onDownloadModel: {
+                showModelDownloadSheet = true
+            },
+            onSuggestion: { text in
+                messageText = text
+                sendMessage()
             }
-            
-            VStack(spacing: isInputFocused ? 12 : 24) {
-                if !isInputFocused {
-                    SparkleView()
-                }
-                
-                VStack(spacing: 4) {
-                    Text("Start a Conversation")
-                        .font(isInputFocused ? .headline : .title2.bold())
-                        .foregroundStyle(Color(white: 0.15))
-                    
-                    if let model = modelManager.selectedModel {
-                        Text("Using \(model.name)")
-                            .font(.caption)
-                            .foregroundStyle(Color(white: 0.4))
-                    } else if !modelManager.isAppleIntelligenceAvailable {
-                        Button {
-                            showModelDownloadSheet = true
-                        } label: {
-                            HStack {
-                                Image(systemName: "arrow.down.app")
-                                Text("Download a Model")
-                            }
-                            .font(.subheadline.bold())
-                            .foregroundStyle(.blue)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .background(Color.blue.opacity(0.1))
-                            .clipShape(Capsule())
-                        }
-                    } else {
-                        Text("Select or download a model in Settings")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
-                    }
-                }
-            }
-            
-            Spacer()
-            
-            // Suggestion Cards
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    SuggestionCard(title: "Tell me", subtitle: "something fascinating") {
-                        messageText = "Tell me something fascinating"
-                        sendMessage()
-                    }
-                    SuggestionCard(title: "Explain", subtitle: "complex topics simply") {
-                        messageText = "Explain a complex topic like black holes simply"
-                        sendMessage()
-                    }
-                    SuggestionCard(title: "Write", subtitle: "an email or story") {
-                        messageText = "Write a short creative story about a robot"
-                        sendMessage()
-                    }
-                    SuggestionCard(title: "Discover", subtitle: "my next book") {
-                        messageText = "Help me discover my next book"
-                        sendMessage()
-                    }
-                    SuggestionCard(title: "Plan", subtitle: "my weekend trip") {
-                        messageText = "Help me plan a relaxing weekend trip"
-                        sendMessage()
-                    }
-                    SuggestionCard(title: "Boost", subtitle: "my productivity") {
-                        messageText = "How can I boost my productivity?"
-                        sendMessage()
-                    }
-                    SuggestionCard(title: "Debug", subtitle: "my code snippet") {
-                        messageText = "Help me debug this Swift code snippet:\n"
-                        sendMessage()
-                    }
-                }
-                .padding(.horizontal, 20)
-            }
-            .padding(.bottom, 20)
-        }
-        .frame(maxWidth: .infinity)
+        )
     }
 
     // MARK: - Input View
@@ -512,6 +440,15 @@ struct ChatView: View {
         return lastMessage
     }
 
+    private var currentPersonalityLabel: (name: String, icon: String)? {
+        let defaultPrompt = "You are a helpful AI assistant."
+        guard systemPrompt != defaultPrompt else { return nil }
+        if let matched = PersonalityPreset.presets.first(where: { $0.systemPrompt == systemPrompt }) {
+            return (matched.name, matched.icon)
+        }
+        return ("Custom personality", "slider.horizontal.3")
+    }
+
     private var conversationDocumentsStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
@@ -636,48 +573,6 @@ struct ChatView: View {
         }
     }
     
-    // MARK: - Model Status
-    
-    private var modelStatusView: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(statusColor)
-                .frame(width: 8, height: 8)
-            
-            Text(statusText)
-                .font(.caption)
-                .foregroundStyle(Color(white: 0.5))
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Color(white: 0.94))
-        .clipShape(Capsule())
-    }
-    
-    private var statusColor: Color {
-        guard modelManager.selectedModel != nil else { return .red }
-        switch llmEngine.state {
-        case .ready: return .green
-        case .loading, .generating: return .orange
-        case .idle: return .yellow
-        case .error: return .red
-        }
-    }
-    
-    private var statusText: String {
-        guard let model = modelManager.selectedModel else {
-            return "No Model"
-        }
-        switch llmEngine.state {
-        case .ready:
-            return model.name
-        case .loading: return "Loading..."
-        case .generating: return "Thinking..."
-        case .idle: return "Ready"
-        case .error: return "Error"
-        }
-    }
-    
     // MARK: - Actions
     
     private func handleFileImport(result: Result<[URL], Error>) {
@@ -703,6 +598,8 @@ struct ChatView: View {
     }
     
     private func stopGeneration() {
+        let generator = UIImpactFeedbackGenerator(style: .medium)
+        generator.impactOccurred()
         if let lastMsg = historyManager.currentMessages.last, lastMsg.isStreaming {
             historyManager.updateMessage(
                 id: lastMsg.id,
@@ -735,6 +632,8 @@ struct ChatView: View {
     
     private func sendMessage() {
         guard canSend else { return }
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
 
         guard let model = modelManager.selectedModel else { return }
         if !hasConsent(for: model.id) {
@@ -1274,10 +1173,19 @@ struct ChatView: View {
         )
 
         if !snippets.isEmpty {
+            var seenTitles = Set<String>()
+            let sourceTitles = snippets.map { item in
+                if let location = item.chunk.sourceLocationLabel {
+                    return "\(item.document.name) · \(location)"
+                }
+                return item.document.name
+            }
+            .filter { seenTitles.insert($0).inserted }
             let context = snippets.enumerated().map { index, item in
-                """
+                let locationLine = item.chunk.sourceLocationLabel.map { "Location: \($0)\n" } ?? ""
+                return """
                 [Source \(index + 1): \(item.document.name)]
-                \(item.chunk.content)
+                \(locationLine)\(item.chunk.content)
                 """
             }
             .joined(separator: "\n\n")
@@ -1287,17 +1195,19 @@ struct ChatView: View {
                 You have access to documents that belong only to this chat.
                 Use the retrieved passages when they are relevant to the user's request.
                 If the snippets are insufficient, say that briefly instead of guessing.
+                Cite sources inline as [Source n] when you rely on them.
 
                 Chat documents:
                 \(context)
 
                 User request: \(effectiveRequest)
                 """,
-                []
+                sourceTitles
             )
         }
 
         let fallbackDocuments = documentManager.documents(for: conversationID).prefix(2)
+        let fallbackSourceTitles = fallbackDocuments.map(\.name)
         let fallbackContext = fallbackDocuments.map { document in
             """
             [Document: \(document.name)]
@@ -1316,7 +1226,7 @@ struct ChatView: View {
 
             User request: \(effectiveRequest)
             """,
-            []
+            fallbackSourceTitles
         )
     }
 
@@ -1334,50 +1244,6 @@ struct ChatView: View {
         }
     }
 
-}
-
-// MARK: - Chat Message Model
-
-struct ChatMessage: Identifiable, Equatable, Codable {
-    let id: UUID
-    let role: MessageRole
-    let content: String
-    let thinkingContent: String?
-    let sourceTitles: [String]
-    var isStreaming: Bool = false
-    
-    init(id: UUID = UUID(), role: MessageRole, content: String, thinkingContent: String? = nil, sourceTitles: [String] = [], isStreaming: Bool = false) {
-        self.id = id
-        self.role = role
-        self.content = content
-        self.thinkingContent = thinkingContent
-        self.sourceTitles = sourceTitles
-        self.isStreaming = isStreaming
-    }
-
-    private enum CodingKeys: String, CodingKey {
-        case id
-        case role
-        case content
-        case thinkingContent
-        case sourceTitles
-        case isStreaming
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(UUID.self, forKey: .id)
-        role = try container.decode(MessageRole.self, forKey: .role)
-        content = try container.decode(String.self, forKey: .content)
-        thinkingContent = try container.decodeIfPresent(String.self, forKey: .thinkingContent)
-        sourceTitles = try container.decodeIfPresent([String].self, forKey: .sourceTitles) ?? []
-        isStreaming = try container.decodeIfPresent(Bool.self, forKey: .isStreaming) ?? false
-    }
-    
-    enum MessageRole: String, Codable {
-        case user
-        case assistant
-    }
 }
 
 // MARK: - Send Button Style
@@ -1400,32 +1266,4 @@ private extension UTType {
         .environment(ChatHistoryManager())
         .environment(ModelManager())
         .environment(SpeechManager())
-}
-
-struct SparkleView: View {
-    @State private var animate = false
-
-    var body: some View {
-        Image(systemName: "sparkles")
-            .font(.system(size: 60, weight: .light))
-            .foregroundStyle(
-                LinearGradient(
-                    colors: [.orange.opacity(0.8), .pink.opacity(0.8)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
-            // 1. Control the opacity and scale manually
-            .opacity(animate ? 1.0 : 0.3)
-            .scaleEffect(animate ? 1.1 : 0.95)
-            // 2. Apply a slow, smooth animation
-            .animation(
-                .easeInOut(duration: 2.5) // Change seconds here to slow it down
-                .repeatForever(autoreverses: true),
-                value: animate
-            )
-            .onAppear {
-                animate = true
-            }
-    }
 }

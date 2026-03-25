@@ -16,6 +16,7 @@ struct MessageBubble: View {
     let recoveryAction: RecoveryAction?
     @State private var appeared = false
     @State private var isThinkingExpanded = false
+    @State private var showCopied = false
     private let userLeadingInset: CGFloat = 60
     private let assistantTrailingInset: CGFloat = 16
     private let collapsedThinkingHeight: CGFloat = 76
@@ -110,6 +111,19 @@ struct MessageBubble: View {
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 10)
         .scaleEffect(appeared ? 1 : 0.95)
+        .overlay(alignment: message.role == .user ? .bottomTrailing : .bottomLeading) {
+            if showCopied {
+                Text("Copied")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.black.opacity(0.75))
+                    .clipShape(Capsule())
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                    .offset(y: 28)
+            }
+        }
         .onAppear {
             withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
                 appeared = true
@@ -182,6 +196,16 @@ struct MessageBubble: View {
         .contextMenu {
             Button {
                 UIPasteboard.general.string = message.content
+                let generator = UIImpactFeedbackGenerator(style: .light)
+                generator.impactOccurred()
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    showCopied = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        showCopied = false
+                    }
+                }
             } label: {
                 Label("Copy", systemImage: "doc.on.doc")
             }
@@ -311,7 +335,7 @@ struct MessageBubble: View {
                 }
             } label: {
                 HStack {
-                    Text(message.isStreaming ? "Thinking..." : "Thoughts")
+                    Text(message.isStreaming ? "Thinking…" : "Thoughts")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundStyle(message.isStreaming ? Color.black.opacity(0.8) : Color.black)
                         .shimmering(active: message.isStreaming, bandSize: 0.18)
@@ -519,7 +543,7 @@ struct MessageShape: Shape {
     VStack(spacing: 16) {
         MessageBubble(message: ChatMessage(role: .user, content: "Hello! How are you today?"))
         MessageBubble(message: ChatMessage(role: .assistant, content: "I'm doing great! I'm running completely on your device. How can I help you today?"))
-        MessageBubble(message: ChatMessage(role: .assistant, content: "Thinking...", isStreaming: true))
+        MessageBubble(message: ChatMessage(role: .assistant, content: "Thinking…", isStreaming: true))
     }
     .padding()
     .background(Color(white: 0.98))

@@ -39,10 +39,11 @@ enum AssistantOutputSanitizer {
         let withoutPartialMarker = stripTrailingPartialMarker(from: content)
         let truncated = truncateAtFirstControlMarker(in: withoutPartialMarker)
         let extracted = extractThinkingSegments(from: truncated)
+        let visibleContent = stripStandaloneThinkingMarkers(from: extracted.content)
 
         let sanitizedContent = normalizeSegment(
-            extracted.content,
-            trimWhitespace: withoutPartialMarker != content || truncated != withoutPartialMarker || extracted.containsThinking
+            visibleContent,
+            trimWhitespace: withoutPartialMarker != content || truncated != withoutPartialMarker || extracted.containsThinking || visibleContent != extracted.content
         )
         let sanitizedThinking = normalizeSegment(extracted.thinkingContent, trimWhitespace: true)
 
@@ -90,6 +91,16 @@ enum AssistantOutputSanitizer {
 
         guard longestSuffixLength > 0 else { return content }
         return String(content.dropLast(longestSuffixLength))
+    }
+
+    private static func stripStandaloneThinkingMarkers(from content: String) -> String {
+        guard !content.isEmpty else { return content }
+
+        // Some models emit a stray closing tag without a matching <think> block.
+        // That tag should never reach the visible answer text.
+        return content
+            .replacingOccurrences(of: thinkingCloseMarker, with: "")
+            .replacingOccurrences(of: thinkingOpenMarker, with: "")
     }
 
     private static func extractThinkingSegments(from content: String) -> (content: String, thinkingContent: String, containsThinking: Bool) {
@@ -185,6 +196,7 @@ final class ChatHistoryManager {
     
     var conversations: [ChatConversation] = []
     var currentConversationID: UUID?
+    @ObservationIgnored private let store: ChatHistoryStore
     @ObservationIgnored private var pendingSaveWorkItem: DispatchWorkItem?
     @ObservationIgnored private let saveQueue = DispatchQueue(
         label: "alice.turcanu.LocalAI.chat-history-save",
@@ -204,7 +216,8 @@ final class ChatHistoryManager {
         }
     }
     
-    init() {
+    init(store: ChatHistoryStore = ChatHistoryStore()) {
+        self.store = store
         loadConversations()
         let removedDuplicateDrafts = deduplicateEmptyConversations()
         applyRetentionPolicy()
@@ -213,22 +226,24 @@ final class ChatHistoryManager {
         if conversations.isEmpty || !isReusableDraftConversation(conversations[0]) {
             newConversation()
         } else {
-            currentConversationID = conversations.first?.id
+            if currentConversationID == nil {
+                currentConversationID = conversations.first?.id
+            }
             if removedDuplicateDrafts {
-                saveConversations(immediately: true)
+                saveConversations(immediately: true, changedConversationIDs: Set())
             }
         }
     }
     
-    private var saveURL: URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("chat_history.json")
-    }
-    
     /// Save conversations to disk
-    func saveConversations(immediately: Bool = false) {
+    func saveConversations(
+        immediately: Bool = false,
+        changedConversationIDs: Set<UUID>? = nil,
+        deletedConversationIDs: Set<UUID> = []
+    ) {
         let snapshot = conversations
-        let url = saveURL
+        let selectedConversationID = currentConversationID
+        let store = store
         let delay: TimeInterval = immediately ? 0 : 0.6
         
         pendingSaveWorkItem?.cancel()
@@ -236,8 +251,12 @@ final class ChatHistoryManager {
         workItem = DispatchWorkItem {
             guard let workItem, !workItem.isCancelled else { return }
             do {
-                let data = try JSONEncoder().encode(snapshot)
-                try data.write(to: url, options: .atomic)
+                try store.persist(
+                    conversations: snapshot,
+                    currentConversationID: selectedConversationID,
+                    changedConversationIDs: changedConversationIDs,
+                    deletedConversationIDs: deletedConversationIDs
+                )
             } catch {
                 print("Failed to save conversations: \(error)")
             }
@@ -255,8 +274,8 @@ final class ChatHistoryManager {
     /// Load conversations from disk
     func loadConversations() {
         do {
-            let data = try Data(contentsOf: saveURL)
-            let decoded = try JSONDecoder().decode([ChatConversation].self, from: data)
+            let snapshot = try store.loadSnapshot()
+            let decoded = snapshot.conversations
             
             // Sanitize: Fix stuck streaming state
             self.conversations = decoded.map { conversation in
@@ -291,6 +310,7 @@ final class ChatHistoryManager {
                 updatedConversation.messages = updatedMessages
                 return updatedConversation
             }
+            currentConversationID = snapshot.currentConversationID
         } catch {
             print("No saved chat history found or failed to load: \(error)")
         }
@@ -324,7 +344,11 @@ final class ChatHistoryManager {
         }
 
         if conversations.count != originalCount {
-            saveConversations(immediately: true)
+            saveConversations(
+                immediately: true,
+                changedConversationIDs: Set(),
+                deletedConversationIDs: Set(expiredConversationIDs)
+            )
         }
     }
 
@@ -335,12 +359,18 @@ final class ChatHistoryManager {
 
     func clearAllConversations() {
         let documentManager = DocumentManager.shared
+        let deletedConversationIDs = Set(conversations.map(\.id))
         conversations.forEach { conversation in
             documentManager.clearDocuments(for: conversation.id)
         }
-        conversations.removeAll()
-        currentConversationID = nil
-        newConversation()
+        let freshConversation = ChatConversation()
+        conversations = [freshConversation]
+        currentConversationID = freshConversation.id
+        saveConversations(
+            immediately: true,
+            changedConversationIDs: Set([freshConversation.id]),
+            deletedConversationIDs: deletedConversationIDs
+        )
     }
     
     
@@ -352,20 +382,20 @@ final class ChatHistoryManager {
             let existingEmptyConversation = conversations.remove(at: existingEmptyIndex)
             conversations.insert(existingEmptyConversation, at: 0)
             currentConversationID = existingEmptyConversation.id
-            saveConversations(immediately: true)
+            saveConversations(immediately: true, changedConversationIDs: Set())
             return
         }
 
         let conversation = ChatConversation()
         conversations.insert(conversation, at: 0)
         currentConversationID = conversation.id
-        saveConversations(immediately: true)
+        saveConversations(immediately: true, changedConversationIDs: Set([conversation.id]))
     }
     
     /// Select a conversation
     func selectConversation(_ id: UUID) {
         currentConversationID = id
-        // No need to save on selection unless we want to track last selected
+        saveConversations(immediately: true, changedConversationIDs: Set())
     }
     
     /// Delete a conversation
@@ -378,10 +408,25 @@ final class ChatHistoryManager {
             if let first = conversations.first {
                 currentConversationID = first.id
             } else {
-                newConversation()
+                let freshConversation = ChatConversation()
+                conversations = [freshConversation]
+                currentConversationID = freshConversation.id
+                saveConversations(
+                    immediately: true,
+                    changedConversationIDs: Set([freshConversation.id]),
+                    deletedConversationIDs: Set([id])
+                )
+                return
             }
         }
-        saveConversations(immediately: true)
+        saveConversations(immediately: true, changedConversationIDs: Set(), deletedConversationIDs: Set([id]))
+    }
+
+    /// Delete a single message from the current conversation
+    func deleteMessage(id: UUID) {
+        guard let convIndex = conversations.firstIndex(where: { $0.id == currentConversationID }) else { return }
+        conversations[convIndex].messages.removeAll { $0.id == id }
+        saveConversations(immediately: true, changedConversationIDs: Set([conversations[convIndex].id]))
     }
     
     /// Add a message to the current conversation
@@ -405,7 +450,7 @@ final class ChatHistoryManager {
             conversations = updatedConversations
         }
         
-        saveConversations()
+        saveConversations(changedConversationIDs: Set([conversations[0].id]))
     }
     
     /// Update a message in the current conversation
@@ -435,9 +480,9 @@ final class ChatHistoryManager {
         // Persist partial assistant output as it streams so app refreshes don't
         // discard the in-progress response. Streaming saves stay debounced.
         if isStreaming {
-            saveConversations()
+            saveConversations(changedConversationIDs: Set([conversations[convIndex].id]))
         } else {
-            saveConversations(immediately: true)
+            saveConversations(immediately: true, changedConversationIDs: Set([conversations[convIndex].id]))
         }
     }
     

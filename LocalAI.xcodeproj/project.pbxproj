@@ -21,7 +21,7 @@
 		8B8A3F012F2B9C000010461E /* MetalPerformanceShadersGraph.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B8A3F002F2B9C000010461E /* MetalPerformanceShadersGraph.framework */; };
 		8EFFB0F2133ABDDAC075499D /* WatchAppView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91B85A67CC4B2D94DE6FCB4D /* WatchAppView.swift */; };
 		A3092C03ADE84812355F315F /* LocalAIWatchApp.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = EAB0C704B6924ED8F744E8E9 /* LocalAIWatchApp.app */; };
-		ABC594792F6CA7FC009F73AF /* AnyLanguageModel in Frameworks */ = {isa = PBXBuildFile; productRef = D1E000082F5000010010461E /* AnyLanguageModel */; };
+		C1A1B2C3D4E5F60700112233 /* LocalAIKit in Frameworks */ = {isa = PBXBuildFile; productRef = C1A1B2C3D4E5F60700112234 /* LocalAIKit */; };
 		D1E000022F5000010010461E /* MLXUtilsLibrary in Frameworks */ = {isa = PBXBuildFile; productRef = D1E000062F5000010010461E /* MLXUtilsLibrary */; };
 		F28C5059FAD018D9339B8132 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EE087FDCA43529C4708F4FE2 /* Foundation.framework */; };
 /* End PBXBuildFile section */
@@ -108,7 +108,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				ABC594792F6CA7FC009F73AF /* AnyLanguageModel in Frameworks */,
+				C1A1B2C3D4E5F60700112233 /* LocalAIKit in Frameworks */,
 				8B8A3E092F2CCB980010461E /* Shimmer in Frameworks */,
 				8B8A3F012F2B9C000010461E /* MetalPerformanceShadersGraph.framework in Frameworks */,
 				8B8A3DFD2F2B9BF70010461E /* MetalPerformanceShaders.framework in Frameworks */,
@@ -208,7 +208,7 @@
 				8B8A3E0B2F2CCBE90010461E /* MarkdownUI */,
 				8B8A3E1D2F2D00010010461E /* MLXLMCommon */,
 				8B8A3E1E2F2D00010010461E /* MLXLLM */,
-				D1E000082F5000010010461E /* AnyLanguageModel */,
+				C1A1B2C3D4E5F60700112234 /* LocalAIKit */,
 				D1E000062F5000010010461E /* MLXUtilsLibrary */,
 			);
 			productName = LocalAI;
@@ -263,7 +263,7 @@
 				8B8A3E072F2CCB980010461E /* XCRemoteSwiftPackageReference "SwiftUI-Shimmer" */,
 				8B8A3E0A2F2CCBE90010461E /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 				8B8A3E1C2F2D00010010461E /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
-				D1E000072F5000010010461E /* XCRemoteSwiftPackageReference "AnyLanguageModel" */,
+				C1A1B2C3D4E5F60700112235 /* XCLocalSwiftPackageReference "Packages/LocalAIKit" */,
 				D1E000042F5000010010461E /* XCRemoteSwiftPackageReference "MLXUtilsLibrary" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -486,7 +486,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = LocalAI/LocalAI.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 16;
 				DEVELOPMENT_TEAM = 75YTB67VJZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -525,7 +525,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = LocalAI/LocalAI.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 15;
+				CURRENT_PROJECT_VERSION = 16;
 				DEVELOPMENT_TEAM = 75YTB67VJZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -617,6 +617,13 @@
 		};
 /* End XCConfigurationList section */
 
+/* Begin XCLocalSwiftPackageReference section */
+		C1A1B2C3D4E5F60700112235 /* XCLocalSwiftPackageReference "Packages/LocalAIKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/LocalAIKit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
 /* Begin XCRemoteSwiftPackageReference section */
 		8B8A3E072F2CCB980010461E /* XCRemoteSwiftPackageReference "SwiftUI-Shimmer" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -650,14 +657,6 @@
 				version = 0.0.6;
 			};
 		};
-		D1E000072F5000010010461E /* XCRemoteSwiftPackageReference "AnyLanguageModel" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/mattt/AnyLanguageModel";
-			requirement = {
-				kind = upToNextMinorVersion;
-				minimumVersion = 0.7.1;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -681,15 +680,14 @@
 			package = 8B8A3E1C2F2D00010010461E /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
 			productName = MLXLLM;
 		};
+		C1A1B2C3D4E5F60700112234 /* LocalAIKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = LocalAIKit;
+		};
 		D1E000062F5000010010461E /* MLXUtilsLibrary */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = D1E000042F5000010010461E /* XCRemoteSwiftPackageReference "MLXUtilsLibrary" */;
 			productName = MLXUtilsLibrary;
-		};
-		D1E000082F5000010010461E /* AnyLanguageModel */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = D1E000072F5000010010461E /* XCRemoteSwiftPackageReference "AnyLanguageModel" */;
-			productName = AnyLanguageModel;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

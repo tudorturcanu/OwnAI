@@ -17,6 +17,8 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
     case tinyLlama
     case llama
     case phi
+    case mistral
+    case smolLM
 
     var id: String { rawValue }
 
@@ -36,6 +38,10 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "Llama"
         case .phi:
             return "Phi"
+        case .mistral:
+            return "Mistral"
+        case .smolLM:
+            return "SmolLM"
         }
     }
 
@@ -55,6 +61,10 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "Meta's local instruction models"
         case .phi:
             return "Microsoft's efficient reasoning models"
+        case .mistral:
+            return "Mistral AI's powerful open models"
+        case .smolLM:
+            return "HuggingFace's ultra-compact models"
         }
     }
 
@@ -74,6 +84,10 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "bubble.left.and.bubble.right.fill"
         case .phi:
             return "function"
+        case .mistral:
+            return "wind"
+        case .smolLM:
+            return "smallcircle.filled.circle"
         }
     }
 }
@@ -332,6 +346,12 @@ struct ModelInfo: Identifiable, Equatable {
         }
         if lowercasedID.contains("tinyllama") {
             return "TinyLlama Project"
+        }
+        if lowercasedID.contains("mistral") {
+            return "Mistral AI"
+        }
+        if lowercasedID.contains("smollm") {
+            return "HuggingFace (SmolLM)"
         }
         return "Model publisher"
     }
@@ -627,23 +647,112 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Gemma 3 4B Instruct QAT (4-bit MLX)
+    static let gemma3_4b_qat_4bit = ModelInfo(
+        id: "mlx-community/gemma-3-4b-it-qat-4bit",
+        name: "Gemma 3 4B",
+        description: "Google's mid-tier Gemma 3 model with strong instruction following and reasoning, running fully on-device.",
+        family: .gemma,
+        sizeGB: 2.6,
+        engine: .mlx,
+        termsURL: URL(string: "https://ai.google.dev/gemma/terms"),
+        privacyURL: nil,
+        shortDescription: "Solid mid-tier Gemma for richer on-device conversations.",
+        recommendedFor: "Great step up in quality from Gemma 3 1B for devices with more headroom.",
+        badges: [.higherQuality, .everydayChat, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// SmolLM2 1.7B Instruct (4-bit MLX)
+    static let smolLM2_1_7b_4bit = ModelInfo(
+        id: "mlx-community/SmolLM2-1.7B-Instruct-4bit",
+        name: "SmolLM2 1.7B",
+        description: "HuggingFace's compact SmolLM2, designed for fast on-device chat with surprisingly strong performance for its tiny footprint.",
+        family: .smolLM,
+        sizeGB: 1.04,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct"),
+        privacyURL: nil,
+        shortDescription: "Fast and surprisingly capable for its small size.",
+        recommendedFor: "Best for quick on-device replies with a minimal download.",
+        badges: [.fastest, .smallDownload, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Mistral 7B Instruct v0.3 (4-bit MLX)
+    static let mistral7b_instruct_v03_4bit = ModelInfo(
+        id: "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
+        name: "Mistral 7B",
+        description: "Mistral AI's flagship open model, known for high instruction-following quality and strong general ability on larger Apple devices.",
+        family: .mistral,
+        sizeGB: 4.07,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.3"),
+        privacyURL: nil,
+        shortDescription: "A top-tier open model for iPad Pro and Mac users.",
+        recommendedFor: "Best when you want maximum local quality on a high-end device.",
+        badges: [.higherQuality, .bestForWriting, .bestForCoding, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Llama 3.1 8B Instruct (4-bit MLX)
+    static let llama31_8b_4bit = ModelInfo(
+        id: "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit",
+        name: "Llama 3.1 8B",
+        description: "Meta's larger Llama instruction model with excellent instruction following, coding, and reasoning for iPad Pro and Mac.",
+        family: .llama,
+        sizeGB: 4.5,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/meta-llama/Meta-Llama-3.1-8B-Instruct"),
+        privacyURL: nil,
+        shortDescription: "High-quality Llama model for powerful on-device conversations.",
+        recommendedFor: "Best for high-quality, nuanced conversations on iPad Pro or Mac.",
+        badges: [.higherQuality, .bestForWriting, .reasoning, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Qwen3 8B MLX (4-bit)
+    static let qwen3_8b_4bit = ModelInfo(
+        id: "Qwen/Qwen3-8B-MLX-4bit",
+        name: "Qwen3 8B",
+        description: "Qwen's larger local model with top-tier multilingual reasoning, coding, and instruction following for high-end Apple devices.",
+        family: .qwen,
+        sizeGB: 4.8,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen3-8B-MLX-4bit"),
+        privacyURL: nil,
+        shortDescription: "Top-tier local Qwen model for demanding tasks on Mac or iPad Pro.",
+        recommendedFor: "Best for multilingual, coding, and reasoning tasks on high-end devices.",
+        badges: [.higherQuality, .bestForCoding, .multilingual, .reasoning, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     static let allModels: [ModelInfo] = [
         .appleFoundation,  // Default - first in list
+        // Small / ultra-light
+        .gemma3_270m_qat_4bit,
         .qwen3_0_6b_4bit,
         .qwen25_0_5b_instruct_4bit,
         .tinyllama11b_chat_4bit,
+        // Compact (0.7–1.1 GB)
         .llama32_1b_4bit,
-        .gemma3_270m_qat_4bit,
         .gemma3_1b_qat_4bit,
-        .gemma2_2b_4bit,
+        .smolLM2_1_7b_4bit,
         .qwen25_1_5b_instruct_4bit,
         .qwen3_1_7b_4bit,
         .deepseek_r1_distill_qwen_1_5b_4bit,
+        // Mid-range (1.7–2.6 GB)
+        .gemma2_2b_4bit,
         .qwen25_3b_instruct_4bit,
-        .qwen3_4b_4bit,
         .llama32_3b_4bit,
         .phi3_mini_4k_4bit,
         .phi4_mini_4bit,
-        .phi35_mini_4bit
+        .phi35_mini_4bit,
+        .gemma3_4b_qat_4bit,
+        .qwen3_4b_4bit,
+        // Large (4+ GB) — iPad Pro / Mac
+        .mistral7b_instruct_v03_4bit,
+        .llama31_8b_4bit,
+        .qwen3_8b_4bit
     ]
 }

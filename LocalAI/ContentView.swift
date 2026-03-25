@@ -60,19 +60,11 @@ struct ContentView: View {
                                 speechManager.stopSpeaking()
                                 showSettings = true
                             } label: {
-                                VStack(spacing: 2) {
-                                    HStack(spacing: 4) {
-                                        Text(modelManager.selectedModel?.name ?? "Select Model")
-                                            .font(.subheadline.weight(.semibold))
-                                        Image(systemName: "chevron.right")
-                                            .font(.caption2.weight(.bold))
-                                    }
-
-                                    if let selectedModel = modelManager.selectedModel {
-                                        Text(selectedModel.badges.first?.title ?? selectedModel.privacyLabel)
-                                            .font(.caption2.weight(.medium))
-                                            .foregroundStyle(Color(white: 0.45))
-                                    }
+                                HStack(spacing: 4) {
+                                    Text(modelManager.selectedModel?.name ?? "Select Model")
+                                        .font(.subheadline.weight(.semibold))
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption2.weight(.bold))
                                 }
                                 .foregroundStyle(Color(white: 0.2))
                             }

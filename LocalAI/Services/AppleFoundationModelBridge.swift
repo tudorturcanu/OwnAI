@@ -71,25 +71,11 @@ final class AppleFoundationModelBridge {
     }
 
     var availability: AppleFoundationModelAvailability {
-        if #available(iOS 26.0, *) {
-            switch FoundationModels.SystemLanguageModel.default.availability {
-            case .available:
-                return .available
-            case .unavailable(let reason):
-                switch reason {
-                case .deviceNotEligible:
-                    return .deviceNotEligible
-                case .modelNotReady:
-                    return .modelNotReady
-                case .appleIntelligenceNotEnabled:
-                    return .appleIntelligenceNotEnabled
-                @unknown default:
-                    return .unavailable
-                }
-            }
+        guard #available(iOS 26.0, *) else {
+            return .unsupportedOS
         }
 
-        return .unsupportedOS
+        return foundationModelAvailability()
     }
 
     func resetSession() {
@@ -104,15 +90,11 @@ final class AppleFoundationModelBridge {
             throw LLMError.modelNotAvailable(availability.engineErrorMessage)
         }
 
-        if #available(iOS 26.0, *) {
-            let session = FoundationModels.LanguageModelSession(
-                model: FoundationModels.SystemLanguageModel.default,
-                instructions: instructions
-            )
-            sessionLock.lock()
-            sessionStorage = session
-            sessionLock.unlock()
+        guard #available(iOS 26.0, *) else {
+            throw LLMError.modelNotAvailable(AppleFoundationModelAvailability.unsupportedOS.engineErrorMessage)
         }
+
+        storeSession(instructions: instructions)
     }
 
     func streamResponse(
@@ -121,6 +103,7 @@ final class AppleFoundationModelBridge {
         topP: Double,
         temperature: Double,
         maxTokens: Int,
+        isolated: Bool = false,
         onPartialResponse: @escaping @Sendable (String) async -> Bool
     ) async throws {
         let availability = availability
@@ -132,18 +115,63 @@ final class AppleFoundationModelBridge {
             throw LLMError.modelNotAvailable(AppleFoundationModelAvailability.unsupportedOS.engineErrorMessage)
         }
 
-        let session: FoundationModels.LanguageModelSession
+        try await streamResponseAvailable(
+            to: prompt,
+            systemPrompt: systemPrompt,
+            topP: topP,
+            temperature: temperature,
+            maxTokens: maxTokens,
+            isolated: isolated,
+            onPartialResponse: onPartialResponse
+        )
+    }
+
+    @available(iOS 26.0, *)
+    private func foundationModelAvailability() -> AppleFoundationModelAvailability {
+        switch FoundationModels.SystemLanguageModel.default.availability {
+        case .available:
+            return .available
+        case .unavailable(let reason):
+            switch reason {
+            case .deviceNotEligible:
+                return .deviceNotEligible
+            case .modelNotReady:
+                return .modelNotReady
+            case .appleIntelligenceNotEnabled:
+                return .appleIntelligenceNotEnabled
+            @unknown default:
+                return .unavailable
+            }
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private func storeSession(instructions: String) {
+        let session = FoundationModels.LanguageModelSession(
+            model: FoundationModels.SystemLanguageModel.default,
+            instructions: instructions
+        )
         sessionLock.lock()
-        let existingSession = sessionStorage as? FoundationModels.LanguageModelSession
+        sessionStorage = session
         sessionLock.unlock()
-        if let existingSession {
-            session = existingSession
-        } else {
-            session = FoundationModels.LanguageModelSession(
+    }
+
+    @available(iOS 26.0, *)
+    private func streamResponseAvailable(
+        to prompt: String,
+        systemPrompt: String,
+        topP: Double,
+        temperature: Double,
+        maxTokens: Int,
+        isolated: Bool,
+        onPartialResponse: @escaping @Sendable (String) async -> Bool
+    ) async throws {
+        let session = isolated
+            ? FoundationModels.LanguageModelSession(
                 model: FoundationModels.SystemLanguageModel.default,
                 instructions: systemPrompt
             )
-        }
+            : resolvedSession(systemPrompt: systemPrompt)
 
         let options = FoundationModels.GenerationOptions(
             sampling: .random(probabilityThreshold: topP),
@@ -162,8 +190,24 @@ final class AppleFoundationModelBridge {
         }
 
         _ = await onPartialResponse(lastContent)
+        if !isolated {
+            sessionLock.lock()
+            sessionStorage = session
+            sessionLock.unlock()
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private func resolvedSession(systemPrompt: String) -> FoundationModels.LanguageModelSession {
         sessionLock.lock()
-        sessionStorage = session
+        let existingSession = sessionStorage as? FoundationModels.LanguageModelSession
         sessionLock.unlock()
+        if let existingSession {
+            return existingSession
+        }
+        return FoundationModels.LanguageModelSession(
+            model: FoundationModels.SystemLanguageModel.default,
+            instructions: systemPrompt
+        )
     }
 }

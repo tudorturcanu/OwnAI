@@ -1,14 +1,21 @@
 import SwiftUI
+import Combine
+
+private let relativeFormatter: RelativeDateTimeFormatter = {
+    let f = RelativeDateTimeFormatter()
+    f.unitsStyle = .abbreviated
+    return f
+}()
 
 struct WatchAppView: View {
     @Environment(WatchConnectivityClient.self) private var connectivityClient
     @State private var isTypeSheetPresented = false
 
-    private let quickPrompts = [
-        "Summarize this",
-        "Next step",
-        "Reply in 1 line",
-        "Key takeaway"
+    private let quickPrompts: [(icon: String, text: String)] = [
+        ("doc.text.magnifyingglass", "Summarize this"),
+        ("arrow.right.circle", "Next step"),
+        ("text.line.first.and.arrowtriangle.forward", "Reply in 1 line"),
+        ("star.circle", "Key takeaway")
     ]
 
     var body: some View {
@@ -19,10 +26,12 @@ struct WatchAppView: View {
                         if connectivityClient.isCapturingVoice {
                             WatchStateBanner(
                                 title: "Listening",
-                                message: "Speak your prompt. The watch will send it when dictation finishes.",
+                                message: sendingMessage,
                                 iconName: "waveform.circle.fill",
-                                tint: .orange
+                                tint: .orange,
+                                showWaveform: true
                             )
+                            .transition(.move(edge: .top).combined(with: .opacity))
                         } else if connectivityClient.isSending {
                             WatchStateBanner(
                                 title: "Sending to iPhone",
@@ -30,9 +39,10 @@ struct WatchAppView: View {
                                 iconName: "arrow.triangle.2.circlepath.circle.fill",
                                 tint: .blue
                             )
+                            .transition(.move(edge: .top).combined(with: .opacity))
                         } else if let failureMessage = connectivityClient.latestFailureMessage {
                             WatchStateBanner(
-                                title: "Couldn’t Send Reply",
+                                title: "Couldn't Send Reply",
                                 message: failureMessage,
                                 iconName: "exclamationmark.circle.fill",
                                 tint: .red,
@@ -41,6 +51,7 @@ struct WatchAppView: View {
                                     connectivityClient.retryLatestFailedPrompt()
                                 }
                             )
+                            .transition(.move(edge: .top).combined(with: .opacity))
                         }
 
                         if connectivityClient.hasMessages {
@@ -65,8 +76,9 @@ struct WatchAppView: View {
 
                         WatchPrimaryActionCard(
                             isCapturingVoice: connectivityClient.isCapturingVoice,
+                            isReady: connectivityClient.isReachable && !connectivityClient.isSending && !connectivityClient.isCapturingVoice,
                             isDisabled: connectivityClient.isSending || connectivityClient.isCapturingVoice,
-                            action: connectivityClient.startDictation
+                            action: { connectivityClient.startDictation(suggestions: quickPrompts.map(\.text)) }
                         )
 
                         WatchQuickPromptSection(
@@ -82,10 +94,27 @@ struct WatchAppView: View {
                     }
                     .padding()
                     .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .animation(.easeInOut(duration: 0.25), value: connectivityClient.isCapturingVoice)
+                    .animation(.easeInOut(duration: 0.25), value: connectivityClient.isSending)
                 }
-                .background(backgroundGradient)
+                .background(WatchAnimatedBackground())
                 .navigationTitle("Own Ai")
                 .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    if connectivityClient.hasMessages {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button(role: .destructive) {
+                                withAnimation {
+                                    connectivityClient.clearHistory()
+                                }
+                            } label: {
+                                Image(systemName: "trash")
+                                    .font(.caption.weight(.semibold))
+                            }
+                            .accessibilityLabel("Clear chat history")
+                        }
+                    }
+                }
                 .onChange(of: connectivityClient.entries.count) {
                     guard let lastID = connectivityClient.entries.last?.id else { return }
                     withAnimation(.easeOut(duration: 0.2)) {
@@ -110,24 +139,129 @@ struct WatchAppView: View {
         }
         return "Your iPhone is working on it."
     }
+}
 
-    private var backgroundGradient: some View {
-        LinearGradient(
-            colors: [
-                Color.orange.opacity(0.12),
-                Color.clear,
-                Color.blue.opacity(0.08)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
+// MARK: - Animated Background
+
+private struct WatchAnimatedBackground: View {
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 10.0)) { timeline in
+            let t = watchDisplayDate(for: timeline.date).timeIntervalSinceReferenceDate
+            let phase = t.truncatingRemainder(dividingBy: 20.0) / 20.0
+            let angle = phase * Double.pi * 2.0
+            let orangeOpacity = 0.08 + 0.06 * sin(angle)
+            let purpleOpacity = 0.04 + 0.03 * cos(angle + 1.0)
+            let blueOpacity = 0.06 + 0.04 * sin(angle + 2.0)
+            LinearGradient(
+                colors: [
+                    Color.orange.opacity(orangeOpacity),
+                    Color.purple.opacity(purpleOpacity),
+                    Color.blue.opacity(blueOpacity)
+                ],
+                startPoint: UnitPoint(
+                    x: 0.2 + 0.15 * sin(angle),
+                    y: 0.0 + 0.1 * cos(angle)
+                ),
+                endPoint: UnitPoint(
+                    x: 0.8 - 0.1 * cos(angle),
+                    y: 1.0 - 0.15 * sin(angle)
+                )
+            )
+        }
+    }
+
+    /// Keep simulator visuals pinned to the classic 9:41 watch time.
+    /// Real devices continue to use the live clock.
+    private func watchDisplayDate(for date: Date) -> Date {
+        #if targetEnvironment(simulator)
+        return Calendar.current.date(
+            bySettingHour: 9,
+            minute: 41,
+            second: Calendar.current.component(.second, from: date),
+            of: date
+        ) ?? date
+        #else
+        return date
+        #endif
     }
 }
 
+// MARK: - Waveform Animation
+
+private struct WatchWaveformView: View {
+    let tint: Color
+    @State private var isAnimating = false
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<4, id: \.self) { index in
+                Capsule()
+                    .fill(tint)
+                    .frame(width: 3, height: isAnimating ? barHeight(for: index) : 4)
+                    .animation(
+                        .easeInOut(duration: barDuration(for: index))
+                        .repeatForever(autoreverses: true)
+                        .delay(Double(index) * 0.1),
+                        value: isAnimating
+                    )
+            }
+        }
+        .frame(height: 18)
+        .onAppear { isAnimating = true }
+    }
+
+    private func barHeight(for index: Int) -> CGFloat {
+        switch index {
+        case 0: return 12
+        case 1: return 18
+        case 2: return 10
+        case 3: return 15
+        default: return 8
+        }
+    }
+
+    private func barDuration(for index: Int) -> Double {
+        switch index {
+        case 0: return 0.45
+        case 1: return 0.35
+        case 2: return 0.5
+        case 3: return 0.4
+        default: return 0.4
+        }
+    }
+}
+
+// MARK: - Thinking Dots
+
+private struct WatchThinkingDots: View {
+    @State private var activeIndex = 0
+    let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .fill(Color.orange.opacity(index == activeIndex ? 0.9 : 0.3))
+                    .frame(width: 6, height: 6)
+                    .scaleEffect(index == activeIndex ? 1.3 : 1.0)
+                    .animation(.easeInOut(duration: 0.3), value: activeIndex)
+            }
+        }
+        .onReceive(timer) { _ in
+            activeIndex = (activeIndex + 1) % 3
+        }
+    }
+}
+
+// MARK: - Primary Action Card
+
 private struct WatchPrimaryActionCard: View {
     let isCapturingVoice: Bool
+    let isReady: Bool
     let isDisabled: Bool
     let action: () -> Void
+
+    @State private var pulseScale: CGFloat = 1.0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -143,8 +277,17 @@ private struct WatchPrimaryActionCard: View {
 
             Button(action: action) {
                 HStack(spacing: 8) {
-                    Image(systemName: isCapturingVoice ? "waveform.circle.fill" : "mic.circle.fill")
-                        .font(.title3.weight(.semibold))
+                    ZStack {
+                        if isReady && !isCapturingVoice {
+                            Circle()
+                                .fill(.orange.opacity(0.25))
+                                .frame(width: 28, height: 28)
+                                .scaleEffect(pulseScale)
+                                .opacity(2.0 - Double(pulseScale))
+                        }
+                        Image(systemName: isCapturingVoice ? "waveform.circle.fill" : "mic.circle.fill")
+                            .font(.title3.weight(.semibold))
+                    }
 
                     Text(isCapturingVoice ? "Listening..." : "Speak to Ask")
                         .font(.headline)
@@ -169,8 +312,27 @@ private struct WatchPrimaryActionCard: View {
             )
         )
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .onAppear {
+            if isReady {
+                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                    pulseScale = 1.5
+                }
+            }
+        }
+        .onChange(of: isReady) {
+            if isReady {
+                pulseScale = 1.0
+                withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+                    pulseScale = 1.5
+                }
+            } else {
+                pulseScale = 1.0
+            }
+        }
     }
 }
+
+// MARK: - Status Row
 
 private struct WatchStatusRow: View {
     let state: WatchStateSummary
@@ -213,8 +375,10 @@ private struct WatchStatusRow: View {
     }
 }
 
+// MARK: - Quick Prompt Section
+
 private struct WatchQuickPromptSection: View {
-    let prompts: [String]
+    let prompts: [(icon: String, text: String)]
     let isDisabled: Bool
     let onPromptSelected: (String) -> Void
     let onTypeTap: () -> Void
@@ -224,9 +388,17 @@ private struct WatchQuickPromptSection: View {
             Text("Quick prompts")
                 .font(.headline)
 
-            ForEach(prompts, id: \.self) { prompt in
-                Button(prompt) {
-                    onPromptSelected(prompt)
+            ForEach(prompts, id: \.text) { prompt in
+                Button {
+                    onPromptSelected(prompt.text)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: prompt.icon)
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                            .frame(width: 16)
+                        Text(prompt.text)
+                    }
                 }
                 .buttonStyle(.bordered)
                 .disabled(isDisabled)
@@ -245,9 +417,13 @@ private struct WatchQuickPromptSection: View {
     }
 }
 
+// MARK: - Typed Prompt Sheet
+
 private struct WatchTypedPromptSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(WatchConnectivityClient.self) private var connectivityClient
+
+    private let maxCharacters = 200
 
     var body: some View {
         @Bindable var connectivityClient = connectivityClient
@@ -259,7 +435,27 @@ private struct WatchTypedPromptSheet: View {
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(
+                                connectivityClient.trimmedPrompt.isEmpty ? .clear : .orange.opacity(0.4),
+                                lineWidth: 1.5
+                            )
+                    )
                     .accessibilityLabel("Prompt")
+
+                HStack {
+                    Text("\(connectivityClient.trimmedPrompt.count)/\(maxCharacters)")
+                        .font(.caption2)
+                        .foregroundStyle(
+                            connectivityClient.trimmedPrompt.count > maxCharacters
+                                ? .red
+                                : .secondary
+                        )
+                        .monospacedDigit()
+
+                    Spacer()
+                }
 
                 Button("Send", systemImage: "arrow.up.circle.fill") {
                     connectivityClient.sendPrompt()
@@ -284,18 +480,40 @@ private struct WatchTypedPromptSheet: View {
     }
 }
 
+// MARK: - Empty State
+
 private struct WatchEmptyState: View {
     let isReachable: Bool
     let isSending: Bool
 
+    @State private var appeared = false
+    @State private var glowPhase: CGFloat = 0
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                Image("logo")
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 26, height: 26)
-                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                ZStack {
+                    let startDegrees = Double(glowPhase) * 360.0
+                    Circle()
+                        .fill(
+                            AngularGradient(
+                                colors: [.orange, .pink, .purple, .blue, .orange],
+                                center: .center,
+                                startAngle: .degrees(startDegrees),
+                                endAngle: .degrees(startDegrees + 360.0)
+                            )
+                        )
+                        .frame(width: 34, height: 34)
+                        .blur(radius: 4)
+                        .opacity(0.5)
+
+                    Image("logo")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 28, height: 28)
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
+                }
 
                 Text("Own Ai")
                     .font(.caption.weight(.semibold))
@@ -305,8 +523,9 @@ private struct WatchEmptyState: View {
             }
 
             Image(systemName: isSending ? "waveform.badge.mic" : "mic.and.signal.meter")
-                .font(.system(size: 26, weight: .medium))
+                .font(.system(size: 28, weight: .medium))
                 .foregroundStyle(isReachable ? .orange : .secondary)
+                .symbolEffect(.pulse, options: .repeating, isActive: isSending)
 
             Text(emptyTitle)
                 .font(.headline)
@@ -316,15 +535,23 @@ private struct WatchEmptyState: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(
-            LinearGradient(
-                colors: [.white.opacity(0.55), .gray.opacity(0.12)],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+        .padding(12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(.white.opacity(0.15), lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: .black.opacity(0.08), radius: 8, y: 4)
+        .opacity(appeared ? 1 : 0)
+        .offset(y: appeared ? 0 : 8)
+        .onAppear {
+            withAnimation(.easeOut(duration: 0.5)) {
+                appeared = true
+            }
+            withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) {
+                glowPhase = 1
+            }
+        }
     }
 
     private var emptyTitle: String {
@@ -348,6 +575,8 @@ private struct WatchEmptyState: View {
     }
 }
 
+// MARK: - State Banner
+
 private struct WatchStateBanner: View {
     let title: String
     let message: String
@@ -355,6 +584,7 @@ private struct WatchStateBanner: View {
     let tint: Color
     let buttonTitle: String?
     let action: (() -> Void)?
+    let showWaveform: Bool
 
     init(
         title: String,
@@ -362,7 +592,8 @@ private struct WatchStateBanner: View {
         iconName: String,
         tint: Color,
         buttonTitle: String? = nil,
-        action: (() -> Void)? = nil
+        action: (() -> Void)? = nil,
+        showWaveform: Bool = false
     ) {
         self.title = title
         self.message = message
@@ -370,13 +601,20 @@ private struct WatchStateBanner: View {
         self.tint = tint
         self.buttonTitle = buttonTitle
         self.action = action
+        self.showWaveform = showWaveform
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(title, systemImage: iconName)
-                .font(.headline)
-                .foregroundStyle(tint)
+            HStack(spacing: 6) {
+                Label(title, systemImage: iconName)
+                    .font(.headline)
+                    .foregroundStyle(tint)
+
+                if showWaveform {
+                    WatchWaveformView(tint: tint)
+                }
+            }
 
             Text(message)
                 .font(.footnote)
@@ -401,6 +639,8 @@ private struct WatchStateBanner: View {
     }
 }
 
+// MARK: - Message Bubble
+
 private struct WatchMessageBubble: View {
     @Environment(WatchConnectivityClient.self) private var connectivityClient
     let entry: WatchChatEntry
@@ -412,27 +652,52 @@ private struct WatchMessageBubble: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(entry.role == .user ? "You" : "Own Ai")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .font(.caption2.weight(.bold))
+                .foregroundStyle(entry.role == .user ? .orange : .secondary)
 
-            Text(entry.content)
-                .font(.system(.body, design: .rounded))
-                .lineLimit(isExpandable && !isExpanded ? collapsedLineLimit : nil)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if entry.isPending {
+                HStack(spacing: 8) {
+                    WatchThinkingDots()
+                    Text(entry.content)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text(entry.content)
+                    .font(.callout)
+                    .lineLimit(isExpandable && !isExpanded ? collapsedLineLimit : nil)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             if let pendingState = entry.pendingState {
                 WatchMessageStatePill(state: pendingState)
             }
 
-            if let modelName = entry.modelName, !entry.isPending {
-                Text(modelName)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+            if !entry.isPending {
+                HStack(spacing: 6) {
+                    if let modelName = entry.modelName {
+                        Text(modelName)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let respondedAt = entry.respondedAt {
+                        Text("·")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+
+                        Text(relativeFormatter.localizedString(for: respondedAt, relativeTo: .now))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
             }
 
             if isExpandable {
                 Button(isExpanded ? "Show Less" : "Read More") {
-                    isExpanded.toggle()
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isExpanded.toggle()
+                    }
                 }
                 .buttonStyle(.plain)
                 .font(.caption.weight(.semibold))
@@ -450,13 +715,21 @@ private struct WatchMessageBubble: View {
                 .accessibilityHint("Opens this conversation on your paired iPhone.")
             }
         }
-        .padding(8)
+        .padding(10)
         .background(backgroundStyle)
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(borderStyle, lineWidth: 1)
         )
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
+        .contextMenu {
+            if entry.role == .assistant && !entry.isPending {
+                Button("Copy", systemImage: "doc.on.doc") {
+                    copyToClipboard(entry.content)
+                }
+            }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
     }
@@ -535,7 +808,15 @@ private struct WatchMessageBubble: View {
         let speaker = entry.role == .user ? "You" : "Own Ai"
         return "\(speaker). \(entry.content)"
     }
+
+    private func copyToClipboard(_ text: String) {
+        #if os(watchOS)
+        // watchOS doesn't have UIPasteboard — handled via WatchKit extension if needed
+        #endif
+    }
 }
+
+// MARK: - Message State Pill
 
 private struct WatchMessageStatePill: View {
     let state: WatchChatEntry.PendingState
@@ -586,6 +867,7 @@ private struct WatchMessageStatePill: View {
                     content: "Your iPhone companion target is wired and ready for the next step.",
                     conversationID: UUID(),
                     modelName: "Qwen3 1.7B",
+                    respondedAt: .now,
                     isError: false
                 )
             ]

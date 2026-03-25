@@ -7,13 +7,11 @@ import WatchConnectivity
 @Observable
 final class WatchConnectivityClient: NSObject {
     private static let persistedStateKey = "watchConnectivityClient.state"
-    private static let maxPersistedEntries = 24
 
     var prompt = ""
     var entries: [WatchChatEntry] = [] {
         didSet {
             guard !isRestoringPersistedState else { return }
-            trimPersistedEntriesIfNeeded()
             persistState()
         }
     }
@@ -136,7 +134,7 @@ final class WatchConnectivityClient: NSObject {
         submit(request, using: session)
     }
 
-    func startDictation() {
+    func startDictation(suggestions: [String] = []) {
         guard !isSending else { return }
         guard let controller = WKExtension.shared().visibleInterfaceController else {
             statusMessage = "Open the app, then try again."
@@ -149,7 +147,7 @@ final class WatchConnectivityClient: NSObject {
         playHaptic(.start)
 
         controller.presentTextInputController(
-            withSuggestions: nil,
+            withSuggestions: suggestions.isEmpty ? nil : suggestions,
             allowedInputMode: .plain
         ) { [weak self] results in
             Task { @MainActor in
@@ -182,6 +180,11 @@ final class WatchConnectivityClient: NSObject {
         }
     }
 
+    func clearHistory() {
+        entries.removeAll()
+        statusMessage = isReachable ? "Ready on iPhone." : "Connect to your iPhone to send prompts."
+    }
+
     func retryLatestFailedPrompt() {
         guard let latestFailedPrompt else { return }
         prompt = latestFailedPrompt
@@ -202,7 +205,7 @@ final class WatchConnectivityClient: NSObject {
         isSending = false
 
         if let index = entries.firstIndex(where: {
-            $0.requestID == response.requestID && $0.role == .assistant && !$0.isPending
+            $0.requestID == response.requestID && $0.role == .assistant
         }) {
             entries[index] = .assistant(
                 id: entries[index].id,
@@ -210,17 +213,7 @@ final class WatchConnectivityClient: NSObject {
                 content: response.reply,
                 conversationID: response.conversationID,
                 modelName: response.modelName,
-                isError: response.isError
-            )
-        } else if let index = entries.firstIndex(where: {
-            $0.requestID == response.requestID && $0.role == .assistant && $0.isPending
-        }) {
-            entries[index] = .assistant(
-                id: entries[index].id,
-                requestID: response.requestID,
-                content: response.reply,
-                conversationID: response.conversationID,
-                modelName: response.modelName,
+                respondedAt: response.respondedAt,
                 isError: response.isError
             )
         } else {
@@ -231,6 +224,7 @@ final class WatchConnectivityClient: NSObject {
                     content: response.reply,
                     conversationID: response.conversationID,
                     modelName: response.modelName,
+                    respondedAt: response.respondedAt,
                     isError: response.isError
                 )
             )
@@ -259,6 +253,7 @@ final class WatchConnectivityClient: NSObject {
                 content: message,
                 conversationID: entries[index].conversationID,
                 modelName: nil,
+                respondedAt: nil,
                 isError: true
             )
         }
@@ -311,7 +306,7 @@ final class WatchConnectivityClient: NSObject {
             )
 
             if let fallbackMessage, !fallbackMessage.isEmpty {
-                statusMessage = "Queued for iPhone."
+                statusMessage = "Queued — \(fallbackMessage)"
             } else {
                 statusMessage = "Queued for iPhone."
             }
@@ -389,7 +384,6 @@ final class WatchConnectivityClient: NSObject {
 
     private func persistState() {
         let persistedState = PersistedWatchState(
-            entries: entries,
             statusMessage: statusMessage,
             isSending: isSending,
             isCapturingVoice: isCapturingVoice
@@ -405,27 +399,16 @@ final class WatchConnectivityClient: NSObject {
     private func restorePersistedState() {
         guard let data = UserDefaults.standard.data(forKey: Self.persistedStateKey),
               let persistedState = try? JSONDecoder().decode(PersistedWatchState.self, from: data) else {
+            UserDefaults.standard.removeObject(forKey: Self.persistedStateKey)
             return
         }
 
         isRestoringPersistedState = true
-        entries = normalizedPersistedEntries(persistedState.entries)
+        entries = []
         statusMessage = persistedState.statusMessage
         isSending = false
         isCapturingVoice = false
         isRestoringPersistedState = false
-    }
-
-    private func trimPersistedEntriesIfNeeded() {
-        guard entries.count > Self.maxPersistedEntries else { return }
-        entries = Array(entries.suffix(Self.maxPersistedEntries))
-    }
-
-    private func normalizedPersistedEntries(_ entries: [WatchChatEntry]) -> [WatchChatEntry] {
-        entries.map { entry in
-            guard entry.pendingState == .sending else { return entry }
-            return entry.updatingPendingState(.queued, content: "Queued for iPhone...")
-        }
     }
 
     private func playHaptic(_ type: WKHapticType) {
@@ -493,7 +476,6 @@ enum WatchStateSummary {
 }
 
 private struct PersistedWatchState: Codable {
-    let entries: [WatchChatEntry]
     let statusMessage: String
     let isSending: Bool
     let isCapturingVoice: Bool
@@ -552,6 +534,7 @@ struct WatchChatEntry: Identifiable, Equatable, Codable {
     let conversationID: UUID?
     let modelName: String?
     let pendingState: PendingState?
+    let respondedAt: Date?
     let isError: Bool
 
     var isPending: Bool {
@@ -572,6 +555,7 @@ struct WatchChatEntry: Identifiable, Equatable, Codable {
             conversationID: nil,
             modelName: nil,
             pendingState: nil,
+            respondedAt: nil,
             isError: false
         )
     }
@@ -589,6 +573,7 @@ struct WatchChatEntry: Identifiable, Equatable, Codable {
             conversationID: nil,
             modelName: nil,
             pendingState: state,
+            respondedAt: nil,
             isError: false
         )
     }
@@ -599,6 +584,7 @@ struct WatchChatEntry: Identifiable, Equatable, Codable {
         content: String,
         conversationID: UUID?,
         modelName: String?,
+        respondedAt: Date?,
         isError: Bool
     ) -> WatchChatEntry {
         WatchChatEntry(
@@ -609,6 +595,7 @@ struct WatchChatEntry: Identifiable, Equatable, Codable {
             conversationID: conversationID,
             modelName: modelName,
             pendingState: nil,
+            respondedAt: respondedAt,
             isError: isError
         )
     }
@@ -622,6 +609,7 @@ struct WatchChatEntry: Identifiable, Equatable, Codable {
             conversationID: conversationID,
             modelName: modelName,
             pendingState: state,
+            respondedAt: respondedAt,
             isError: isError
         )
     }

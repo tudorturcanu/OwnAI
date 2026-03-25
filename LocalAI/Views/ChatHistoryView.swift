@@ -24,11 +24,41 @@ struct ChatHistoryView: View {
             }
         }
     }
+
+    private var groupedConversations: [(title: String, conversations: [ChatConversation])] {
+        let calendar = Calendar.current
+        let now = Date()
+        let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: now) ?? .distantPast
+
+        var today: [ChatConversation] = []
+        var yesterday: [ChatConversation] = []
+        var previous7Days: [ChatConversation] = []
+        var earlier: [ChatConversation] = []
+
+        for conversation in filteredConversations {
+            if calendar.isDateInToday(conversation.updatedAt) {
+                today.append(conversation)
+            } else if calendar.isDateInYesterday(conversation.updatedAt) {
+                yesterday.append(conversation)
+            } else if conversation.updatedAt >= sevenDaysAgo {
+                previous7Days.append(conversation)
+            } else {
+                earlier.append(conversation)
+            }
+        }
+
+        var groups: [(title: String, conversations: [ChatConversation])] = []
+        if !today.isEmpty { groups.append(("Today", today)) }
+        if !yesterday.isEmpty { groups.append(("Yesterday", yesterday)) }
+        if !previous7Days.isEmpty { groups.append(("Previous 7 Days", previous7Days)) }
+        if !earlier.isEmpty { groups.append(("Earlier", earlier)) }
+        return groups
+    }
     
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(spacing: 8) {
+                LazyVStack(spacing: 8, pinnedViews: [.sectionHeaders]) {
                     if filteredConversations.isEmpty {
                         if searchText.isEmpty {
                             emptyState
@@ -36,17 +66,38 @@ struct ChatHistoryView: View {
                             ContentUnavailableView.search(text: searchText)
                         }
                     } else {
-                        ForEach(filteredConversations) { conversation in
-                            ConversationRow(
-                                conversation: conversation,
-                                isSelected: conversation.id == historyManager.currentConversationID
-                            ) {
-                                historyManager.selectConversation(conversation.id)
-                                dismiss()
-                            } onDelete: {
-                                withAnimation(.spring(response: 0.3)) {
-                                    historyManager.deleteConversation(conversation.id)
+                        ForEach(groupedConversations, id: \.title) { section in
+                            Section {
+                                ForEach(section.conversations) { conversation in
+                                    ConversationRow(
+                                        conversation: conversation,
+                                        isSelected: conversation.id == historyManager.currentConversationID
+                                    ) {
+                                        historyManager.selectConversation(conversation.id)
+                                        dismiss()
+                                    } onDelete: {
+                                        withAnimation(.spring(response: 0.3)) {
+                                            historyManager.deleteConversation(conversation.id)
+                                        }
+                                    }
+                                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                        Button(role: .destructive) {
+                                            withAnimation(.spring(response: 0.3)) {
+                                                historyManager.deleteConversation(conversation.id)
+                                            }
+                                        } label: {
+                                            Label("Delete", systemImage: "trash")
+                                        }
+                                    }
                                 }
+                            } header: {
+                                Text(section.title)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(Color(white: 0.4))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, 4)
+                                    .background(Color(white: 0.96))
                             }
                         }
                     }
@@ -147,10 +198,17 @@ struct ConversationRow: View {
                         .font(.body.weight(.medium))
                         .foregroundStyle(Color(white: 0.1))
                         .lineLimit(1)
+
+                    if let lastMessage = conversation.messages.last {
+                        Text(lastMessage.content.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60) + (lastMessage.content.count > 60 ? "…" : ""))
+                            .font(.caption)
+                            .foregroundStyle(Color(white: 0.45))
+                            .lineLimit(1)
+                    }
                     
                     Text(formattedDate)
-                        .font(.caption)
-                        .foregroundStyle(Color(white: 0.5))
+                        .font(.caption2)
+                        .foregroundStyle(Color(white: 0.55))
                 }
                 
                 Spacer()

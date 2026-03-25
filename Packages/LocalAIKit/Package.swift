@@ -18,15 +18,13 @@ let package = Package(
             url: "https://github.com/mattt/AnyLanguageModel",
             from: "0.6.0",
             traits: ["MLX"]
-        ),
-        .package(path: "../KokoroSwiftLocal")
+        )
     ],
     targets: [
         .target(
             name: "LocalAIKit",
             dependencies: [
-                .product(name: "AnyLanguageModel", package: "AnyLanguageModel"),
-                .product(name: "KokoroSwift", package: "KokoroSwiftLocal")
+                .product(name: "AnyLanguageModel", package: "AnyLanguageModel")
             ],
             linkerSettings: [
                 .linkedFramework("Metal"),

@@ -7,12 +7,10 @@
 
 import Foundation
 import SwiftUI
-import AnyLanguageModel
+import LocalAIKit
 import UIKit
 
 #if !targetEnvironment(simulator)
-import MLXLLM
-import MLX
 #endif
 
 /// Engine state for LLM operations
@@ -41,7 +39,7 @@ final class LLMEngine {
     @ObservationIgnored @AppStorage("maxTokens") var maxTokens: Int = 512
     @ObservationIgnored @AppStorage("lowPowerMode") var lowPowerMode: Bool = false
     
-    private typealias LocalSession = AnyLanguageModel.LanguageModelSession
+    private typealias LocalSession = LanguageModelSession
     
     // Apple Foundation
     private let appleFoundationBridge = AppleFoundationModelBridge()
@@ -53,6 +51,7 @@ final class LLMEngine {
     #endif
     
     private var generationTask: Task<Void, Never>?
+    private var isolatedGenerationTask: Task<String, Error>?
     private var loadTask: Task<Void, Error>?
     private var loadingModelID: String?
     private var loadTaskID: UUID?
@@ -157,6 +156,8 @@ final class LLMEngine {
         #endif
         loadTask?.cancel()
         loadTask = nil
+        isolatedGenerationTask?.cancel()
+        isolatedGenerationTask = nil
         loadingModelID = nil
         loadTaskID = nil
         currentModel = nil
@@ -182,8 +183,8 @@ final class LLMEngine {
             } else {
                 mlxModel = MLXLanguageModel(modelId: modelID)
             }
-            let instructions: AnyLanguageModel.Instructions? = mlxSessionInstructions(for: modelID).map {
-                AnyLanguageModel.Instructions($0)
+            let instructions: Instructions? = mlxSessionInstructions(for: modelID).map {
+                Instructions($0)
             }
             mlxSession = LocalSession(model: mlxModel, instructions: instructions)
             mlxSession?.prewarm()
@@ -285,22 +286,20 @@ final class LLMEngine {
                         throw LLMError.modelNotLoaded
                     }
                     
-                    let options = AnyLanguageModel.GenerationOptions(
-                        sampling: AnyLanguageModel.GenerationOptions.SamplingMode.random(probabilityThreshold: effectiveTopP),
+                    let options = GenerationOptions(
+                        sampling: GenerationOptions.SamplingMode.random(probabilityThreshold: effectiveTopP),
                         temperature: effectiveTemperature,
                         maximumResponseTokens: effectiveMaxTokens
                     )
                     // Stream MLX output so users see first tokens sooner and keep MLX errors throwable.
                     var lastContent = ""
-                    try await withError {
-                        let stream = session.streamResponse(to: effectiveMlxPrompt, options: options)
-                        for try await snapshot in stream {
-                            if Task.isCancelled { break }
-                            lastContent = snapshot.content
-                            await self.updateResponseIfNeeded(lastContent, force: false)
-                            if AssistantOutputSanitizer.containsControlMarker(snapshot.content) {
-                                break
-                            }
+                    let stream = session.streamResponse(to: effectiveMlxPrompt, options: options)
+                    for try await snapshot in stream {
+                        if Task.isCancelled { break }
+                        lastContent = snapshot.content
+                        await self.updateResponseIfNeeded(lastContent, force: false)
+                        if AssistantOutputSanitizer.containsControlMarker(snapshot.content) {
+                            break
                         }
                     }
                     await self.updateResponseIfNeeded(lastContent, force: true)
@@ -341,6 +340,147 @@ final class LLMEngine {
         }
         resetIdleTimer()
     }
+
+    func generateIsolatedReply(
+        prompt: String,
+        systemPrompt: String = "You are a helpful AI assistant.",
+        model: ModelInfo,
+        overrides: GenerationOverrides? = nil
+    ) async throws -> String {
+        try ensureGPUWorkAllowed(for: model)
+
+        if state == .loading, let task = loadTask {
+            _ = try? await task.value
+        }
+
+        switch state {
+        case .loading, .generating:
+            throw LLMError.engineBusy
+        default:
+            break
+        }
+
+        switch model.engine {
+        case .appleFoundation:
+            let availability = appleFoundationBridge.availability
+            guard availability == .available else {
+                throw LLMError.modelNotAvailable(availability.engineErrorMessage)
+            }
+        case .mlx:
+            #if targetEnvironment(simulator)
+            throw LLMError.modelNotAvailable("MLX is not available on the simulator.")
+            #else
+            if UIDevice.current.userInterfaceIdiom == .phone && model.requiresLargeDeviceOnPhone {
+                throw LLMError.modelNotAvailable("This model requires an iPad Pro or Mac. It exceeds the practical memory budget for iPhone.")
+            }
+            guard model.downloadState.isDownloaded else {
+                throw LLMError.modelNotAvailable("This model isn't downloaded yet. Open Settings > Models to download it.")
+            }
+            #endif
+        }
+
+        let previousState = state
+        let previousResponse = currentResponse
+        let previousTokensPerSecond = streamingTokensPerSecond
+        let previousStreamingStartTime = streamingStartTime
+
+        state = .generating
+        IdleTimerCoordinator.shared.setReason("llmGenerating", enabled: true)
+        currentResponse = ""
+        streamingStartTime = nil
+        streamingTokensPerSecond = 0
+
+        defer {
+            currentResponse = previousResponse
+            streamingStartTime = previousStreamingStartTime
+            streamingTokensPerSecond = previousTokensPerSecond
+            if state == .generating {
+                state = previousState == .loading ? .ready : previousState
+            }
+            IdleTimerCoordinator.shared.setReason("llmGenerating", enabled: false)
+            isolatedGenerationTask = nil
+            resetIdleTimer()
+        }
+
+        let effectiveSystemPrompt = systemPrompt == "You are a helpful AI assistant."
+            ? (UserDefaults.standard.string(forKey: "systemPrompt") ?? systemPrompt)
+            : systemPrompt
+        let effectiveMlxPrompt = mlxPrompt(
+            from: prompt,
+            systemPrompt: effectiveSystemPrompt,
+            modelID: model.id
+        )
+        let currentTopP = overrides?.topP ?? self.topP
+        let currentTemperature = overrides?.temperature ?? self.temperature
+        let currentMaxTokens = overrides?.maxTokens ?? self.maxTokens
+        let effectiveTopP = lowPowerMode ? min(currentTopP, 0.9) : currentTopP
+        let effectiveTemperature = lowPowerMode ? min(currentTemperature, 0.6) : currentTemperature
+        let effectiveMaxTokens = lowPowerMode ? min(currentMaxTokens, 256) : currentMaxTokens
+
+        let task = Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self else { return "" }
+            var response = ""
+
+            if model.engine == .appleFoundation {
+                try await self.appleFoundationBridge.streamResponse(
+                    to: prompt,
+                    systemPrompt: effectiveSystemPrompt,
+                    topP: effectiveTopP,
+                    temperature: effectiveTemperature,
+                    maxTokens: effectiveMaxTokens,
+                    isolated: true
+                ) { content in
+                    response = content
+                    return AssistantOutputSanitizer.containsControlMarker(content)
+                }
+                return response
+            }
+
+            #if targetEnvironment(simulator)
+            throw LLMError.generationFailed("MLX is not available on the simulator.")
+            #else
+            let persistentPath = MLXStorage.modelDirectory(for: model.id)
+            let mlxModel: MLXLanguageModel
+            if FileManager.default.fileExists(atPath: persistentPath.path) {
+                mlxModel = MLXLanguageModel(modelId: model.id, directory: persistentPath)
+            } else {
+                mlxModel = MLXLanguageModel(modelId: model.id)
+            }
+            let session = LocalSession(model: mlxModel, transcript: Transcript())
+            let options = GenerationOptions(
+                sampling: GenerationOptions.SamplingMode.random(probabilityThreshold: effectiveTopP),
+                temperature: effectiveTemperature,
+                maximumResponseTokens: effectiveMaxTokens
+            )
+
+            let stream = session.streamResponse(to: effectiveMlxPrompt, options: options)
+            for try await snapshot in stream {
+                if Task.isCancelled { break }
+                response = snapshot.content
+                if AssistantOutputSanitizer.containsControlMarker(snapshot.content) {
+                    break
+                }
+            }
+            return response
+            #endif
+        }
+
+        isolatedGenerationTask = task
+
+        do {
+            let isolatedResponse = try await MemoryProfiler.measure("LLMEngine.generateIsolatedReply(\(model.id))") {
+                try await task.value
+            }
+            state = .ready
+            return isolatedResponse
+        } catch is CancellationError {
+            state = .ready
+            throw LLMError.engineBusy
+        } catch {
+            state = .error(message: error.localizedDescription)
+            throw error
+        }
+    }
     
     /// Throttled UI update
     private func updateResponseIfNeeded(_ content: String, force: Bool) async {
@@ -362,6 +502,8 @@ final class LLMEngine {
     func stopGeneration() {
         generationTask?.cancel()
         generationTask = nil
+        isolatedGenerationTask?.cancel()
+        isolatedGenerationTask = nil
         state = .ready
         IdleTimerCoordinator.shared.setReason("llmGenerating", enabled: false)
         streamingStartTime = nil
@@ -380,6 +522,8 @@ final class LLMEngine {
 
         generationTask?.cancel()
         generationTask = nil
+        isolatedGenerationTask?.cancel()
+        isolatedGenerationTask = nil
         loadTask?.cancel()
         loadTask = nil
         loadingModelID = nil
@@ -551,8 +695,8 @@ private extension LLMEngine {
                     } else {
                         mlxModel = MLXLanguageModel(modelId: model.id)
                     }
-                    let instructions: AnyLanguageModel.Instructions? = mlxSessionInstructions(for: model.id).map {
-                        AnyLanguageModel.Instructions($0)
+                    let instructions: Instructions? = mlxSessionInstructions(for: model.id).map {
+                        Instructions($0)
                     }
                     mlxSession = LocalSession(model: mlxModel, instructions: instructions)
                     try ensureGPUWorkAllowed(for: model)

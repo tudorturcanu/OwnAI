@@ -86,10 +86,10 @@ final class WatchConnectivitySessionManager: NSObject {
         historyManager.addMessage(ChatMessage(role: .user, content: request.prompt))
 
         do {
-            try await llmEngine.loadModel(model)
-            try await llmEngine.generate(
+            let reply = try await llmEngine.generateIsolatedReply(
                 prompt: request.prompt,
                 systemPrompt: Self.watchSystemPrompt,
+                model: model,
                 overrides: .init(
                     temperature: Self.watchTemperature,
                     topP: Self.watchTopP,
@@ -97,8 +97,9 @@ final class WatchConnectivitySessionManager: NSObject {
                 )
             )
 
-            let reply = llmEngine.currentResponse.trimmingCharacters(in: .whitespacesAndNewlines)
-            let normalizedReply = normalizedWatchReply(reply)
+            let normalizedReply = normalizedWatchReply(
+                reply.trimmingCharacters(in: .whitespacesAndNewlines)
+            )
 
             historyManager.addMessage(ChatMessage(role: .assistant, content: normalizedReply))
 
