@@ -12,6 +12,7 @@ struct ModelDownloadView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(ModelManager.self) private var modelManager
     @Environment(LLMEngine.self) private var llmEngine
+    @Environment(MonetizationManager.self) private var monetizationManager
 
     private var appleModels: [ModelInfo] {
         modelManager.models.filter { modelManager.shouldShowModelInCatalog($0) && $0.engine == .appleFoundation }
@@ -287,12 +288,14 @@ struct ModelCard: View {
     let model: ModelInfo
     @Environment(ModelManager.self) private var modelManager
     @Environment(LLMEngine.self) private var llmEngine
+    @Environment(MonetizationManager.self) private var monetizationManager
     @Environment(\.openURL) private var openURL
     @State private var isHovered = false
     @State private var testResult: ModelQuickTestResult?
     @State private var isThinkingEnabled = false
     @State private var showConsentSheet = false
     @State private var pendingAction: (() -> Void)?
+    @State private var upgradeFeature: PremiumFeature?
     
     private var isSelected: Bool {
         modelManager.selectedModel?.id == model.id
@@ -301,6 +304,10 @@ struct ModelCard: View {
     /// Whether this Apple model is unsupported on the current device
     private var isAppleUnavailable: Bool {
         model.isAppleFoundation && !modelManager.isAppleIntelligenceAvailable
+    }
+
+    private var isPremiumModel: Bool {
+        monetizationManager.isPremiumModel(model)
     }
     
     var body: some View {
@@ -340,11 +347,17 @@ struct ModelCard: View {
                             .foregroundStyle(Color(white: 0.5))
                             .lineLimit(3)
                     } else {
-                        Text(model.shortDescription)
-                            .font(.subheadline)
-                            .foregroundStyle(Color(white: 0.5))
-                            .lineLimit(4)
-                            .fixedSize(horizontal: false, vertical: true)
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(model.shortDescription)
+                                .font(.subheadline)
+                                .foregroundStyle(Color(white: 0.5))
+                                .lineLimit(4)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            if isPremiumModel {
+                                InfoTag(icon: "crown.fill", text: "Pro", isHighlighted: true)
+                            }
+                        }
                     }
                 }
                 
@@ -414,6 +427,9 @@ struct ModelCard: View {
                 showConsentSheet = false
                 pendingAction = nil
             }
+        }
+        .sheet(item: $upgradeFeature) { feature in
+            UpgradeView(feature: feature)
         }
     }
     
@@ -625,12 +641,18 @@ struct ModelCard: View {
                 }
 
             case .notDownloaded:
-                DownloadButton(action: {
-                    requireConsentAndPerform {
-                        modelManager.downloadModel(model.id)
-                        modelManager.selectModel(model.id)
+                if isPremiumModel && !monetizationManager.hasPro {
+                    UpgradeActionButton {
+                        upgradeFeature = .allModels
                     }
-                })
+                } else {
+                    DownloadButton(action: {
+                        requireConsentAndPerform {
+                            modelManager.downloadModel(model.id)
+                            modelManager.selectModel(model.id)
+                        }
+                    })
+                }
                 
             case .downloading(let progress):
                 DownloadingButton(progress: progress, action: {
@@ -638,15 +660,26 @@ struct ModelCard: View {
                 })
                 
             case .downloaded:
-                HStack(spacing: 12) {
-                    SelectButton(isSelected: isSelected) {
-                        requireConsentAndPerform {
-                            modelManager.selectModel(model.id)
+                if isPremiumModel && !monetizationManager.hasPro {
+                    HStack(spacing: 12) {
+                        UpgradeActionButton {
+                            upgradeFeature = .allModels
                         }
+                        DeleteButton(action: {
+                            modelManager.deleteModel(model.id)
+                        })
                     }
-                    DeleteButton(action: {
-                        modelManager.deleteModel(model.id)
-                    })
+                } else {
+                    HStack(spacing: 12) {
+                        SelectButton(isSelected: isSelected) {
+                            requireConsentAndPerform {
+                                modelManager.selectModel(model.id)
+                            }
+                        }
+                        DeleteButton(action: {
+                            modelManager.deleteModel(model.id)
+                        })
+                    }
                 }
                 
             case .error(let message):
@@ -1074,6 +1107,33 @@ struct DownloadButton: View {
     }
 }
 
+struct UpgradeActionButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "crown.fill")
+                    .font(.body.bold())
+                Text("Unlock Pro")
+                    .fontWeight(.semibold)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(
+                LinearGradient(
+                    colors: [.orange, .pink],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(ActionButtonStyle())
+    }
+}
+
 struct UnsupportedModelButton: View {
     let title: String
     let subtitle: String
@@ -1208,4 +1268,5 @@ struct ActionButtonStyle: ButtonStyle {
     ModelDownloadView()
         .environment(ModelManager())
         .environment(LLMEngine())
+        .environment(MonetizationManager())
 }

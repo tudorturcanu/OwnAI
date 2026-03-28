@@ -11,8 +11,9 @@ import SwiftUI
 struct LocalAIApp: App {
     @State private var llmEngine = LLMEngine()
     @State private var historyManager = ChatHistoryManager()
-    @State private var modelManager = ModelManager()
+    @StateObject private var modelManager = ModelManager()
     @State private var speechManager = SpeechManager()
+    @State private var monetizationManager = MonetizationManager()
     @State private var watchSessionManager = WatchConnectivitySessionManager()
     @Environment(\.scenePhase) private var scenePhase
     
@@ -26,7 +27,9 @@ struct LocalAIApp: App {
                 .environment(llmEngine)
                 .environment(historyManager)
                 .environment(modelManager)
+                .environmentObject(modelManager)
                 .environment(speechManager)
+                .environment(monetizationManager)
                 .environment(watchSessionManager)
                 .preferredColorScheme(.light)
                 .onAppear {

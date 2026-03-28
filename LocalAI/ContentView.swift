@@ -93,12 +93,18 @@ struct ContentView: View {
         }
         .sheet(isPresented: $showHistory) {
             ChatHistoryView()
+                .environment(modelManager)
+                .environmentObject(modelManager)
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
+                .environment(modelManager)
+                .environmentObject(modelManager)
         }
         .sheet(isPresented: $showOnboarding, onDismiss: { hasShownOnboarding = true }) {
             OnboardingView(isPresented: $showOnboarding)
+                .environment(modelManager)
+                .environmentObject(modelManager)
                 .interactiveDismissDisabled()
         }
         .onAppear {
@@ -145,4 +151,7 @@ struct ContentView: View {
     ContentView()
         .environment(LLMEngine())
         .environment(ChatHistoryManager())
+        .environment(ModelManager())
+        .environment(SpeechManager())
+        .environment(MonetizationManager())
 }

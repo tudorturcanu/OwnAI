@@ -10,6 +10,7 @@ import Hub
 import SwiftUI
 import UIKit
 import Darwin
+import Combine
 
 // MLX is disabled for simulator - only available on real devices
 #if !targetEnvironment(simulator)
@@ -47,7 +48,9 @@ enum DownloadErrorAction {
 /// Manages model downloads and lifecycle
 @MainActor
 @Observable
-final class ModelManager {
+final class ModelManager: ObservableObject {
+    nonisolated let objectWillChange = ObservableObjectPublisher()
+
     private enum DownloadFailureReason: Equatable {
         case lowStorage(requiredGB: Double, availableGB: Double)
         case network

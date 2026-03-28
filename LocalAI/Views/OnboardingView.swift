@@ -68,7 +68,7 @@ struct OnboardingView: View {
                     .foregroundStyle(Color(white: 0.1))
                 
                 Text(modelManager.isAppleIntelligenceDeviceSupported ?
-                     "Experience the power of AI,\non-device and with Apple Intelligence when enabled." :
+                     "Experience the power of AI,\non-device and with Apple Intelligence." :
                      "Experience the power of AI,\nrunning entirely on your device.")
                     .font(.body)
                     .multilineTextAlignment(.center)

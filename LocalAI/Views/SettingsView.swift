@@ -10,11 +10,14 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(ChatHistoryManager.self) private var historyManager
+    @Environment(ModelManager.self) private var modelManager
+    @Environment(MonetizationManager.self) private var monetizationManager
     @AppStorage("lowPowerMode") private var lowPowerMode = false
     @AppStorage("historyRetentionDays") private var historyRetentionDays = 0
     @AppStorage("autoRead") private var autoRead = false
     @State private var showClearHistoryConfirmation = false
     @State private var showDataPrivacySheet = false
+    @State private var isUpgradeSheetPresented = false
 
     private let retentionOptions = [0, 7, 30, 90]
 
@@ -22,6 +25,8 @@ struct SettingsView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
+                    monetizationSection
+
                     // Models & Personality
                     settingsGroup(header: "AI") {
                         NavigationLink {
@@ -73,9 +78,46 @@ struct SettingsView: View {
                 }
             }
         }
+        .sheet(isPresented: $isUpgradeSheetPresented) {
+            UpgradeView(feature: .allModels)
+        }
     }
 
     // MARK: - Privacy Controls Section
+
+    private var monetizationSection: some View {
+        settingsGroup {
+            Button {
+                presentUpgradeSheet()
+            } label: {
+                HStack(spacing: 16) {
+                    Image(systemName: monetizationManager.hasPro ? "checkmark.seal.fill" : "crown.fill")
+                        .font(.body)
+                        .foregroundStyle(monetizationManager.hasPro ? .green : .orange)
+                        .frame(width: 24)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(monetizationManager.hasPro ? "Own AI Pro Unlocked" : "Upgrade to Own AI Pro")
+                            .font(.body)
+                            .foregroundStyle(Color(white: 0.1))
+                        Text(monetizationManager.hasPro ? "All premium features are available on this device." : "Unlock all models, advanced personality controls, docs, and conversation mode.")
+                            .font(.caption)
+                            .foregroundStyle(Color(white: 0.45))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color(white: 0.7))
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+            }
+            .buttonStyle(.plain)
+        }
+    }
 
     private var privacyControlsSection: some View {
         settingsGroup(header: "Privacy") {
@@ -179,6 +221,8 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showDataPrivacySheet) {
             DataPrivacySheet()
+                .environment(modelManager)
+                .environmentObject(modelManager)
         }
     }
 
@@ -229,10 +273,17 @@ struct SettingsView: View {
             UIApplication.shared.open(url)
         }
     }
+
+    private func presentUpgradeSheet() {
+        showDataPrivacySheet = false
+        isUpgradeSheetPresented = true
+    }
 }
 
 #Preview {
     SettingsView()
         .environment(ChatHistoryManager())
+        .environment(ModelManager())
+        .environment(MonetizationManager())
         .environment(SpeechManager())
 }

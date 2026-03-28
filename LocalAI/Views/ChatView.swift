@@ -6,6 +6,7 @@ struct ChatView: View {
     @Environment(ChatHistoryManager.self) private var historyManager
     @Environment(ModelManager.self) private var modelManager
     @Environment(SpeechManager.self) private var speechManager
+    @Environment(MonetizationManager.self) private var monetizationManager
     @State private var documentManager = DocumentManager.shared
     
     @State private var messageText = ""
@@ -18,11 +19,14 @@ struct ChatView: View {
     @State private var showModelDownloadSheet = false
     @State private var showModelConsentSheet = false
     @State private var shouldSendAfterConsent = false
+    @State private var upgradeFeature: PremiumFeature?
     @State private var documentError: String?
     @State private var voiceError: String?
+    @State private var usageLimitToastMessage: String?
     @State private var streamingPrefix = ""
     @State private var speechStreamingSpokenCharCount: Int = 0
     @AppStorage("systemPrompt") private var systemPrompt = "You are a helpful AI assistant."
+    @AppStorage("responseCharacterLimit") private var responseCharacterLimit = 1000
     
     var body: some View {
         alertContent
@@ -42,6 +46,11 @@ struct ChatView: View {
             }
             .onChange(of: voiceConversationMode) {
                 if voiceConversationMode {
+                    guard monetizationManager.canUse(.voiceMode) else {
+                        voiceConversationMode = false
+                        upgradeFeature = .voiceMode
+                        return
+                    }
                     startListeningIfPossible()
                 } else {
                     speechManager.stopListening()
@@ -73,6 +82,8 @@ struct ChatView: View {
                 NavigationStack {
                     ModelDownloadView()
                 }
+                .environment(modelManager)
+                .environmentObject(modelManager)
             }
             .sheet(isPresented: $showModelConsentSheet) {
                 if let selectedModel = modelManager.selectedModel {
@@ -90,6 +101,17 @@ struct ChatView: View {
                 } else {
                     Text("No model selected.")
                         .padding()
+                }
+            }
+            .sheet(item: $upgradeFeature) { feature in
+                UpgradeView(feature: feature)
+            }
+            .overlay(alignment: .bottom) {
+                if let usageLimitToastMessage {
+                    usageLimitToast(message: usageLimitToastMessage)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 110)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
     }
@@ -332,7 +354,11 @@ struct ChatView: View {
 
                 HStack(spacing: 10) {
                     Button {
-                        isFileImporterPresented = true
+                        if !monetizationManager.canUse(.unlimitedDocuments) && !currentConversationDocuments.isEmpty {
+                            upgradeFeature = .unlimitedDocuments
+                        } else {
+                            isFileImporterPresented = true
+                        }
                     } label: {
                         Image(systemName: "plus")
                             .font(.body.weight(.semibold))
@@ -424,7 +450,7 @@ struct ChatView: View {
     private var canSend: Bool {
         let hasInput = !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !currentConversationDocuments.isEmpty
         let hasModel = modelManager.selectedModel != nil
-        return hasInput && hasModel && llmEngine.state != .generating && llmEngine.state != .loading
+        return hasInput && hasModel && llmEngine.state != .generating && llmEngine.state != .loading && !monetizationManager.hasReachedFreeDailyMessageLimit
     }
 
     private var currentConversationDocuments: [ConversationDocument] {
@@ -519,6 +545,25 @@ struct ChatView: View {
         .padding(.top, 12)
     }
 
+    private func usageLimitToast(message: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .foregroundStyle(.orange)
+
+            Text(message)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Color.white)
+                .multilineTextAlignment(.leading)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(Color.black.opacity(0.88))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.18), radius: 12, y: 8)
+    }
+
     private func speakReplyButton(for message: ChatMessage) -> some View {
         Button {
             toggleSpeechPlayback(for: message)
@@ -578,6 +623,10 @@ struct ChatView: View {
     private func handleFileImport(result: Result<[URL], Error>) {
         guard case .success(let urls) = result, let url = urls.first else { return }
         guard let conversationID = historyManager.currentConversationID else { return }
+        guard monetizationManager.canUse(.unlimitedDocuments) || currentConversationDocuments.isEmpty else {
+            upgradeFeature = .unlimitedDocuments
+            return
+        }
         
         withAnimation(.spring(response: 0.3)) {
             isExtractingDocument = true
@@ -631,6 +680,10 @@ struct ChatView: View {
     }
     
     private func sendMessage() {
+        if monetizationManager.hasReachedFreeDailyMessageLimit {
+            showUsageLimitToast()
+            return
+        }
         guard canSend else { return }
         let generator = UIImpactFeedbackGenerator(style: .light)
         generator.impactOccurred()
@@ -665,6 +718,8 @@ struct ChatView: View {
         // Add user message
         let userMessage = ChatMessage(role: .user, content: displayText)
         historyManager.addMessage(userMessage)
+        monetizationManager.registerFreeMessageIfNeeded()
+        showUsageToastIfNeededAfterSend()
         
         messageText = ""
         
@@ -679,6 +734,41 @@ struct ChatView: View {
                 resetSession: false,
                 assistantSourceTitles: promptContext.sourceTitles
             )
+        }
+    }
+
+    private func showUsageLimitToast() {
+        let message = "Free plan limit reached."
+        showUsageToast(message)
+    }
+
+    private func showUsageToastIfNeededAfterSend() {
+        guard !monetizationManager.hasPro else { return }
+
+        if monetizationManager.hasReachedFreeDailyMessageLimit {
+            showUsageLimitToast()
+            return
+        }
+
+        guard monetizationManager.shouldShowThreeMessagesLeftWarning else { return }
+        monetizationManager.markThreeMessagesLeftWarningShown()
+        showUsageToast("3 free messages left today.")
+    }
+
+    private func showUsageToast(_ message: String) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            usageLimitToastMessage = message
+        }
+
+        Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            await MainActor.run {
+                if usageLimitToastMessage == message {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        usageLimitToastMessage = nil
+                    }
+                }
+            }
         }
     }
 
@@ -728,7 +818,9 @@ struct ChatView: View {
                 llmEngine.resetSession()
             }
 
-            try await llmEngine.generate(prompt: prompt)
+            try await llmEngine.generate(
+                prompt: promptWithResponseLimit(prompt, existingPrefix: existingPrefix)
+            )
 
             if case .error(let message) = llmEngine.state {
                 let errorText = userFacingErrorText(from: message)
@@ -748,7 +840,9 @@ struct ChatView: View {
                 return
             }
 
-            let finalizedContent = combinedStreamingContent(for: llmEngine.currentResponse)
+            let finalizedContent = enforcedResponseLimit(
+                for: combinedStreamingContent(for: llmEngine.currentResponse)
+            )
             let finalizedParts = AssistantOutputSanitizer.parts(from: finalizedContent)
             if finalizedParts.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                finalizedParts.thinkingContent != nil,
@@ -988,7 +1082,7 @@ struct ChatView: View {
         guard historyManager.currentMessages.last?.id == message.id else { return false }
         guard hasRecoverableConversationContext else { return false }
         if missingFinalAnswer(message) { return true }
-        return looksTruncated(message.content)
+        return looksTruncated(message.content) && likelyHitResponseLimit(message.content)
     }
 
     private func canRetryAfterReset(_ message: ChatMessage) -> Bool {
@@ -1149,6 +1243,92 @@ struct ChatView: View {
 
         return false
     }
+
+    private func likelyHitResponseLimit(_ content: String) -> Bool {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        let configuredMaxTokens = llmEngine.lowPowerMode ? min(llmEngine.maxTokens, 256) : llmEngine.maxTokens
+        guard configuredMaxTokens > 0 else { return false }
+
+        let wordEstimate = Double(trimmed.split { $0.isWhitespace }.count) * 1.35
+        let characterEstimate = Double(trimmed.count) / 4.0
+        let estimatedTokens = max(wordEstimate, characterEstimate)
+
+        return estimatedTokens >= Double(configuredMaxTokens) * 0.8
+    }
+
+    private func promptWithResponseLimit(_ prompt: String, existingPrefix: String) -> String {
+        guard let remainingCharacters = remainingResponseCharacters(after: existingPrefix) else {
+            return prompt
+        }
+
+        return """
+        Keep the final visible answer under \(remainingCharacters) additional characters.
+        Prioritize a complete, direct answer over extra detail.
+        If needed, shorten the wording instead of trailing off.
+
+        \(prompt)
+        """
+    }
+
+    private func remainingResponseCharacters(after existingPrefix: String) -> Int? {
+        guard responseCharacterLimit > 0 else { return nil }
+
+        let usedCharacters = AssistantOutputSanitizer
+            .sanitize(existingPrefix)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .count
+
+        return max(responseCharacterLimit - usedCharacters, 0)
+    }
+
+    private func enforcedResponseLimit(for rawContent: String) -> String {
+        guard responseCharacterLimit > 0 else { return rawContent }
+
+        let parts = AssistantOutputSanitizer.parts(from: rawContent)
+        let limitedVisibleContent = trimmedResponseContent(parts.content, limit: responseCharacterLimit)
+        guard limitedVisibleContent != parts.content else { return rawContent }
+
+        return reconstructedAssistantContent(
+            visibleContent: limitedVisibleContent,
+            thinkingContent: parts.thinkingContent
+        )
+    }
+
+    private func reconstructedAssistantContent(visibleContent: String, thinkingContent: String?) -> String {
+        let trimmedVisibleContent = visibleContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedThinkingContent = thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+        if trimmedThinkingContent.isEmpty {
+            return trimmedVisibleContent
+        }
+        if trimmedVisibleContent.isEmpty {
+            return "<think>\(trimmedThinkingContent)</think>"
+        }
+        return "<think>\(trimmedThinkingContent)</think>\n\(trimmedVisibleContent)"
+    }
+
+    private func trimmedResponseContent(_ content: String, limit: Int) -> String {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count > limit else { return trimmed }
+        guard limit > 1 else { return String(trimmed.prefix(limit)) }
+
+        let hardLimit = max(limit - 1, 1)
+        let tentative = String(trimmed.prefix(hardLimit))
+
+        let sentenceBoundary = tentative.lastIndex(where: { ".!?\n".contains($0) })
+        let whitespaceBoundary = tentative.lastIndex(where: { $0.isWhitespace })
+        let chosenBoundary = sentenceBoundary ?? whitespaceBoundary ?? tentative.index(before: tentative.endIndex)
+        let clipped = tentative[...chosenBoundary].trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalText = clipped.isEmpty ? tentative.trimmingCharacters(in: .whitespacesAndNewlines) : String(clipped)
+
+        if finalText.hasSuffix(".") || finalText.hasSuffix("!") || finalText.hasSuffix("?") {
+            return finalText
+        }
+
+        return finalText + "…"
+    }
     
     private func hasConsent(for modelID: String) -> Bool {
         UserDefaults.standard.bool(forKey: "modelConsent.\(modelID)")
@@ -1265,5 +1445,6 @@ private extension UTType {
         .environment(LLMEngine())
         .environment(ChatHistoryManager())
         .environment(ModelManager())
+        .environment(MonetizationManager())
         .environment(SpeechManager())
 }

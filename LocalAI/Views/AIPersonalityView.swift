@@ -8,10 +8,15 @@
 import SwiftUI
 
 struct AIPersonalityView: View {
+    @Environment(MonetizationManager.self) private var monetizationManager
     @AppStorage("systemPrompt") private var systemPrompt = "You are a helpful AI assistant."
     @AppStorage("temperature") private var temperature = 0.7
     @AppStorage("topP") private var topP = 1.0
     @AppStorage("maxTokens") private var maxTokens = 512
+    @AppStorage("responseCharacterLimit") private var responseCharacterLimit = 1000
+    @State private var showUpgradeSheet = false
+
+    private let responseLengthOptions = [0, 500, 1000, 1500, 2000]
 
     private var selectedPresetID: String? {
         PersonalityPreset.presets.first { preset in
@@ -109,6 +114,11 @@ struct AIPersonalityView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
                     .padding(.horizontal, 20)
+                    .overlay {
+                        if !monetizationManager.canUse(.advancedPersonality) {
+                            lockedOverlay
+                        }
+                    }
                 }
                 
                 // Creativity & Parameters Section
@@ -125,6 +135,7 @@ struct AIPersonalityView: View {
                                 temperature = 0.7
                                 topP = 1.0
                                 maxTokens = 512
+                                responseCharacterLimit = 1000
                             }
                         }
                         .font(.caption.weight(.medium))
@@ -180,6 +191,31 @@ struct AIPersonalityView: View {
                         }
                         
                         Divider()
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Response Size")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                                Text(responseLengthLabel(for: responseCharacterLimit))
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Picker("Response Size", selection: $responseCharacterLimit) {
+                                ForEach(responseLengthOptions, id: \.self) { option in
+                                    Text(responseLengthLabel(for: option)).tag(option)
+                                }
+                            }
+                            .pickerStyle(.menu)
+
+                            Text("Adds a strict visible-character cap to assistant replies. Useful if you want short answers that do not keep going.")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+
+                        Divider()
                         
                         // Max Tokens
                         VStack(alignment: .leading, spacing: 8) {
@@ -209,6 +245,11 @@ struct AIPersonalityView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
                     .padding(.horizontal, 20)
+                    .overlay {
+                        if !monetizationManager.canUse(.advancedPersonality) {
+                            lockedOverlay
+                        }
+                    }
                 }
                 
                 Spacer()
@@ -218,6 +259,9 @@ struct AIPersonalityView: View {
         .background(Color(white: 0.98))
         .navigationTitle("AI Personality")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showUpgradeSheet) {
+            UpgradeView(feature: .advancedPersonality)
+        }
     }
 
     private func applyPreset(_ preset: PersonalityPreset) {
@@ -226,10 +270,46 @@ struct AIPersonalityView: View {
         topP = preset.topP
         maxTokens = preset.maxTokens
     }
+
+    private func responseLengthLabel(for limit: Int) -> String {
+        switch limit {
+        case 0:
+            return "Unlimited"
+        default:
+            return "\(limit) chars"
+        }
+    }
+
+    private var lockedOverlay: some View {
+        RoundedRectangle(cornerRadius: 16)
+            .fill(.ultraThinMaterial)
+            .overlay {
+                VStack(spacing: 10) {
+                    Image(systemName: "crown.fill")
+                        .font(.title3)
+                        .foregroundStyle(.orange)
+                    Text("Own AI Pro")
+                        .font(.headline)
+                        .foregroundStyle(Color(white: 0.15))
+                    Text("Unlock custom prompts and response tuning.")
+                        .font(.caption)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(Color(white: 0.45))
+                    Button("Unlock Pro") {
+                        showUpgradeSheet = true
+                    }
+                    .font(.subheadline.weight(.semibold))
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+                }
+                .padding(20)
+            }
+    }
 }
 
 #Preview {
     NavigationStack {
         AIPersonalityView()
     }
+    .environment(MonetizationManager())
 }
