@@ -215,6 +215,23 @@ final class ChatHistoryManager {
             }
         }
     }
+
+    func conversation(id: UUID?) -> ChatConversation? {
+        guard let id else { return nil }
+        return conversations.first { $0.id == id }
+    }
+
+    func messages(in conversationID: UUID?) -> [ChatMessage] {
+        conversation(id: conversationID)?.messages ?? []
+    }
+
+    func containsMessage(_ messageID: UUID, in conversationID: UUID?) -> Bool {
+        messages(in: conversationID).contains { $0.id == messageID }
+    }
+
+    func message(id messageID: UUID, in conversationID: UUID?) -> ChatMessage? {
+        messages(in: conversationID).first { $0.id == messageID }
+    }
     
     init(store: ChatHistoryStore = ChatHistoryStore()) {
         self.store = store
@@ -362,7 +379,13 @@ final class ChatHistoryManager {
         let deletedConversationIDs = Set(conversations.map(\.id))
         conversations.forEach { conversation in
             documentManager.clearDocuments(for: conversation.id)
+            conversation.messages.forEach { message in
+                if let fileName = message.imageFileName {
+                    ImageAttachmentManager.shared.deleteImage(named: fileName)
+                }
+            }
         }
+        ImageAttachmentManager.shared.deleteAllImages()
         let freshConversation = ChatConversation()
         conversations = [freshConversation]
         currentConversationID = freshConversation.id
@@ -400,6 +423,13 @@ final class ChatHistoryManager {
     
     /// Delete a conversation
     func deleteConversation(_ id: UUID) {
+        if let conversation = conversations.first(where: { $0.id == id }) {
+            conversation.messages.forEach { message in
+                if let fileName = message.imageFileName {
+                    ImageAttachmentManager.shared.deleteImage(named: fileName)
+                }
+            }
+        }
         DocumentManager.shared.clearDocuments(for: id)
         conversations.removeAll { $0.id == id }
         
@@ -425,13 +455,22 @@ final class ChatHistoryManager {
     /// Delete a single message from the current conversation
     func deleteMessage(id: UUID) {
         guard let convIndex = conversations.firstIndex(where: { $0.id == currentConversationID }) else { return }
+        if let message = conversations[convIndex].messages.first(where: { $0.id == id }),
+           let fileName = message.imageFileName {
+            ImageAttachmentManager.shared.deleteImage(named: fileName)
+        }
         conversations[convIndex].messages.removeAll { $0.id == id }
         saveConversations(immediately: true, changedConversationIDs: Set([conversations[convIndex].id]))
     }
     
     /// Add a message to the current conversation
     func addMessage(_ message: ChatMessage) {
-        guard let index = conversations.firstIndex(where: { $0.id == currentConversationID }) else { return }
+        addMessage(message, to: currentConversationID)
+    }
+
+    func addMessage(_ message: ChatMessage, to conversationID: UUID?) {
+        guard let conversationID,
+              let index = conversations.firstIndex(where: { $0.id == conversationID }) else { return }
 
         let sanitizedMessage = sanitizedAssistantMessage(message)
         
@@ -455,7 +494,24 @@ final class ChatHistoryManager {
     
     /// Update a message in the current conversation
     func updateMessage(id: UUID, content: String, isStreaming: Bool, sourceTitles: [String]? = nil) {
-        guard let convIndex = conversations.firstIndex(where: { $0.id == currentConversationID }) else { return }
+        updateMessage(
+            id: id,
+            in: currentConversationID,
+            content: content,
+            isStreaming: isStreaming,
+            sourceTitles: sourceTitles
+        )
+    }
+
+    func updateMessage(
+        id: UUID,
+        in conversationID: UUID?,
+        content: String,
+        isStreaming: Bool,
+        sourceTitles: [String]? = nil
+    ) {
+        guard let conversationID,
+              let convIndex = conversations.firstIndex(where: { $0.id == conversationID }) else { return }
         guard let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == id }) else { return }
 
         let role = conversations[convIndex].messages[msgIndex].role

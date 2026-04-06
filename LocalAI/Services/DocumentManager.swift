@@ -520,3 +520,88 @@ private struct PersistedConversationDocuments: Codable {
     let conversationID: UUID
     let documents: [ConversationDocument]
 }
+
+/// Manages saving, loading, and deleting image attachments for chat messages.
+final class ImageAttachmentManager: Sendable {
+    static let shared = ImageAttachmentManager()
+
+    private let directoryName = "chat_images"
+    private let maxDimension: CGFloat = 1024
+    private let compressionQuality: CGFloat = 0.8
+
+    private init() {
+        ensureDirectoryExists()
+    }
+
+    // MARK: - Public API
+
+    /// Save an image for a given message ID. Returns the file name on success.
+    func saveImage(_ image: UIImage, for messageID: UUID) -> String? {
+        guard let resized = downsample(image, maxDimension: maxDimension),
+              let data = resized.jpegData(compressionQuality: compressionQuality) else {
+            return nil
+        }
+
+        let fileName = "\(messageID.uuidString).jpg"
+        let fileURL = imagesDirectory.appendingPathComponent(fileName)
+
+        do {
+            try data.write(to: fileURL, options: .atomic)
+            return fileName
+        } catch {
+            print("[ImageAttachmentManager] Failed to save image: \(error)")
+            return nil
+        }
+    }
+
+    /// Load an image by file name.
+    func loadImage(named fileName: String) -> UIImage? {
+        let fileURL = imagesDirectory.appendingPathComponent(fileName)
+        guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
+        return UIImage(contentsOfFile: fileURL.path)
+    }
+
+    /// Delete a single image by file name.
+    func deleteImage(named fileName: String) {
+        let fileURL = imagesDirectory.appendingPathComponent(fileName)
+        try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    /// Delete all stored images.
+    func deleteAllImages() {
+        try? FileManager.default.removeItem(at: imagesDirectory)
+        ensureDirectoryExists()
+    }
+
+    // MARK: - Private
+
+    private var imagesDirectory: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(directoryName, isDirectory: true)
+    }
+
+    private func ensureDirectoryExists() {
+        let url = imagesDirectory
+        if !FileManager.default.fileExists(atPath: url.path) {
+            try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        }
+    }
+
+    private func downsample(_ image: UIImage, maxDimension: CGFloat) -> UIImage? {
+        let size = image.size
+        guard size.width > maxDimension || size.height > maxDimension else { return image }
+
+        let scale: CGFloat
+        if size.width > size.height {
+            scale = maxDimension / size.width
+        } else {
+            scale = maxDimension / size.height
+        }
+
+        let newSize = CGSize(width: size.width * scale, height: size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: newSize)
+        return renderer.image { _ in
+            image.draw(in: CGRect(origin: .zero, size: newSize))
+        }
+    }
+}

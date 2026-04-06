@@ -7,6 +7,8 @@
 
 import Foundation
 import FoundationModels
+import UIKit
+import Vision
 
 enum AppleFoundationModelAvailability: Equatable {
     case available
@@ -104,6 +106,7 @@ final class AppleFoundationModelBridge {
         temperature: Double,
         maxTokens: Int,
         isolated: Bool = false,
+        image: UIImage? = nil,
         onPartialResponse: @escaping @Sendable (String) async -> Bool
     ) async throws {
         let availability = availability
@@ -122,6 +125,7 @@ final class AppleFoundationModelBridge {
             temperature: temperature,
             maxTokens: maxTokens,
             isolated: isolated,
+            image: image,
             onPartialResponse: onPartialResponse
         )
     }
@@ -164,6 +168,7 @@ final class AppleFoundationModelBridge {
         temperature: Double,
         maxTokens: Int,
         isolated: Bool,
+        image: UIImage?,
         onPartialResponse: @escaping @Sendable (String) async -> Bool
     ) async throws {
         let session = isolated
@@ -179,7 +184,14 @@ final class AppleFoundationModelBridge {
             maximumResponseTokens: maxTokens
         )
 
-        let stream = session.streamResponse(to: prompt, options: options)
+        // Build prompt: prepend image description if an image is attached
+        var enrichedPrompt = prompt
+        if let image {
+            let description = await analyzeImage(image)
+            enrichedPrompt = "[Image context]\n\(description)\n\n[User message]\n" + prompt
+        }
+
+        let stream = session.streamResponse(to: enrichedPrompt, options: options)
         var lastContent = ""
 
         for try await partialResponse in stream {
@@ -195,6 +207,51 @@ final class AppleFoundationModelBridge {
             sessionStorage = session
             sessionLock.unlock()
         }
+    }
+
+    /// Uses Vision framework to extract text (OCR) and scene labels from an image.
+    nonisolated private func analyzeImage(_ image: UIImage) async -> String {
+        guard let cgImage = image.cgImage else { return "[Image could not be analyzed]" }
+
+        var parts: [String] = []
+
+        // 1. OCR – extract any visible text
+        let ocrRequest = VNRecognizeTextRequest()
+        ocrRequest.recognitionLevel = .accurate
+        ocrRequest.usesLanguageCorrection = true
+        ocrRequest.automaticallyDetectsLanguage = true
+
+        // 2. Classification – identify scene/object labels
+        let classifyRequest = VNClassifyImageRequest()
+
+        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+        try? handler.perform([ocrRequest, classifyRequest])
+
+        // Collect recognized text
+        if let textObservations = ocrRequest.results, !textObservations.isEmpty {
+            let lines = textObservations.compactMap { $0.topCandidates(1).first?.string }
+            if !lines.isEmpty {
+                parts.append("Visible text: " + lines.joined(separator: " | "))
+            }
+        }
+
+        // Collect top classification labels (confidence >= 0.3)
+        if let classifications = classifyRequest.results {
+            let confident = classifications
+                .filter { $0.confidence >= 0.3 }
+                .prefix(8)
+                .map { "\($0.identifier) (\(Int($0.confidence * 100))%)" }
+            if !confident.isEmpty {
+                parts.append("Scene/objects: " + confident.joined(separator: ", "))
+            }
+        }
+
+        // Image metadata
+        let width = Int(image.size.width * image.scale)
+        let height = Int(image.size.height * image.scale)
+        parts.append("Dimensions: \(width)×\(height)px")
+
+        return parts.isEmpty ? "[No description generated]" : parts.joined(separator: "\n")
     }
 
     @available(iOS 26.0, *)

@@ -1,0 +1,9 @@
+/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-transformers/Sources/Generation/Decoders.swift
+/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-transformers/Sources/Generation/Generation.swift
+/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-transformers/Sources/Generation/GenerationConfig.swift
+/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-transformers/Sources/Generation/LogitsWarper/LogitsProcessor.swift
+/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-transformers/Sources/Generation/LogitsWarper/MinPLogitsWarper.swift
+/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-transformers/Sources/Generation/LogitsWarper/RepetitionPenaltyLogitsProcessor.swift
+/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-transformers/Sources/Generation/LogitsWarper/TemperatureLogitsWarper.swift
+/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-transformers/Sources/Generation/LogitsWarper/TopKLogitsWarper.swift
+/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-transformers/Sources/Generation/LogitsWarper/TopPLogitsWarper.swift

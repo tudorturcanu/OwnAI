@@ -12,10 +12,10 @@ struct WatchAppView: View {
     @State private var isTypeSheetPresented = false
 
     private let quickPrompts: [(icon: String, text: String)] = [
-        ("doc.text.magnifyingglass", "Summarize this"),
-        ("arrow.right.circle", "Next step"),
-        ("text.line.first.and.arrowtriangle.forward", "Reply in 1 line"),
-        ("star.circle", "Key takeaway")
+        ("doc.text.magnifyingglass", String(localized: "Summarize this")),
+        ("arrow.right.circle", String(localized: "Next step")),
+        ("text.line.first.and.arrowtriangle.forward", String(localized: "Reply in 1 line")),
+        ("star.circle", String(localized: "Key takeaway"))
     ]
 
     var body: some View {
@@ -25,7 +25,7 @@ struct WatchAppView: View {
                     VStack(spacing: 12) {
                         if connectivityClient.isCapturingVoice {
                             WatchStateBanner(
-                                title: "Listening",
+                                title: String(localized: "Listening"),
                                 message: sendingMessage,
                                 iconName: "waveform.circle.fill",
                                 tint: .orange,
@@ -34,7 +34,7 @@ struct WatchAppView: View {
                             .transition(.move(edge: .top).combined(with: .opacity))
                         } else if connectivityClient.isSending {
                             WatchStateBanner(
-                                title: "Sending to iPhone",
+                                title: String(localized: "Sending to iPhone"),
                                 message: sendingMessage,
                                 iconName: "arrow.triangle.2.circlepath.circle.fill",
                                 tint: .blue
@@ -42,11 +42,11 @@ struct WatchAppView: View {
                             .transition(.move(edge: .top).combined(with: .opacity))
                         } else if let failureMessage = connectivityClient.latestFailureMessage {
                             WatchStateBanner(
-                                title: "Couldn't Send Reply",
+                                title: String(localized: "Couldn't Send Reply"),
                                 message: failureMessage,
                                 iconName: "exclamationmark.circle.fill",
                                 tint: .red,
-                                buttonTitle: connectivityClient.latestFailedPrompt == nil ? nil : "Retry",
+                                buttonTitle: connectivityClient.latestFailedPrompt == nil ? nil : String(localized: "Retry"),
                                 action: connectivityClient.latestFailedPrompt == nil ? nil : {
                                     connectivityClient.retryLatestFailedPrompt()
                                 }
@@ -135,9 +135,9 @@ struct WatchAppView: View {
     private var sendingMessage: String {
         if let latestPendingPrompt = connectivityClient.latestPendingPrompt {
             let preview = latestPendingPrompt.count > 28 ? "\(latestPendingPrompt.prefix(28))…" : latestPendingPrompt
-            return "\"\(preview)\" is running on iPhone."
+            return String(format: String(localized: "\"%@\" is running on iPhone."), preview)
         }
-        return "Your iPhone is working on it."
+        return String(localized: "Your iPhone is working on it.")
     }
 }
 
@@ -289,7 +289,7 @@ private struct WatchPrimaryActionCard: View {
                             .font(.title3.weight(.semibold))
                     }
 
-                    Text(isCapturingVoice ? "Listening..." : "Speak to Ask")
+                    Text(isCapturingVoice ? String(localized: "Listening...") : String(localized: "Speak to Ask"))
                         .font(.headline)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -299,7 +299,7 @@ private struct WatchPrimaryActionCard: View {
             .buttonStyle(.borderedProminent)
             .tint(.orange)
             .disabled(isDisabled)
-            .accessibilityLabel(isCapturingVoice ? "Listening" : "Speak to ask")
+            .accessibilityLabel(isCapturingVoice ? String(localized: "Listening") : String(localized: "Speak to ask"))
             .accessibilityHint("Starts dictation and sends the prompt to your iPhone.")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -556,22 +556,22 @@ private struct WatchEmptyState: View {
 
     private var emptyTitle: String {
         if isSending {
-            return "Working"
+            return String(localized: "Working")
         }
         if isReachable {
-            return "Ask Something"
+            return String(localized: "Ask Something")
         }
-        return "Open iPhone App"
+        return String(localized: "Open iPhone App")
     }
 
     private var emptyMessage: String {
         if isSending {
-            return "Your iPhone is handling it."
+            return String(localized: "Your iPhone is handling it.")
         }
         if isReachable {
-            return "Tap the mic or use a quick prompt."
+            return String(localized: "Tap the mic or use a quick prompt.")
         }
-        return "Open the iPhone app to send and receive replies."
+        return String(localized: "Open the iPhone app to send and receive replies.")
     }
 }
 
@@ -651,7 +651,7 @@ private struct WatchMessageBubble: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(entry.role == .user ? "You" : "Own Ai")
+            Text(entry.role == .user ? String(localized: "You") : String(localized: "Own Ai"))
                 .font(.caption2.weight(.bold))
                 .foregroundStyle(entry.role == .user ? .orange : .secondary)
 
@@ -694,7 +694,7 @@ private struct WatchMessageBubble: View {
             }
 
             if isExpandable {
-                Button(isExpanded ? "Show Less" : "Read More") {
+                Button(isExpanded ? String(localized: "Show Less") : String(localized: "Read More")) {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         isExpanded.toggle()
                     }
@@ -702,7 +702,7 @@ private struct WatchMessageBubble: View {
                 .buttonStyle(.plain)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.orange)
-                .accessibilityHint(isExpanded ? "Collapses the full reply." : "Expands the full reply.")
+                .accessibilityHint(isExpanded ? String(localized: "Collapses the full reply.") : String(localized: "Expands the full reply."))
             }
 
             if showsContinueOnIPhone {
@@ -805,7 +805,7 @@ private struct WatchMessageBubble: View {
     }
 
     private var accessibilityLabel: String {
-        let speaker = entry.role == .user ? "You" : "Own Ai"
+        let speaker = entry.role == .user ? String(localized: "You") : String(localized: "Own Ai")
         return "\(speaker). \(entry.content)"
     }
 
@@ -830,9 +830,9 @@ private struct WatchMessageStatePill: View {
     private var title: String {
         switch state {
         case .sending:
-            return "Sending"
+            return String(localized: "Sending")
         case .queued:
-            return "Queued"
+            return String(localized: "Queued")
         }
     }
 

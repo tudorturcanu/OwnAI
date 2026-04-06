@@ -74,6 +74,12 @@ final class LLMEngine {
         var topP: Double?
         var maxTokens: Int?
     }
+
+    private struct RepetitionLoop {
+        let range: Range<String.Index>
+        let repeatedUnit: String
+        let repetitions: Int
+    }
     
     // MARK: - Public Methods
     
@@ -196,7 +202,8 @@ final class LLMEngine {
     func generate(
         prompt: String,
         systemPrompt: String = "You are a helpful AI assistant.",
-        overrides: GenerationOverrides? = nil
+        overrides: GenerationOverrides? = nil,
+        image: UIImage? = nil
     ) async throws {
         if state == .loading, let task = loadTask {
             _ = try? await task.value
@@ -226,11 +233,10 @@ final class LLMEngine {
         streamingTokensPerSecond = 0
         print("[LLMEngine] generate start id=\(model.id) engine=\(model.engine.rawValue)")
         
-        // Capture state on MainActor
-        #if !targetEnvironment(simulator)
-        let currentMlxSession = self.mlxSession
-        #endif
-        let usesEphemeralMlxSession = model.engine == .mlx && !mlxModelSupportsSystemRole(modelID: model.id)
+        let usesEphemeralMlxSession = model.engine == .mlx && (
+            !mlxModelSupportsSystemRole(modelID: model.id) ||
+            (model.supportsVision && image != nil)  // VLM: always fresh context per image turn
+        )
         let effectiveSystemPrompt = systemPrompt == "You are a helpful AI assistant."
             ? (UserDefaults.standard.string(forKey: "systemPrompt") ?? systemPrompt)
             : systemPrompt
@@ -245,6 +251,13 @@ final class LLMEngine {
         let effectiveTopP = lowPowerMode ? min(currentTopP, 0.9) : currentTopP
         let effectiveTemperature = lowPowerMode ? min(currentTemperature, 0.6) : currentTemperature
         let effectiveMaxTokens = lowPowerMode ? min(currentMaxTokens, 256) : currentMaxTokens
+        // Capture state on MainActor
+        #if !targetEnvironment(simulator)
+        let currentMlxSession = self.mlxSession
+        let freshMlxSession = usesEphemeralMlxSession
+            ? self.makeFreshMlxSession(modelID: model.id, systemPrompt: effectiveSystemPrompt)
+            : nil
+        #endif
         
         // Run on detached task to avoid blocking UI
         let task = Task.detached(priority: .userInitiated) { [weak self] in
@@ -259,7 +272,8 @@ final class LLMEngine {
                         systemPrompt: effectiveSystemPrompt,
                         topP: effectiveTopP,
                         temperature: effectiveTemperature,
-                        maxTokens: effectiveMaxTokens
+                        maxTokens: effectiveMaxTokens,
+                        image: image
                     ) { [weak self] content in
                         guard let self else { return true }
                         await self.updateResponseIfNeeded(content, force: false)
@@ -271,14 +285,10 @@ final class LLMEngine {
                     #else
                     let session: LocalSession
                     if usesEphemeralMlxSession {
-                        let persistentPath = MLXStorage.modelDirectory(for: model.id)
-                        let mlxModel: MLXLanguageModel
-                        if FileManager.default.fileExists(atPath: persistentPath.path) {
-                            mlxModel = MLXLanguageModel(modelId: model.id, directory: persistentPath)
-                        } else {
-                            mlxModel = MLXLanguageModel(modelId: model.id)
+                        guard let freshMlxSession else {
+                            throw LLMError.modelNotLoaded
                         }
-                        session = LocalSession(model: mlxModel, transcript: Transcript())
+                        session = freshMlxSession
                     } else if let currentMlxSession {
                         session = currentMlxSession
                     } else {
@@ -293,12 +303,21 @@ final class LLMEngine {
                     )
                     // Stream MLX output so users see first tokens sooner and keep MLX errors throwable.
                     var lastContent = ""
-                    let stream = session.streamResponse(to: effectiveMlxPrompt, options: options)
+                    let stream: LocalSession.ResponseStream<String>
+                    
+                    // For VLM models (e.g. Qwen2-VL), pass the image directly via Transcript.ImageSegment
+                    if model.supportsVision, let image {
+                        let imageSegment = try Transcript.ImageSegment(image: image, format: .jpeg())
+                        stream = session.streamResponse(to: effectiveMlxPrompt, image: imageSegment, options: options)
+                    } else {
+                        stream = session.streamResponse(to: effectiveMlxPrompt, options: options)
+                    }
+                    
                     for try await snapshot in stream {
                         if Task.isCancelled { break }
-                        lastContent = snapshot.content
+                        lastContent = Self.trimRepeatedLoopIfNeeded(in: snapshot.content)
                         await self.updateResponseIfNeeded(lastContent, force: false)
-                        if AssistantOutputSanitizer.containsControlMarker(snapshot.content) {
+                        if Self.shouldStopStreaming(content: snapshot.content) {
                             break
                         }
                     }
@@ -416,6 +435,12 @@ final class LLMEngine {
         let effectiveTopP = lowPowerMode ? min(currentTopP, 0.9) : currentTopP
         let effectiveTemperature = lowPowerMode ? min(currentTemperature, 0.6) : currentTemperature
         let effectiveMaxTokens = lowPowerMode ? min(currentMaxTokens, 256) : currentMaxTokens
+        #if !targetEnvironment(simulator)
+        let freshMlxSession = self.makeFreshMlxSession(
+            modelID: model.id,
+            systemPrompt: effectiveSystemPrompt
+        )
+        #endif
 
         let task = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return "" }
@@ -439,14 +464,7 @@ final class LLMEngine {
             #if targetEnvironment(simulator)
             throw LLMError.generationFailed("MLX is not available on the simulator.")
             #else
-            let persistentPath = MLXStorage.modelDirectory(for: model.id)
-            let mlxModel: MLXLanguageModel
-            if FileManager.default.fileExists(atPath: persistentPath.path) {
-                mlxModel = MLXLanguageModel(modelId: model.id, directory: persistentPath)
-            } else {
-                mlxModel = MLXLanguageModel(modelId: model.id)
-            }
-            let session = LocalSession(model: mlxModel, transcript: Transcript())
+            let session = freshMlxSession
             let options = GenerationOptions(
                 sampling: GenerationOptions.SamplingMode.random(probabilityThreshold: effectiveTopP),
                 temperature: effectiveTemperature,
@@ -456,8 +474,8 @@ final class LLMEngine {
             let stream = session.streamResponse(to: effectiveMlxPrompt, options: options)
             for try await snapshot in stream {
                 if Task.isCancelled { break }
-                response = snapshot.content
-                if AssistantOutputSanitizer.containsControlMarker(snapshot.content) {
+                response = Self.trimRepeatedLoopIfNeeded(in: snapshot.content)
+                if Self.shouldStopStreaming(content: snapshot.content) {
                     break
                 }
             }
@@ -769,7 +787,103 @@ private extension LLMEngine {
     }
 
     func mlxModelSupportsSystemRole(modelID: String) -> Bool {
-        !modelID.lowercased().contains("gemma")
+        true
+    }
+
+    private func makeFreshMlxSession(modelID: String, systemPrompt: String) -> LocalSession {
+        let persistentPath = MLXStorage.modelDirectory(for: modelID)
+        let mlxModel: MLXLanguageModel
+        if FileManager.default.fileExists(atPath: persistentPath.path) {
+            mlxModel = MLXLanguageModel(modelId: modelID, directory: persistentPath)
+        } else {
+            mlxModel = MLXLanguageModel(modelId: modelID)
+        }
+
+        let instructions: Instructions? = {
+            guard mlxModelSupportsSystemRole(modelID: modelID) else { return nil }
+            let trimmed = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : Instructions(trimmed)
+        }()
+
+        return LocalSession(model: mlxModel, instructions: instructions)
+    }
+
+    private nonisolated static func shouldStopStreaming(content: String) -> Bool {
+        if AssistantOutputSanitizer.containsControlMarker(content) {
+            return true
+        }
+
+        return detectRepeatedLoop(in: content) != nil
+    }
+
+    private nonisolated static func trimRepeatedLoopIfNeeded(in content: String) -> String {
+        let sanitized = AssistantOutputSanitizer.sanitize(content)
+        guard let loop = detectRepeatedLoop(in: sanitized) else {
+            return sanitized
+        }
+
+        let visiblePrefix = sanitized[..<loop.range.lowerBound]
+        let separator = visiblePrefix.last.map(\.isWhitespace) == true ? "" : " "
+        return String(visiblePrefix) + separator + loop.repeatedUnit
+    }
+
+    private nonisolated static func detectRepeatedLoop(in rawContent: String) -> RepetitionLoop? {
+        let trimmed = rawContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 48 else { return nil }
+
+        let candidateLengths = [24, 32, 40, 48, 64, 80, 96, 128]
+        for candidateLength in candidateLengths where trimmed.count >= candidateLength * 3 {
+            let unitStart = trimmed.index(trimmed.endIndex, offsetBy: -candidateLength)
+            let unit = String(trimmed[unitStart...]).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard unit.count >= 12 else { continue }
+
+            var scanIndex = trimmed.endIndex
+            var repetitions = 0
+
+            while scanIndex > trimmed.startIndex {
+                let prefixIndex = trimmed.index(scanIndex, offsetBy: -candidateLength, limitedBy: trimmed.startIndex)
+                guard let prefixIndex else { break }
+
+                let candidate = String(trimmed[prefixIndex..<scanIndex])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard candidate == unit else { break }
+
+                repetitions += 1
+                scanIndex = prefixIndex
+            }
+
+            if repetitions >= 3 {
+                return RepetitionLoop(
+                    range: scanIndex..<trimmed.endIndex,
+                    repeatedUnit: unit,
+                    repetitions: repetitions
+                )
+            }
+        }
+
+        let paragraphs = trimmed
+            .split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if let lastParagraph = paragraphs.last,
+           lastParagraph.count >= 12 {
+            let repeatedParagraphs = paragraphs.reversed().prefix { $0 == lastParagraph }.count
+            if repeatedParagraphs >= 3,
+               let paragraphRange = trimmed.range(of: lastParagraph, options: .backwards) {
+                let loopStart = trimmed.index(
+                    paragraphRange.lowerBound,
+                    offsetBy: -((lastParagraph.count + 1) * (repeatedParagraphs - 1)),
+                    limitedBy: trimmed.startIndex
+                ) ?? trimmed.startIndex
+                return RepetitionLoop(
+                    range: loopStart..<trimmed.endIndex,
+                    repeatedUnit: lastParagraph,
+                    repetitions: repeatedParagraphs
+                )
+            }
+        }
+
+        return nil
     }
 }
 

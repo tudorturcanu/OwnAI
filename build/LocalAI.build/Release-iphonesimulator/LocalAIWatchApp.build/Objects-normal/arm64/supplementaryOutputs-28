@@ -1,0 +1,12 @@
+{
+  "/Users/teo/Documents/LocalAI copy/Shared/WatchConnectivityModels.swift" : {
+    "abi-baseline-json" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp.abi.json",
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp-primary.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp-primary.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp-primary.dia",
+    "objc-header" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp-Swift.h",
+    "swiftdoc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp.swiftdoc",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp.swiftmodule",
+    "swiftsourceinfo" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp.swiftsourceinfo"
+  }
+}

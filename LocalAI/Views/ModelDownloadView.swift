@@ -74,13 +74,37 @@ struct ModelDownloadView: View {
     
     private var headerView: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if let recommendation = modelManager.onboardingRecommendation(),
+               let model = modelManager.models.first(where: { $0.id == recommendation.modelID }) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "iphone.gen3")
+                        .foregroundStyle(.green.opacity(0.9))
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(String(format: String(localized: "Recommended Now: %@", defaultValue: "Recommended Now: %@"), model.name))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color(white: 0.18))
+                        Text(recommendation.summary)
+                            .font(.caption)
+                            .foregroundStyle(Color(white: 0.45))
+                    }
+                }
+                .padding(12)
+                .background(Color.green.opacity(0.05))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.green.opacity(0.16), lineWidth: 1)
+                )
+            }
+
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "info.circle.fill")
                     .foregroundStyle(.blue.opacity(0.8))
 
                 Text(modelManager.isAppleIntelligenceDeviceSupported ?
-                     "Choose a model family first. Apple Intelligence is built-in, while other families open into downloadable variants." :
-                     "Choose a model family first, then pick a variant to download and run on your device.")
+                     String(localized: "Choose a model family first. Apple Intelligence is built-in, while other families open into downloadable variants.") :
+                     String(localized: "Choose a model family first, then pick a variant to download and run on your device."))
                     .font(.subheadline)
                     .foregroundStyle(Color(white: 0.4))
             }
@@ -117,15 +141,16 @@ struct ModelFamilyGroup: Identifiable {
             return ""
         }
         if abs(smallest.sizeGB - largest.sizeGB) < 0.05 {
-            return String(format: "%.1f GB", smallest.sizeGB)
+            return String(format: String(localized: "%.1f GB", defaultValue: "%.1f GB"), smallest.sizeGB)
         }
-        return String(format: "%.1f-%.1f GB", smallest.sizeGB, largest.sizeGB)
+        return String(format: String(localized: "%.1f-%.1f GB", defaultValue: "%.1f-%.1f GB"), smallest.sizeGB, largest.sizeGB)
     }
 }
 
 struct ModelFamilyDetailView: View {
     let family: ModelFamily
     let models: [ModelInfo]
+    @Environment(ModelManager.self) private var modelManager
 
     var body: some View {
         ScrollView {
@@ -146,6 +171,16 @@ struct ModelFamilyDetailView: View {
                     Text(familyGuidance)
                         .font(.caption)
                         .foregroundStyle(Color(white: 0.5))
+
+                    if let recommendedModel = models.first(where: modelManager.isOnboardingRecommended) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "sparkles")
+                                .foregroundStyle(.green)
+                            Text(String(format: String(localized: "%@ is the best match here for this device.", defaultValue: "%@ is the best match here for this device."), recommendedModel.name))
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(Color(white: 0.34))
+                        }
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
@@ -168,12 +203,12 @@ struct ModelFamilyDetailView: View {
 
     private var familyGuidance: String {
         if let recommendedModel = models.first(where: { $0.badges.contains(.recommended) }) {
-            return "Start with \(recommendedModel.name) if you want the easiest pick."
+            return String(format: String(localized: "Start with %@ if you want the easiest pick.", defaultValue: "Start with %@ if you want the easiest pick."), recommendedModel.name)
         }
         if let codingModel = models.first(where: { $0.badges.contains(.bestForCoding) }) {
-            return "\(codingModel.name) is the strongest option here for technical tasks."
+            return String(format: String(localized: "%@ is the strongest option here for technical tasks.", defaultValue: "%@ is the strongest option here for technical tasks."), codingModel.name)
         }
-        return "Choose a specific \(family.title) variant to download or use."
+        return String(format: String(localized: "Choose a specific %@ variant to download or use.", defaultValue: "Choose a specific %@ variant to download or use."), family.title)
     }
 }
 
@@ -187,11 +222,17 @@ struct FamilyCard: View {
     }
 
     private var modelCountText: String {
-        group.models.count == 1 ? "1 model" : "\(group.models.count) models"
+        group.models.count == 1
+            ? String(localized: "1 model")
+            : String(format: String(localized: "%lld models", defaultValue: "%lld models"), Int64(group.models.count))
     }
 
     private var readyText: String {
-        "\(group.downloadedCount) ready"
+        String(format: String(localized: "%lld ready", defaultValue: "%lld ready"), Int64(group.downloadedCount))
+    }
+
+    private var recommendedModel: ModelInfo? {
+        group.models.first(where: modelManager.isOnboardingRecommended)
     }
 
     var body: some View {
@@ -265,12 +306,16 @@ struct FamilyCard: View {
                 }
             }
 
+            if let recommendedModel {
+                InfoTag(icon: "sparkles", text: String(format: String(localized: "Recommended: %@", defaultValue: "Recommended: %@"), recommendedModel.name), isHighlighted: true)
+            }
+
             if let selectedModel {
-                Text("Selected: \(selectedModel.name)")
+                Text(String(format: String(localized: "Selected: %@", defaultValue: "Selected: %@"), selectedModel.name))
                     .font(.caption)
                     .foregroundStyle(Color(white: 0.45))
             } else {
-                Text("Tap to view all \(group.family.title) models.")
+                Text(String(format: String(localized: "Tap to view all %@ models.", defaultValue: "Tap to view all %@ models."), group.family.title))
                     .font(.caption)
                     .foregroundStyle(Color(white: 0.45))
             }
@@ -354,8 +399,8 @@ struct ModelCard: View {
                                 .lineLimit(4)
                                 .fixedSize(horizontal: false, vertical: true)
 
-                            if isPremiumModel {
-                                InfoTag(icon: "crown.fill", text: "Pro", isHighlighted: true)
+                            if isPremiumModel && !monetizationManager.hasPro {
+                                InfoTag(icon: "crown.fill", text: String(localized: "Pro"), isHighlighted: true)
                             }
                         }
                     }
@@ -477,12 +522,12 @@ struct ModelCard: View {
                 HStack(spacing: 6) {
                     Image(systemName: "bolt.shield")
                         .foregroundStyle(.orange)
-                    Text(modelManager.isAppleIntelligenceAvailable ? "No download required." : modelManager.appleIntelligenceUnavailableHint)
+                    Text(modelManager.isAppleIntelligenceAvailable ? String(localized: "No download required.") : modelManager.appleIntelligenceUnavailableHint)
                         .font(.caption)
                         .foregroundStyle(Color(white: 0.5))
                 }
             } else {
-                if let compatibilityMessage = modelManager.deviceCompatibilityMessage(for: model) {
+                if let compatibilityMessage = modelManager.compatibilityMessage(for: model) {
                     HStack(spacing: 6) {
                         Image(systemName: "ipad.and.arrow.forward")
                             .foregroundStyle(.orange)
@@ -496,7 +541,7 @@ struct ModelCard: View {
                 HStack(spacing: 6) {
                     Image(systemName: hasSpace ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
                         .foregroundStyle(hasSpace ? .green : .orange)
-                    Text(String(format: "Free space: %.1f GB", freeGB))
+                    Text(String(format: String(localized: "Free space: %.1f GB", defaultValue: "Free space: %.1f GB"), freeGB))
                         .font(.caption)
                         .foregroundStyle(Color(white: 0.5))
                 }
@@ -515,12 +560,12 @@ struct ModelCard: View {
                     HStack(spacing: 6) {
                         Image(systemName: result.success ? "checkmark.circle.fill" : "xmark.octagon.fill")
                             .foregroundStyle(result.success ? .green : .red)
-                        Text(result.success ? "Passed" : "Failed")
+                        Text(result.success ? String(localized: "Passed") : String(localized: "Failed"))
                             .font(.caption)
                             .foregroundStyle(Color(white: 0.5))
                     }
 
-                    Text("Last test: \(result.durationMs)ms • \(result.responseSnippet)")
+                    Text(String(format: String(localized: "Last test: %lldms • %@", defaultValue: "Last test: %lldms • %@"), Int64(result.durationMs), result.responseSnippet))
                         .font(.caption2)
                         .foregroundStyle(Color(white: 0.5))
                         .lineLimit(1)
@@ -532,17 +577,21 @@ struct ModelCard: View {
     @ViewBuilder
     private var modelInfoTags: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(model.recommendedFor)
+            Text(modelManager.isOnboardingRecommended(model) ? modelManager.deviceFitSummary(for: model) : model.recommendedFor)
                 .font(.caption)
-                .foregroundStyle(Color(white: 0.42))
+                .foregroundStyle(modelManager.isOnboardingRecommended(model) ? Color.green.opacity(0.95) : Color(white: 0.42))
                 .fixedSize(horizontal: false, vertical: true)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
+                    if modelManager.isOnboardingRecommended(model) {
+                        InfoTag(icon: "sparkles", text: String(localized: "Recommended"), isHighlighted: true)
+                    }
+
                     if model.isAppleFoundation {
-                        InfoTag(icon: "apple.logo", text: "Built-in", isHighlighted: true)
+                        InfoTag(icon: "apple.logo", text: String(localized: "Built-in"), isHighlighted: true)
                     } else {
-                        InfoTag(icon: "externaldrive", text: String(format: "%.1f GB", model.sizeGB))
+                        InfoTag(icon: "externaldrive", text: String(format: String(localized: "%.1f GB", defaultValue: "%.1f GB"), model.sizeGB))
                     }
 
                     InfoTag(
@@ -560,16 +609,14 @@ struct ModelCard: View {
                     }
 
                     if model.downloadState.isDownloaded {
-                        InfoTag(icon: "checkmark.circle.fill", text: "Ready", isHighlighted: true)
+                        InfoTag(icon: "checkmark.circle.fill", text: String(localized: "Ready"), isHighlighted: true)
                     }
 
-                    if let recommendationTagText = model.recommendationTagText {
-                        InfoTag(
-                            icon: model.currentDeviceFit.iconName,
-                            text: recommendationTagText,
-                            isHighlighted: model.currentDeviceFit.isHighlighted
-                        )
-                    }
+                    InfoTag(
+                        icon: model.currentDeviceFit.iconName,
+                        text: model.currentDeviceFit.title,
+                        isHighlighted: model.currentDeviceFit.isHighlighted
+                    )
 
                     if model.supportsThinkingToggle {
                         thinkingPill
@@ -590,7 +637,7 @@ struct ModelCard: View {
                 HStack(spacing: 5) {
                     Image(systemName: isThinkingEnabled ? "brain.head.profile.fill" : "brain.head.profile")
                         .font(.caption2)
-                    Text(isThinkingEnabled ? "Thinking On" : "Thinking Off")
+                    Text(isThinkingEnabled ? String(localized: "Thinking On") : String(localized: "Thinking Off"))
                         .font(.caption)
                         .fontWeight(.medium)
                         .lineLimit(1)
@@ -604,7 +651,7 @@ struct ModelCard: View {
             }
             .buttonStyle(.plain)
         } else {
-            InfoTag(icon: "brain.head.profile", text: "Thinking")
+            InfoTag(icon: "brain.head.profile", text: String(localized: "Thinking"))
         }
     }
 
@@ -615,21 +662,24 @@ struct ModelCard: View {
 
     @ViewBuilder
     private var actionButton: some View {
-        if let compatibilityMessage = modelManager.deviceCompatibilityMessage(for: model), !model.isAppleFoundation {
+        if let compatibilityMessage = modelManager.compatibilityMessage(for: model), !model.isAppleFoundation {
+            let title = ModelInfo.runtimeUnsupportedModelIDs.contains(model.id)
+                ? String(localized: "Unavailable in this build")
+                : String(localized: "Requires iPad Pro or Mac")
             switch model.downloadState {
             case .downloaded:
                 HStack(spacing: 12) {
-                    UnsupportedModelButton(title: "Requires iPad Pro or Mac", subtitle: compatibilityMessage)
+                    UnsupportedModelButton(title: title, subtitle: compatibilityMessage)
                     DeleteButton(action: {
                         modelManager.deleteModel(model.id)
                     })
                 }
             case .downloading(let progress):
-                DownloadingButton(progress: progress, action: {
+                DownloadingButton(progress: progress, sizeGB: model.sizeGB, action: {
                     modelManager.cancelDownload(model.id)
                 })
             default:
-                UnsupportedModelButton(title: "Requires iPad Pro or Mac", subtitle: compatibilityMessage)
+                UnsupportedModelButton(title: title, subtitle: compatibilityMessage)
             }
         } else {
             switch model.downloadState {
@@ -646,16 +696,15 @@ struct ModelCard: View {
                         upgradeFeature = .allModels
                     }
                 } else {
-                    DownloadButton(action: {
+                    DownloadButton(sizeLabel: model.sizeLabel, action: {
                         requireConsentAndPerform {
                             modelManager.downloadModel(model.id)
-                            modelManager.selectModel(model.id)
                         }
                     })
                 }
                 
             case .downloading(let progress):
-                DownloadingButton(progress: progress, action: {
+                DownloadingButton(progress: progress, sizeGB: model.sizeGB, action: {
                     modelManager.cancelDownload(model.id)
                 })
                 
@@ -764,7 +813,7 @@ struct ModelConsentSheet: View {
                         dismiss()
                         onAccept()
                     } label: {
-                        Text(model.isAppleFoundation ? "Allow Data Sharing & Continue" : "I Understand — No Data Shared")
+                        Text(model.isAppleFoundation ? String(localized: "Allow Data Sharing & Continue") : String(localized: "I Understand — No Data Shared"))
                             .font(.headline.weight(.bold))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -796,7 +845,7 @@ struct ModelConsentSheet: View {
             Text(model.name)
                 .font(.title2.bold())
                 .foregroundStyle(Color(white: 0.1))
-            Text("Provider: \(model.providerName)")
+            Text(String(format: String(localized: "Provider: %@", defaultValue: "Provider: %@"), model.providerName))
                 .font(.subheadline)
                 .foregroundStyle(Color(white: 0.5))
         }
@@ -819,9 +868,9 @@ struct ModelConsentSheet: View {
                 .foregroundStyle(Color(white: 0.5))
             
             VStack(alignment: .leading, spacing: 8) {
-                dataRow(icon: "text.bubble", text: "Your chat messages and prompts")
-                dataRow(icon: "doc.text", text: "Text from attached documents")
-                dataRow(icon: "text.quote", text: "Conversation context and history")
+                dataRow(icon: "text.bubble", text: String(localized: "Your chat messages and prompts"))
+                dataRow(icon: "doc.text", text: String(localized: "Text from attached documents"))
+                dataRow(icon: "text.quote", text: String(localized: "Conversation context and history"))
             }
             
             Text("By tapping \"Allow Data Sharing & Continue\", you authorize this data transfer to Apple Inc. for AI processing.")
@@ -852,10 +901,10 @@ struct ModelConsentSheet: View {
                 .foregroundStyle(Color(white: 0.5))
             
             VStack(alignment: .leading, spacing: 8) {
-                privacyRow(text: "Your chat messages and prompts")
-                privacyRow(text: "Text from attached documents")
-                privacyRow(text: "Conversation context and history")
-                privacyRow(text: "Voice input and transcriptions")
+                privacyRow(text: String(localized: "Your chat messages and prompts"))
+                privacyRow(text: String(localized: "Text from attached documents"))
+                privacyRow(text: String(localized: "Conversation context and history"))
+                privacyRow(text: String(localized: "Voice input and transcriptions"))
             }
             
             HStack(spacing: 6) {
@@ -893,8 +942,8 @@ struct ModelConsentSheet: View {
                 .foregroundStyle(Color(white: 0.5))
             
             VStack(alignment: .leading, spacing: 8) {
-                dataRow(icon: "network", text: "Your IP address")
-                dataRow(icon: "gear", text: "Device request headers (e.g. OS version)")
+                dataRow(icon: "network", text: String(localized: "Your IP address"))
+                dataRow(icon: "gear", text: String(localized: "Device request headers (e.g. OS version)"))
             }
             
             Text("No chat messages, prompts, documents, or any personal content is sent during downloads.")
@@ -1081,19 +1130,29 @@ struct SelectButton: View {
 }
 
 struct DownloadButton: View {
+    let sizeLabel: String
     let action: () -> Void
     
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: "arrow.down.circle.fill")
-                    .font(.body.bold())
-                Text("Download")
-                    .fontWeight(.semibold)
+            VStack(spacing: 4) {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.body.bold())
+                    Text("Download")
+                        .fontWeight(.semibold)
+                }
+
+                Text("\(sizeLabel) • Select it after the download finishes")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.78))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
             .background(
                 LinearGradient(
                     colors: [.blue, .blue.opacity(0.85)],
@@ -1159,40 +1218,236 @@ struct UnsupportedModelButton: View {
 
 struct DownloadingButton: View {
     let progress: Double
+    let sizeGB: Double
     let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            HStack(spacing: 12) {
-                // Animated progress ring
-                ZStack {
-                    Circle()
-                        .stroke(Color.blue.opacity(0.2), lineWidth: 3)
-                    
-                    Circle()
-                        .trim(from: 0, to: progress)
-                        .stroke(Color.blue, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                        .animation(.easeInOut(duration: 0.3), value: progress)
-                }
-                .frame(width: 22, height: 22)
-                
-                Text("Downloading \(Int(progress * 100))%")
-                    .fontWeight(.semibold)
-                
-                Spacer()
-                
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(Color(white: 0.6))
-            }
-            .foregroundStyle(.blue)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .background(Color.blue.opacity(0.08))
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+    @ScaledMetric(relativeTo: .body) private var progressBarHeight = 8.0
+    @ScaledMetric(relativeTo: .body) private var closeButtonSize = 34.0
+    @State private var estimate = DownloadEstimate()
+
+    private var clampedProgress: Double {
+        max(0.0, min(progress, 0.99))
+    }
+
+    private var downloadedBytes: Double {
+        sizeGB * 1_000_000_000 * clampedProgress
+    }
+
+    private var statusLine: String {
+        let downloadedLabel = Self.byteCountFormatter.string(fromByteCount: Int64(downloadedBytes))
+        guard let speedBytesPerSecond = estimate.speedBytesPerSecond,
+              speedBytesPerSecond > 50_000 else {
+            return "\(downloadedLabel) downloaded, estimating speed..."
         }
-        .buttonStyle(ActionButtonStyle())
+
+        let speedLabel = Self.speedFormatter.string(fromByteCount: Int64(speedBytesPerSecond)) + "/s"
+        let remainingLabel = estimate.remainingLabel(progress: clampedProgress, totalBytes: sizeGB * 1_000_000_000)
+        return "\(downloadedLabel) (\(speedLabel)) - \(remainingLabel) remaining"
+    }
+
+    private var panelShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 16)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .center, spacing: 10) {
+                progressBar
+
+                Button(role: .cancel, action: action) {
+                    Label("Cancel download", systemImage: "xmark")
+                        .labelStyle(.iconOnly)
+                        .font(.footnote.bold())
+                        .foregroundStyle(.white.opacity(0.9))
+                        .frame(width: closeButtonSize, height: closeButtonSize)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.white.opacity(0.12))
+                        )
+                }
+                .accessibilityInputLabels(["Cancel", "Stop download"])
+            }
+
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if differentiateWithoutColor {
+                    Text("\(Int(clampedProgress * 100))%")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.78))
+                        .monospacedDigit()
+                }
+
+                Text(statusLine)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.92))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.82)
+                    .allowsTightening(true)
+                    .contentTransition(.numericText())
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            panelShape
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(white: 0.20),
+                            Color(white: 0.16)
+                        ],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+        )
+        .overlay(
+            panelShape
+                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.16), radius: 10, y: 5)
+        .onChange(of: progress, initial: true) { _, newValue in
+            estimate.ingest(progress: newValue, totalBytes: sizeGB * 1_000_000_000)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Download in progress")
+        .accessibilityValue("\(Int(clampedProgress * 100)) percent complete. \(statusLine)")
+    }
+
+    private var progressBar: some View {
+        GeometryReader { proxy in
+            let availableWidth = max(0, proxy.size.width)
+            let fillWidth = max(progressBarHeight * 1.4, availableWidth * clampedProgress)
+            let handleOffset = min(max(progressBarHeight * 0.8, fillWidth), availableWidth)
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.white.opacity(0.12))
+
+                Capsule()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                .white,
+                                Color.white.opacity(0.92)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: fillWidth)
+                    .overlay(alignment: .trailing) {
+                        Circle()
+                            .fill(.white)
+                            .frame(width: progressBarHeight + 2, height: progressBarHeight + 2)
+                            .shadow(color: .white.opacity(0.35), radius: 3)
+                            .opacity(clampedProgress > 0.015 ? 1 : 0)
+                    }
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: clampedProgress)
+
+                if !reduceMotion {
+                    Capsule()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    .white.opacity(0),
+                                    .white.opacity(0.24),
+                                    .white.opacity(0)
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                        .frame(width: min(availableWidth * 0.22, 90), height: progressBarHeight)
+                        .offset(x: max(0, handleOffset - min(availableWidth * 0.18, 72)))
+                        .blendMode(.plusLighter)
+                        .animation(.easeInOut(duration: 0.25), value: clampedProgress)
+                }
+            }
+        }
+        .frame(height: max(progressBarHeight, 30))
+    }
+
+    private static let byteCountFormatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useGB, .useMB]
+        formatter.countStyle = .file
+        formatter.includesUnit = true
+        formatter.isAdaptive = true
+        formatter.zeroPadsFractionDigits = true
+        return formatter
+    }()
+
+    private static let speedFormatter: ByteCountFormatter = {
+        let formatter = ByteCountFormatter()
+        formatter.allowedUnits = [.useGB, .useMB, .useKB]
+        formatter.countStyle = .file
+        formatter.includesUnit = true
+        formatter.isAdaptive = true
+        formatter.zeroPadsFractionDigits = true
+        return formatter
+    }()
+}
+
+private struct DownloadEstimate {
+    private(set) var lastProgress: Double?
+    private(set) var lastSampleDate: Date?
+    private(set) var speedBytesPerSecond: Double?
+
+    mutating func ingest(progress: Double, totalBytes: Double, now: Date = .now) {
+        let clampedProgress = max(0.0, min(progress, 0.99))
+
+        defer {
+            lastProgress = clampedProgress
+            lastSampleDate = now
+        }
+
+        guard let previousProgress = lastProgress,
+              let previousDate = lastSampleDate else {
+            return
+        }
+
+        let elapsed = now.timeIntervalSince(previousDate)
+        guard elapsed >= 0.25 else { return }
+
+        let deltaProgress = clampedProgress - previousProgress
+        guard deltaProgress > 0 else { return }
+
+        let instantaneousSpeed = (totalBytes * deltaProgress) / elapsed
+        if let currentSpeed = speedBytesPerSecond {
+            speedBytesPerSecond = (currentSpeed * 0.72) + (instantaneousSpeed * 0.28)
+        } else {
+            speedBytesPerSecond = instantaneousSpeed
+        }
+    }
+
+    func remainingLabel(progress: Double, totalBytes: Double) -> String {
+        guard let speedBytesPerSecond,
+              speedBytesPerSecond > 50_000 else {
+            return "calculating time"
+        }
+
+        let remainingBytes = max(0, 1.0 - progress) * totalBytes
+        let seconds = remainingBytes / speedBytesPerSecond
+        guard seconds.isFinite else { return "calculating time" }
+
+        if seconds < 60 {
+            return "\(max(1, Int(seconds.rounded()))) sec"
+        }
+
+        let minutes = Int((seconds / 60).rounded())
+        if minutes < 60 {
+            return "\(minutes) min"
+        }
+
+        let hours = minutes / 60
+        let remainingMinutes = minutes % 60
+        if remainingMinutes == 0 {
+            return "\(hours) hr"
+        }
+        return "\(hours) hr \(remainingMinutes) min"
     }
 }
 

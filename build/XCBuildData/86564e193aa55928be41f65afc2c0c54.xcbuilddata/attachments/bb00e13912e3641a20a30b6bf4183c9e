@@ -1,0 +1,31 @@
+{
+  "" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/build/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/EventSource-primary.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/build/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/EventSource-primary.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/build/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/EventSource-primary.dia",
+    "emit-module-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/build/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/EventSource-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/build/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/EventSource-primary-emit-module.dia",
+    "pch" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/build/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/EventSource-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/build/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/EventSource-primary.swiftdeps"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/Sources/EventSource/AsyncEventsSequence.swift" : {
+    "index-unit-output-path" : "/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/AsyncEventsSequence.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/build/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/AsyncEventsSequence.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/build/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/AsyncEventsSequence.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/Sources/EventSource/AsyncSequence+Events.swift" : {
+    "index-unit-output-path" : "/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/AsyncSequence+Events.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/build/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/AsyncSequence+Events.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/build/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/AsyncSequence+Events.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/Sources/EventSource/EventSource+AsyncHTTPClient.swift" : {
+    "index-unit-output-path" : "/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/EventSource+AsyncHTTPClient.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/build/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/EventSource+AsyncHTTPClient.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/build/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/EventSource+AsyncHTTPClient.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/Sources/EventSource/EventSource.swift" : {
+    "index-unit-output-path" : "/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/EventSource.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/build/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/EventSource.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/EventSource/build/EventSource.build/Release-iphonesimulator/EventSource.build/Objects-normal/x86_64/EventSource.o"
+  }
+}

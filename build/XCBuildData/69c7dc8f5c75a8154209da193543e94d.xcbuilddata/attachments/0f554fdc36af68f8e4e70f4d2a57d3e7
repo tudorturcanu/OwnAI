@@ -1,0 +1,59 @@
+{
+  "" : {
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp-primary.dia",
+    "emit-module-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp-primary-emit-module.dia",
+    "pch" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp-primary.swiftdeps"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAIWatchApp/LocalAIWatchApp.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/LocalAIWatchApp~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAIWatchApp/WatchAppView.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchAppView.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchAppView.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchAppView.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchAppView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchAppView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchAppView.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchAppView.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchAppView~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAIWatchApp/WatchConnectivityClient.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchConnectivityClient.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchConnectivityClient.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchConnectivityClient.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchConnectivityClient.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchConnectivityClient.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchConnectivityClient.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchConnectivityClient.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchConnectivityClient~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/Shared/WatchConnectivityModels.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchConnectivityModels.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchConnectivityModels.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchConnectivityModels.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchConnectivityModels.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchConnectivityModels.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchConnectivityModels.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchConnectivityModels.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/WatchConnectivityModels~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/GeneratedAssetSymbols.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAIWatchApp.build/Objects-normal/arm64/GeneratedAssetSymbols~partial.swiftmodule"
+  }
+}

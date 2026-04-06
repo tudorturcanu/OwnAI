@@ -61,7 +61,7 @@ struct ContentView: View {
                                 showSettings = true
                             } label: {
                                 HStack(spacing: 4) {
-                                    Text(modelManager.selectedModel?.name ?? "Select Model")
+                                    Text(modelManager.selectedModel?.name ?? String(localized: "Select Model"))
                                         .font(.subheadline.weight(.semibold))
                                     Image(systemName: "chevron.right")
                                         .font(.caption2.weight(.bold))

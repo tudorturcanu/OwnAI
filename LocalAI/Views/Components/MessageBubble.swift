@@ -223,9 +223,19 @@ struct MessageBubble: View {
     @ViewBuilder
     private var messageContent: some View {
         if message.role == .user {
-            Text(message.content)
-                .font(.body)
-                .foregroundStyle(.white)
+            VStack(alignment: .trailing, spacing: 8) {
+                if let imageFileName = message.imageFileName,
+                   let uiImage = ImageAttachmentManager.shared.loadImage(named: imageFileName) {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(maxWidth: 200, maxHeight: 200)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                }
+                Text(message.content)
+                    .font(.body)
+                    .foregroundStyle(.white)
+            }
         } else {
             Markdown(message.content)
                 .font(.body)

@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import PhotosUI
 
 struct ChatView: View {
     @Environment(LLMEngine.self) private var llmEngine
@@ -11,6 +12,7 @@ struct ChatView: View {
     
     @State private var messageText = ""
     @State private var isFileImporterPresented = false
+    @State private var isPhotoPickerPresented = false
     @State private var isExtractingDocument = false
     @AppStorage("autoRead") private var autoRead = false
     @AppStorage("voiceConversationMode") private var voiceConversationMode = false
@@ -18,6 +20,7 @@ struct ChatView: View {
     @FocusState private var isInputFocused: Bool
     @State private var showModelDownloadSheet = false
     @State private var showModelConsentSheet = false
+    @State private var showAttachmentOptions = false
     @State private var shouldSendAfterConsent = false
     @State private var upgradeFeature: PremiumFeature?
     @State private var documentError: String?
@@ -25,6 +28,11 @@ struct ChatView: View {
     @State private var usageLimitToastMessage: String?
     @State private var streamingPrefix = ""
     @State private var speechStreamingSpokenCharCount: Int = 0
+    @State private var selectedImage: UIImage?
+    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var activeStreamingConversationID: UUID?
+    @State private var activeStreamingAssistantID: UUID?
+    @State private var pendingSessionReset = false
     @AppStorage("systemPrompt") private var systemPrompt = "You are a helpful AI assistant."
     @AppStorage("responseCharacterLimit") private var responseCharacterLimit = 1000
     
@@ -37,12 +45,12 @@ struct ChatView: View {
             .alert("Document Error", isPresented: documentErrorBinding) {
                 Button("OK", role: .cancel) { documentError = nil }
             } message: {
-                Text(documentError ?? "An unknown error occurred.")
+                Text(documentError ?? String(localized: "An unknown error occurred."))
             }
             .alert("Voice Error", isPresented: voiceErrorBinding) {
                 Button("OK", role: .cancel) { voiceError = nil }
             } message: {
-                Text(voiceError ?? "Voice input is unavailable.")
+                Text(voiceError ?? String(localized: "Voice input is unavailable."))
             }
             .onChange(of: voiceConversationMode) {
                 if voiceConversationMode {
@@ -68,6 +76,12 @@ struct ChatView: View {
             ) { result in
                 handleFileImport(result: result)
             }
+            .photosPicker(
+                isPresented: $isPhotoPickerPresented,
+                selection: $selectedPhotoItem,
+                matching: .images,
+                photoLibrary: .shared()
+            )
             .alert("Microphone Access Required", isPresented: Bindable(speechManager).showPermissionAlert) {
                 Button("Settings") {
                     if let url = URL(string: UIApplication.openSettingsURLString) {
@@ -114,6 +128,21 @@ struct ChatView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
+            .confirmationDialog("Add to chat", isPresented: $showAttachmentOptions, titleVisibility: .visible) {
+                Button("Photo or Screenshot") {
+                    isPhotoPickerPresented = true
+                }
+
+                Button("Document") {
+                    guard monetizationManager.canUse(.unlimitedDocuments) || currentConversationDocuments.isEmpty else {
+                        upgradeFeature = .unlimitedDocuments
+                        return
+                    }
+                    isFileImporterPresented = true
+                }
+
+                Button("Cancel", role: .cancel) { }
+            }
     }
 
     private var lifecycleContent: some View {
@@ -129,7 +158,11 @@ struct ChatView: View {
             }
             .onChange(of: historyManager.currentConversationID) {
                 speechManager.stopSpeaking()
-                llmEngine.resetSession()
+                if llmEngine.state == .generating {
+                    pendingSessionReset = true
+                } else {
+                    llmEngine.resetSession()
+                }
             }
             .onChange(of: speechManager.transcribedText) {
                 if !speechManager.transcribedText.isEmpty {
@@ -254,6 +287,14 @@ struct ChatView: View {
                 scrollToBottom(proxy: proxy)
             }
             .onChange(of: llmEngine.state) {
+                if llmEngine.state != .generating {
+                    activeStreamingConversationID = nil
+                    activeStreamingAssistantID = nil
+                    if pendingSessionReset {
+                        pendingSessionReset = false
+                        llmEngine.resetSession()
+                    }
+                }
                 scrollToBottom(proxy: proxy)
             }
             .onChange(of: historyManager.currentConversationID) {
@@ -261,11 +302,14 @@ struct ChatView: View {
             }
             .onChange(of: llmEngine.currentResponse) {
                 // Update the last message in history if it's currently streaming
-                if let lastMsg = historyManager.currentMessages.last, 
-                   lastMsg.role == .assistant && lastMsg.isStreaming &&
-                   combinedStreamingContent(for: llmEngine.currentResponse) != lastMsg.content {
+                if let conversationID = activeStreamingConversationID,
+                   let assistantID = activeStreamingAssistantID,
+                   let message = historyManager.message(id: assistantID, in: conversationID),
+                   message.role == .assistant && message.isStreaming &&
+                   combinedStreamingContent(for: llmEngine.currentResponse) != message.content {
                     historyManager.updateMessage(
-                        id: lastMsg.id,
+                        id: assistantID,
+                        in: conversationID,
                         content: combinedStreamingContent(for: llmEngine.currentResponse),
                         isStreaming: true
                     )
@@ -352,13 +396,14 @@ struct ChatView: View {
                     conversationDocumentsStrip
                 }
 
+                // Image preview
+                if let selectedImage {
+                    imagePreviewStrip(selectedImage)
+                }
+
                 HStack(spacing: 10) {
                     Button {
-                        if !monetizationManager.canUse(.unlimitedDocuments) && !currentConversationDocuments.isEmpty {
-                            upgradeFeature = .unlimitedDocuments
-                        } else {
-                            isFileImporterPresented = true
-                        }
+                        showAttachmentOptions = true
                     } label: {
                         Image(systemName: "plus")
                             .font(.body.weight(.semibold))
@@ -371,7 +416,7 @@ struct ChatView: View {
                     
                     // Text field
                     HStack {
-                        TextField(speechManager.isListening ? "Listening..." : "Ask anything", text: $messageText, axis: .vertical)
+                        TextField(speechManager.isListening ? String(localized: "Listening...") : String(localized: "Ask anything"), text: $messageText, axis: .vertical)
                             .textFieldStyle(.plain)
                             .lineLimit(1...5)
                             .focused($isInputFocused)
@@ -435,6 +480,9 @@ struct ChatView: View {
                 .padding(.horizontal, 16)
                 .padding(.bottom, 12)
                 .padding(.top, currentConversationDocuments.isEmpty ? 12 : 4)
+                .onChange(of: selectedPhotoItem) {
+                    handlePhotoSelection()
+                }
             }
             .background(Color.clear)
         }
@@ -448,13 +496,23 @@ struct ChatView: View {
     }
     
     private var canSend: Bool {
-        let hasInput = !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !currentConversationDocuments.isEmpty
+        let hasInput = !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !currentConversationDocuments.isEmpty || selectedImage != nil
         let hasModel = modelManager.selectedModel != nil
         return hasInput && hasModel && llmEngine.state != .generating && llmEngine.state != .loading && !monetizationManager.hasReachedFreeDailyMessageLimit
     }
 
     private var currentConversationDocuments: [ConversationDocument] {
         documentManager.documents(for: historyManager.currentConversationID)
+    }
+
+    private var imageAttachmentLabel: String {
+        guard let selectedModel else {
+            return String(localized: "Photo ready")
+        }
+
+        return selectedModel.supportsVision
+            ? String(localized: "Photo ready")
+            : String(localized: "Photo attached")
     }
 
     private var latestSpeakableAssistantMessage: ChatMessage? {
@@ -472,13 +530,13 @@ struct ChatView: View {
         if let matched = PersonalityPreset.presets.first(where: { $0.systemPrompt == systemPrompt }) {
             return (matched.name, matched.icon)
         }
-        return ("Custom personality", "slider.horizontal.3")
+        return (String(localized: "Custom personality"), "slider.horizontal.3")
     }
 
     private var conversationDocumentsStrip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 10) {
-                Text(currentConversationDocuments.count == 1 ? "1 doc in this chat" : "\(currentConversationDocuments.count) docs in this chat")
+                Text(currentConversationDocuments.count == 1 ? String(localized: "1 doc in this chat") : String(format: String(localized: "%lld docs in this chat", defaultValue: "%lld docs in this chat"), Int64(currentConversationDocuments.count)))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color(white: 0.35))
 
@@ -531,7 +589,7 @@ struct ChatView: View {
                 Text("Conversation Mode")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color(white: 0.15))
-                Text(speechManager.isListening ? "Listening for your next turn" : "Replies are spoken and listening restarts automatically")
+                Text(speechManager.isListening ? String(localized: "Listening for your next turn") : String(localized: "Replies are spoken and listening restarts automatically"))
                     .font(.caption2)
                     .foregroundStyle(Color(white: 0.5))
             }
@@ -569,7 +627,7 @@ struct ChatView: View {
             toggleSpeechPlayback(for: message)
         } label: {
             Label(
-                speechManager.isSpeaking ? "Stop Speaking" : "Speak Reply",
+                speechManager.isSpeaking ? String(localized: "Stop Speaking") : String(localized: "Speak Reply"),
                 systemImage: speechManager.isSpeaking ? "speaker.slash.fill" : "speaker.wave.2.fill"
             )
             .font(.caption.weight(.semibold))
@@ -649,9 +707,13 @@ struct ChatView: View {
     private func stopGeneration() {
         let generator = UIImpactFeedbackGenerator(style: .medium)
         generator.impactOccurred()
-        if let lastMsg = historyManager.currentMessages.last, lastMsg.isStreaming {
+        if let conversationID = activeStreamingConversationID,
+           let assistantID = activeStreamingAssistantID,
+           let message = historyManager.message(id: assistantID, in: conversationID),
+           message.isStreaming {
             historyManager.updateMessage(
-                id: lastMsg.id,
+                id: assistantID,
+                in: conversationID,
                 content: combinedStreamingContent(for: llmEngine.currentResponse),
                 isStreaming: false
             )
@@ -710,35 +772,70 @@ struct ChatView: View {
         
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         let conversationID = historyManager.currentConversationID
+        let imageToSend = selectedImage
         
-        if text.isEmpty && currentConversationDocuments.isEmpty { return }
+        if text.isEmpty && currentConversationDocuments.isEmpty && imageToSend == nil { return }
         
-        let displayText = text.isEmpty && !currentConversationDocuments.isEmpty ? "Summarize the documents in this chat." : text
+        var displayText: String
+        if text.isEmpty && imageToSend != nil {
+            displayText = String(localized: "What's in this image?")
+        } else if text.isEmpty && !currentConversationDocuments.isEmpty {
+            displayText = String(localized: "Summarize the documents in this chat.")
+        } else {
+            displayText = text
+        }
         
-        // Add user message
-        let userMessage = ChatMessage(role: .user, content: displayText)
-        historyManager.addMessage(userMessage)
-        monetizationManager.registerFreeMessageIfNeeded()
-        showUsageToastIfNeededAfterSend()
+        // Save image and create message
+        let messageID = UUID()
+        var imageFileName: String?
+        if let imageToSend {
+            imageFileName = ImageAttachmentManager.shared.saveImage(imageToSend, for: messageID)
+        }
+        
+        let userMessage = ChatMessage(
+            id: messageID,
+            role: .user,
+            content: displayText,
+            imageFileName: imageFileName
+        )
+        historyManager.addMessage(userMessage, to: conversationID)
         
         messageText = ""
+        selectedImage = nil
+        selectedPhotoItem = nil
         
         // Generate response
         Task {
             let promptContext = await buildPromptContext(
-                userText: text,
+                userText: text.isEmpty && imageToSend != nil ? displayText : text,
                 conversationID: conversationID
             )
+            
+            guard let model = modelManager.selectedModel else { return }
+            
+            // For non-vision models with image, prepend note
+            var effectivePrompt = promptContext.prompt
+            if imageToSend != nil, !model.supportsVision {
+                effectivePrompt = String(localized: "[Note: The user attached an image, but the selected model does not support image analysis. Please describe the image in text or select a vision-capable model.]\n\n") + effectivePrompt
+            }
+            
             await runAssistantResponse(
-                prompt: promptContext.prompt,
+                prompt: effectivePrompt,
+                conversationID: conversationID,
                 resetSession: false,
-                assistantSourceTitles: promptContext.sourceTitles
+                image: model.supportsVision ? imageToSend : nil,
+                assistantSourceTitles: promptContext.sourceTitles,
+                shouldChargeUsage: true
             )
         }
     }
 
+    private var selectedModel: ModelInfo? {
+        modelManager.selectedModel
+    }
+
     private func showUsageLimitToast() {
-        let message = "Free plan limit reached."
+        let message = String(localized: "Free plan limit reached.")
         showUsageToast(message)
     }
 
@@ -752,7 +849,7 @@ struct ChatView: View {
 
         guard monetizationManager.shouldShowThreeMessagesLeftWarning else { return }
         monetizationManager.markThreeMessagesLeftWarningShown()
-        showUsageToast("3 free messages left today.")
+        showUsageToast(String(localized: "3 free messages left today."))
     }
 
     private func showUsageToast(_ message: String) {
@@ -774,17 +871,20 @@ struct ChatView: View {
 
     private func runAssistantResponse(
         prompt: String,
+        conversationID: UUID?,
         resetSession: Bool = false,
         assistantID: UUID = UUID(),
         existingPrefix: String = "",
         placeholderContent: String = "",
         missingAnswerRetryCount: Int = 0,
-        assistantSourceTitles: [String] = []
+        image: UIImage? = nil,
+        assistantSourceTitles: [String] = [],
+        shouldChargeUsage: Bool = false
     ) async {
         do {
             guard let model = modelManager.selectedModel else {
-                let errorMessage = ChatMessage(role: .assistant, content: "Please select or download a model first (Settings > Models).")
-                historyManager.addMessage(errorMessage)
+                let errorMessage = ChatMessage(role: .assistant, content: String(localized: "Please select or download a model first (Settings > Models)."))
+                historyManager.addMessage(errorMessage, to: conversationID)
                 return
             }
 
@@ -793,10 +893,13 @@ struct ChatView: View {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
                 .count
             llmEngine.currentResponse = ""
+            activeStreamingConversationID = conversationID
+            activeStreamingAssistantID = assistantID
 
-            if historyManager.currentMessages.contains(where: { $0.id == assistantID }) {
+            if historyManager.containsMessage(assistantID, in: conversationID) {
                 historyManager.updateMessage(
                     id: assistantID,
+                    in: conversationID,
                     content: placeholderContent,
                     isStreaming: true,
                     sourceTitles: assistantSourceTitles
@@ -809,7 +912,7 @@ struct ChatView: View {
                     sourceTitles: assistantSourceTitles,
                     isStreaming: true
                 )
-                historyManager.addMessage(assistantPlaceholder)
+                historyManager.addMessage(assistantPlaceholder, to: conversationID)
             }
 
             try await llmEngine.loadModel(model)
@@ -818,19 +921,27 @@ struct ChatView: View {
                 llmEngine.resetSession()
             }
 
+            if shouldChargeUsage {
+                monetizationManager.registerFreeMessageIfNeeded()
+                showUsageToastIfNeededAfterSend()
+            }
+
             try await llmEngine.generate(
-                prompt: promptWithResponseLimit(prompt, existingPrefix: existingPrefix)
+                prompt: promptWithResponseLimit(prompt, existingPrefix: existingPrefix),
+                image: image
             )
 
             if case .error(let message) = llmEngine.state {
                 let errorText = userFacingErrorText(from: message)
                 let fallbackContent = failureContent(
                     assistantID: assistantID,
+                    conversationID: conversationID,
                     existingPrefix: existingPrefix,
                     errorText: errorText
                 )
                 historyManager.updateMessage(
                     id: assistantID,
+                    in: conversationID,
                     content: fallbackContent,
                     isStreaming: false,
                     sourceTitles: assistantSourceTitles
@@ -855,6 +966,7 @@ struct ChatView: View {
                     Do not include reasoning, thoughts, or <think> tags.
                     Answer the original request directly.
                     """,
+                    conversationID: conversationID,
                     assistantID: assistantID,
                     existingPrefix: "",
                     placeholderContent: finalizedContent,
@@ -866,6 +978,7 @@ struct ChatView: View {
 
             historyManager.updateMessage(
                 id: assistantID,
+                in: conversationID,
                 content: finalizedContent,
                 isStreaming: false,
                 sourceTitles: assistantSourceTitles
@@ -874,7 +987,9 @@ struct ChatView: View {
             llmEngine.currentResponse = ""
             streamingPrefix = ""
 
-            let spokenReply = historyManager.currentMessages.last?.content.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let spokenReply = historyManager.message(id: assistantID, in: conversationID)?
+                .content
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if voiceConversationMode, !spokenReply.isEmpty {
                 speechManager.speak(spokenReply)
             } else if voiceConversationMode {
@@ -882,25 +997,98 @@ struct ChatView: View {
             }
         } catch {
             let errorText = userFacingErrorText(from: error.localizedDescription)
-            if historyManager.currentMessages.contains(where: { $0.id == assistantID }) {
+            if historyManager.containsMessage(assistantID, in: conversationID) {
                 let fallbackContent = failureContent(
                     assistantID: assistantID,
+                    conversationID: conversationID,
                     existingPrefix: existingPrefix,
                     errorText: errorText
                 )
                 historyManager.updateMessage(
                     id: assistantID,
+                    in: conversationID,
                     content: fallbackContent,
                     isStreaming: false,
                     sourceTitles: assistantSourceTitles
                 )
             } else {
-                historyManager.addMessage(ChatMessage(role: .assistant, content: errorText, sourceTitles: assistantSourceTitles))
+                historyManager.addMessage(
+                    ChatMessage(role: .assistant, content: errorText, sourceTitles: assistantSourceTitles),
+                    to: conversationID
+                )
             }
             llmEngine.currentResponse = ""
             streamingPrefix = ""
             if voiceConversationMode {
                 speechManager.speak(errorText)
+            }
+        }
+    }
+
+    private func imagePreviewStrip(_ image: UIImage) -> some View {
+        HStack(spacing: 10) {
+            Image(uiImage: image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                )
+
+            Text(imageAttachmentLabel)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color(white: 0.2))
+
+            Spacer()
+
+            Button {
+                withAnimation(.spring(response: 0.3)) {
+                    selectedImage = nil
+                    selectedPhotoItem = nil
+                }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.title3)
+                    .foregroundStyle(Color(white: 0.5))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Remove attached image")
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white.opacity(0.72))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                )
+        )
+        .padding(.horizontal, 16)
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    private func handlePhotoSelection() {
+        guard let item = selectedPhotoItem else { return }
+
+        // Pro gate
+        guard monetizationManager.canUse(.imageInput) else {
+            selectedPhotoItem = nil
+            upgradeFeature = .imageInput
+            return
+        }
+
+        Task {
+            if let data = try? await item.loadTransferable(type: Data.self),
+               let uiImage = UIImage(data: data) {
+                await MainActor.run {
+                    withAnimation(.spring(response: 0.3)) {
+                        selectedImage = uiImage
+                    }
+                }
             }
         }
     }
@@ -1017,6 +1205,7 @@ struct ChatView: View {
                     Do not include reasoning, thoughts, or <think> tags.
                     Answer the original request directly.
                     """,
+                    conversationID: historyManager.currentConversationID,
                     assistantID: message.id,
                     existingPrefix: "",
                     placeholderContent: rawAssistantContent(for: message),
@@ -1037,6 +1226,7 @@ struct ChatView: View {
         Task {
             await runAssistantResponse(
                 prompt: prompt,
+                conversationID: historyManager.currentConversationID,
                 assistantID: message.id,
                 existingPrefix: prefix,
                 placeholderContent: prefix,
@@ -1048,7 +1238,7 @@ struct ChatView: View {
     private func retryAction(for message: ChatMessage) -> MessageBubble.RecoveryAction? {
         guard canRetryAfterReset(message) else { return nil }
         return MessageBubble.RecoveryAction(
-            title: "Retry",
+            title: String(localized: "Retry"),
             systemImage: "arrow.clockwise",
             action: { retryResponseAfterReset(for: message) }
         )
@@ -1066,6 +1256,7 @@ struct ChatView: View {
             )
             await runAssistantResponse(
                 prompt: promptContext.prompt,
+                conversationID: historyManager.currentConversationID,
                 resetSession: true,
                 assistantID: message.id,
                 existingPrefix: "",
@@ -1121,14 +1312,14 @@ struct ChatView: View {
         let lowercased = message.lowercased()
 
         if lowercased.contains("unsupported language") || lowercased.contains("locale") {
-            return "This document's language is not supported by Apple Intelligence. Try switching to an MLX model (like Gemma) in Settings -> Models for multi-language support."
+            return String(localized: "This document's language is not supported by Apple Intelligence. Try switching to an MLX model (like Gemma) in Settings -> Models for multi-language support.")
         }
 
         if lowercased.contains("jinja.templateexception") {
-            return "Sorry, I hit a model template error. Tap Retry to clear the current chat context and try again."
+            return String(localized: "Sorry, I hit a model template error. Tap Retry to clear the current chat context and try again.")
         }
 
-        return "Sorry, I encountered an error: \(message)"
+        return String(format: String(localized: "Sorry, I encountered an error: %@", defaultValue: "Sorry, I encountered an error: %@"), message)
     }
 
     private func missingFinalAnswer(_ message: ChatMessage) -> Bool {
@@ -1158,10 +1349,11 @@ struct ChatView: View {
 
     private func failureContent(
         assistantID: UUID,
+        conversationID: UUID?,
         existingPrefix: String,
         errorText: String
     ) -> String {
-        if let existingMessage = historyManager.currentMessages.first(where: { $0.id == assistantID }) {
+        if let existingMessage = historyManager.message(id: assistantID, in: conversationID) {
             if let preservedContent = failureContent(
                 preserving: rawAssistantContent(for: existingMessage),
                 errorText: errorText
@@ -1340,7 +1532,7 @@ struct ChatView: View {
 
     private func buildPromptContext(userText: String, conversationID: UUID?) async -> (prompt: String, sourceTitles: [String]) {
         let trimmedText = userText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let effectiveRequest = trimmedText.isEmpty ? "Summarize the documents in this chat." : trimmedText
+        let effectiveRequest = trimmedText.isEmpty ? String(localized: "Summarize the documents in this chat.") : trimmedText
 
         guard let conversationID, documentManager.hasDocuments(in: conversationID) else {
             return (trimmedText, [])

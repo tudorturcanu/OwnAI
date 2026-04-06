@@ -1,0 +1,41 @@
+{
+  "" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOConcurrencyHelpers-primary.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOConcurrencyHelpers-primary.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOConcurrencyHelpers-primary.dia",
+    "emit-module-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOConcurrencyHelpers-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOConcurrencyHelpers-primary-emit-module.dia",
+    "pch" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOConcurrencyHelpers-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOConcurrencyHelpers-primary.swiftdeps"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/Sources/NIOConcurrencyHelpers/NIOAtomic.swift" : {
+    "index-unit-output-path" : "/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOAtomic.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOAtomic.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOAtomic.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/Sources/NIOConcurrencyHelpers/NIOLock.swift" : {
+    "index-unit-output-path" : "/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOLock.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOLock.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOLock.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/Sources/NIOConcurrencyHelpers/NIOLockedValueBox.swift" : {
+    "index-unit-output-path" : "/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOLockedValueBox.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOLockedValueBox.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOLockedValueBox.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/Sources/NIOConcurrencyHelpers/NIOThreadPoolWorkAvailable.swift" : {
+    "index-unit-output-path" : "/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOThreadPoolWorkAvailable.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOThreadPoolWorkAvailable.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/NIOThreadPoolWorkAvailable.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/Sources/NIOConcurrencyHelpers/atomics.swift" : {
+    "index-unit-output-path" : "/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/atomics.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/atomics.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/atomics.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/Sources/NIOConcurrencyHelpers/lock.swift" : {
+    "index-unit-output-path" : "/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/lock.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/lock.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/build/swift-nio.build/Release-iphonesimulator/NIOConcurrencyHelpers.build/Objects-normal/arm64/lock.o"
+  }
+}

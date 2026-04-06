@@ -1,0 +1,16 @@
+{
+  "" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/SwiftUI-Shimmer/build/SwiftUI-Shimmer.build/Release-iphonesimulator/Shimmer.build/Objects-normal/arm64/Shimmer-primary.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/SwiftUI-Shimmer/build/SwiftUI-Shimmer.build/Release-iphonesimulator/Shimmer.build/Objects-normal/arm64/Shimmer-primary.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/SwiftUI-Shimmer/build/SwiftUI-Shimmer.build/Release-iphonesimulator/Shimmer.build/Objects-normal/arm64/Shimmer-primary.dia",
+    "emit-module-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/SwiftUI-Shimmer/build/SwiftUI-Shimmer.build/Release-iphonesimulator/Shimmer.build/Objects-normal/arm64/Shimmer-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/SwiftUI-Shimmer/build/SwiftUI-Shimmer.build/Release-iphonesimulator/Shimmer.build/Objects-normal/arm64/Shimmer-primary-emit-module.dia",
+    "pch" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/SwiftUI-Shimmer/build/SwiftUI-Shimmer.build/Release-iphonesimulator/Shimmer.build/Objects-normal/arm64/Shimmer-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/SwiftUI-Shimmer/build/SwiftUI-Shimmer.build/Release-iphonesimulator/Shimmer.build/Objects-normal/arm64/Shimmer-primary.swiftdeps"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/SwiftUI-Shimmer/Sources/Shimmer/Shimmer.swift" : {
+    "index-unit-output-path" : "/SwiftUI-Shimmer.build/Release-iphonesimulator/Shimmer.build/Objects-normal/arm64/Shimmer.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/SwiftUI-Shimmer/build/SwiftUI-Shimmer.build/Release-iphonesimulator/Shimmer.build/Objects-normal/arm64/Shimmer.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/SwiftUI-Shimmer/build/SwiftUI-Shimmer.build/Release-iphonesimulator/Shimmer.build/Objects-normal/arm64/Shimmer.o"
+  }
+}

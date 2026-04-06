@@ -1,0 +1,56 @@
+{
+  "" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/SwiftSyntaxMacroExpansion-primary.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/SwiftSyntaxMacroExpansion-primary.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/SwiftSyntaxMacroExpansion-primary.dia",
+    "emit-module-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/SwiftSyntaxMacroExpansion-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/SwiftSyntaxMacroExpansion-primary-emit-module.dia",
+    "pch" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/SwiftSyntaxMacroExpansion-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/SwiftSyntaxMacroExpansion-primary.swiftdeps"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/Sources/SwiftSyntaxMacroExpansion/BasicMacroExpansionContext.swift" : {
+    "index-unit-output-path" : "/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/BasicMacroExpansionContext.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/BasicMacroExpansionContext.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/BasicMacroExpansionContext.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/Sources/SwiftSyntaxMacroExpansion/FunctionParameterUtils.swift" : {
+    "index-unit-output-path" : "/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/FunctionParameterUtils.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/FunctionParameterUtils.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/FunctionParameterUtils.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/Sources/SwiftSyntaxMacroExpansion/IndentationUtils.swift" : {
+    "index-unit-output-path" : "/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/IndentationUtils.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/IndentationUtils.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/IndentationUtils.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/Sources/SwiftSyntaxMacroExpansion/MacroArgument.swift" : {
+    "index-unit-output-path" : "/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/MacroArgument.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/MacroArgument.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/MacroArgument.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/Sources/SwiftSyntaxMacroExpansion/MacroExpansion.swift" : {
+    "index-unit-output-path" : "/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/MacroExpansion.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/MacroExpansion.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/MacroExpansion.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/Sources/SwiftSyntaxMacroExpansion/MacroExpansionDiagnosticMessages.swift" : {
+    "index-unit-output-path" : "/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/MacroExpansionDiagnosticMessages.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/MacroExpansionDiagnosticMessages.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/MacroExpansionDiagnosticMessages.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/Sources/SwiftSyntaxMacroExpansion/MacroReplacement.swift" : {
+    "index-unit-output-path" : "/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/MacroReplacement.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/MacroReplacement.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/MacroReplacement.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/Sources/SwiftSyntaxMacroExpansion/MacroSpec.swift" : {
+    "index-unit-output-path" : "/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/MacroSpec.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/MacroSpec.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/MacroSpec.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/Sources/SwiftSyntaxMacroExpansion/MacroSystem.swift" : {
+    "index-unit-output-path" : "/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/MacroSystem.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/MacroSystem.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntaxMacroExpansion.build/Objects-normal/arm64/MacroSystem.o"
+  }
+}

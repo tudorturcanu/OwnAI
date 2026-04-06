@@ -119,6 +119,8 @@ enum ModelDeviceFit: Equatable {
 
 enum ModelBadge: Equatable, Hashable {
     case recommended
+    case chat
+    case images
     case fastest
     case bestForCoding
     case bestForWriting
@@ -130,11 +132,16 @@ enum ModelBadge: Equatable, Hashable {
     case smallDownload
     case higherQuality
     case newerDevices
+    case vision
 
     var title: String {
         switch self {
         case .recommended:
             return "Recommended"
+        case .chat:
+            return "Chat"
+        case .images:
+            return "Images"
         case .fastest:
             return "Fastest"
         case .bestForCoding:
@@ -157,6 +164,8 @@ enum ModelBadge: Equatable, Hashable {
             return "Higher Quality"
         case .newerDevices:
             return "Newer Devices"
+        case .vision:
+            return "Vision"
         }
     }
 
@@ -164,6 +173,10 @@ enum ModelBadge: Equatable, Hashable {
         switch self {
         case .recommended:
             return "star.fill"
+        case .chat:
+            return "bubble.left.and.bubble.right.fill"
+        case .images:
+            return "photo"
         case .fastest:
             return "bolt.fill"
         case .bestForCoding:
@@ -186,12 +199,14 @@ enum ModelBadge: Equatable, Hashable {
             return "sparkles"
         case .newerDevices:
             return "iphone.gen3"
+        case .vision:
+            return "eye"
         }
     }
 
     var isHighlighted: Bool {
         switch self {
-        case .recommended, .fastest, .bestForCoding, .bestForWriting:
+        case .recommended, .chat, .images, .fastest, .bestForCoding, .bestForWriting:
             return true
         default:
             return false
@@ -347,7 +362,8 @@ struct ModelInfo: Identifiable, Equatable {
     }
 
     var supportsThinkingToggle: Bool {
-        id.lowercased().contains("qwen3")
+        let lowercasedID = id.lowercased()
+        return lowercasedID.contains("qwen3") || lowercasedID.contains("gemma-4")
     }
 
     var thinkingPreferenceKey: String {
@@ -360,6 +376,33 @@ struct ModelInfo: Identifiable, Equatable {
 
     var privacyLabel: String {
         isAppleFoundation ? "May use Apple processing" : "Fully on-device"
+    }
+
+    /// Set of MLX model IDs that support vision (VLM models).
+    static let vlmMLXModelIDs: Set<String> = [
+        "mlx-community/Qwen2-VL-2B-Instruct-4bit",
+        "mlx-community/Qwen2.5-VL-3B-Instruct-3bit",
+        "mlx-community/gemma-4-e2b-it-4bit",
+        "mlx-community/gemma-4-e4b-it-4bit",
+        "mlx-community/gemma-4-26b-a4b-it-4bit"
+    ]
+
+    var supportsVision: Bool {
+        engine == .appleFoundation || ModelInfo.vlmMLXModelIDs.contains(id)
+    }
+
+    /// Some catalog entries may be ahead of the bundled MLX runtime support.
+    static let runtimeUnsupportedModelIDs: Set<String> = [
+        "mlx-community/gemma-4-e2b-it-4bit",
+        "mlx-community/gemma-4-e4b-it-4bit",
+        "mlx-community/gemma-4-26b-a4b-it-4bit"
+    ]
+
+    var sizeLabel: String {
+        if engine == .appleFoundation {
+            return "No download"
+        }
+        return String(format: "%.1f GB", sizeGB)
     }
 }
 
@@ -377,7 +420,7 @@ extension ModelInfo {
         privacyURL: URL(string: "https://www.apple.com/legal/privacy/data/en/intelligence-engine/"),
         shortDescription: "Built in, quick to start, and best for everyday use.",
         recommendedFor: "Best for everyday questions when Apple Intelligence is available.",
-        badges: [.recommended, .everydayChat, .mayUseAppleProcessing],
+        badges: [.recommended, .images, .mayUseAppleProcessing],
         downloadState: .builtin
     )
 
@@ -393,7 +436,7 @@ extension ModelInfo {
         privacyURL: nil,
         shortDescription: "Balanced local model for reliable everyday chats.",
         recommendedFor: "Good default for private everyday chat on most devices.",
-        badges: [.everydayChat, .fullyOnDevice],
+        badges: [.chat, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -489,7 +532,7 @@ extension ModelInfo {
         privacyURL: nil,
         shortDescription: "Strong compact model for chat, writing, and languages.",
         recommendedFor: "Great all-around local option for multilingual everyday use.",
-        badges: [.recommended, .everydayChat, .multilingual, .fullyOnDevice],
+        badges: [.recommended, .multilingual, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -505,7 +548,7 @@ extension ModelInfo {
         privacyURL: nil,
         shortDescription: "Balanced multilingual model that stays light on storage.",
         recommendedFor: "Good for mixed everyday tasks with a smaller local footprint.",
-        badges: [.everydayChat, .multilingual, .fullyOnDevice],
+        badges: [.multilingual, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -525,6 +568,38 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Gemma 3n E2B Text Only (4-bit MLX)
+    static let gemma3n_e2b_it_lm_4bit = ModelInfo(
+        id: "mlx-community/gemma-3n-E2B-it-lm-4bit",
+        name: "Gemma 3n E2B",
+        description: "Google's newer Gemma 3n text-only model, tuned for stronger everyday chat quality while staying efficient enough for newer iPhones and iPads.",
+        family: .gemma,
+        sizeGB: 1.7,
+        engine: .mlx,
+        termsURL: URL(string: "https://ai.google.dev/gemma/terms"),
+        privacyURL: nil,
+        shortDescription: "A sharper text-only Gemma with strong quality for its size.",
+        recommendedFor: "Great for richer local chat and writing without jumping to a very large model.",
+        badges: [.higherQuality, .everydayChat, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Gemma 4 E2B Instruct (4-bit MLX)
+    static let gemma4_e2b_it_4bit = ModelInfo(
+        id: "mlx-community/gemma-4-e2b-it-4bit",
+        name: "Gemma 4 (E2B)",
+        description: "Google's multimodal Gemma 4 E2B model supports text and image input, with stronger reasoning and richer responses on newer Apple devices.",
+        family: .gemma,
+        sizeGB: 3.61,
+        engine: .mlx,
+        termsURL: URL(string: "https://ai.google.dev/gemma/terms"),
+        privacyURL: nil,
+        shortDescription: "Multimodal Gemma 4 with vision and stronger local reasoning.",
+        recommendedFor: "Best when you want higher-quality local chat, image analysis, and reasoning on newer devices.",
+        badges: [.images, .reasoning, .higherQuality, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// Qwen2.5 3B Instruct (4-bit MLX)
     static let qwen25_3b_instruct_4bit = ModelInfo(
         id: "mlx-community/Qwen2.5-3B-Instruct-4bit",
@@ -537,7 +612,23 @@ extension ModelInfo {
         privacyURL: nil,
         shortDescription: "High quality per GB with stronger reasoning and writing.",
         recommendedFor: "Best balance of quality and size for newer iPhones and iPads.",
-        badges: [.higherQuality, .bestForWriting, .fullyOnDevice],
+        badges: [.bestForWriting, .higherQuality, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Qwen2.5 7B Instruct (4-bit MLX)
+    static let qwen25_7b_instruct_4bit = ModelInfo(
+        id: "mlx-community/Qwen2.5-7B-Instruct-4bit",
+        name: "Qwen2.5 7B",
+        description: "A larger Qwen2.5 tier with much stronger writing, reasoning, and multilingual performance for iPad Pro and Mac-class devices.",
+        family: .qwen,
+        sizeGB: 4.2,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen2.5-7B-Instruct"),
+        privacyURL: nil,
+        shortDescription: "A strong larger Qwen model for writing, coding, and multilingual tasks.",
+        recommendedFor: "Best for higher-quality local output when you have enough memory headroom.",
+        badges: [.reasoning, .multilingual, .higherQuality, .newerDevices, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -553,7 +644,7 @@ extension ModelInfo {
         privacyURL: nil,
         shortDescription: "More capable Qwen tier for better reasoning and output quality.",
         recommendedFor: "Best when you want stronger local quality and have a newer device.",
-        badges: [.higherQuality, .multilingual, .newerDevices, .fullyOnDevice],
+        badges: [.multilingual, .higherQuality, .newerDevices, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -569,7 +660,7 @@ extension ModelInfo {
         privacyURL: nil,
         shortDescription: "A higher-quality local chat model with solid writing ability.",
         recommendedFor: "Good for polished general responses on devices with a bit more headroom.",
-        badges: [.higherQuality, .bestForWriting, .fullyOnDevice],
+        badges: [.bestForWriting, .higherQuality, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -649,7 +740,7 @@ extension ModelInfo {
         privacyURL: nil,
         shortDescription: "Solid mid-tier Gemma for richer on-device conversations.",
         recommendedFor: "Great step up in quality from Gemma 3 1B for devices with more headroom.",
-        badges: [.higherQuality, .everydayChat, .newerDevices, .fullyOnDevice],
+        badges: [.everydayChat, .higherQuality, .newerDevices, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -701,6 +792,70 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// DeepSeek R1 Distill Qwen 7B (4-bit MLX)
+    static let deepseek_r1_distill_qwen_7b_4bit = ModelInfo(
+        id: "mlx-community/DeepSeek-R1-Distill-Qwen-7B-4bit",
+        name: "DeepSeek R1 Distill 7B",
+        description: "A stronger DeepSeek reasoning model distilled onto Qwen, offering better step-by-step problem solving and coding quality on larger Apple devices.",
+        family: .deepSeek,
+        sizeGB: 4.1,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B"),
+        privacyURL: nil,
+        shortDescription: "A larger reasoning-focused local model for technical work.",
+        recommendedFor: "Best for longer reasoning chains, coding help, and more deliberate answers on iPad Pro or Mac.",
+        badges: [.reasoning, .bestForCoding, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// SmolLM3 3B (4-bit MLX)
+    static let smolLM3_3b_4bit = ModelInfo(
+        id: "mlx-community/SmolLM3-3B-4bit",
+        name: "SmolLM3 3B",
+        description: "A newer SmolLM option that gives you better local quality than the tiny models while staying lighter than the bigger 7B and 8B choices.",
+        family: .smolLM,
+        sizeGB: 1.8,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/HuggingFaceTB/SmolLM3-3B"),
+        privacyURL: nil,
+        shortDescription: "A compact modern SmolLM with a nice quality-to-size tradeoff.",
+        recommendedFor: "Good when you want a lightweight but more capable everyday local assistant.",
+        badges: [.smallDownload, .everydayChat, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Qwen2-VL 2B Instruct — multimodal vision-language model (4-bit MLX)
+    static let qwen2VL_2b_4bit = ModelInfo(
+        id: "mlx-community/Qwen2-VL-2B-Instruct-4bit",
+        name: "Qwen2-VL 2B",
+        description: "Alibaba's compact vision-language model. Understands images and text together — running fully on-device. Great for photo Q&A, document scanning, and visual reasoning.",
+        family: .qwen,
+        sizeGB: 1.6,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen2-VL-2B-Instruct"),
+        privacyURL: nil,
+        shortDescription: "See and understand images — fully on-device.",
+        recommendedFor: "Best for attaching photos and asking the AI about them.",
+        badges: [.images, .multilingual, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Qwen2.5-VL 3B Instruct — multimodal vision-language model (3-bit MLX)
+    static let qwen25VL_3b_3bit = ModelInfo(
+        id: "mlx-community/Qwen2.5-VL-3B-Instruct-3bit",
+        name: "Qwen2.5-VL 3B",
+        description: "Alibaba's newer compact vision-language model with stronger image understanding, document parsing, and visual reasoning, running fully on-device.",
+        family: .qwen,
+        sizeGB: 2.69,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen2.5-VL-3B-Instruct"),
+        privacyURL: nil,
+        shortDescription: "A stronger on-device vision model for images, screenshots, and documents.",
+        recommendedFor: "Best for richer photo Q&A, OCR-heavy tasks, and visual reasoning on newer devices.",
+        badges: [.images, .higherQuality, .multilingual, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     static let allModels: [ModelInfo] = [
         .appleFoundation,  // Default - first in list
         // Small / ultra-light
@@ -715,8 +870,14 @@ extension ModelInfo {
         .qwen25_1_5b_instruct_4bit,
         .qwen3_1_7b_4bit,
         .deepseek_r1_distill_qwen_1_5b_4bit,
-        // Mid-range (1.7–2.6 GB)
+        // Vision  (VLM - image input capable)
+        .qwen2VL_2b_4bit,
+        .qwen25VL_3b_3bit,
+        // Mid-range (1.7–4 GB)
+        .gemma3n_e2b_it_lm_4bit,
+        .gemma4_e2b_it_4bit,
         .gemma2_2b_4bit,
+        .smolLM3_3b_4bit,
         .qwen25_3b_instruct_4bit,
         .llama32_3b_4bit,
         .phi3_mini_4k_4bit,
@@ -725,6 +886,8 @@ extension ModelInfo {
         .gemma3_4b_qat_4bit,
         .qwen3_4b_4bit,
         // Large (4+ GB) — iPad Pro / Mac
+        .deepseek_r1_distill_qwen_7b_4bit,
+        .qwen25_7b_instruct_4bit,
         .llama31_8b_4bit,
         .qwen3_8b_4bit
     ]

@@ -18,116 +18,352 @@ struct SettingsView: View {
     @State private var showClearHistoryConfirmation = false
     @State private var showDataPrivacySheet = false
     @State private var isUpgradeSheetPresented = false
+    #if DEBUG
+    @State private var debugProModeEnabled = false
+    #endif
 
     private let retentionOptions = [0, 7, 30, 90]
+
+    private var selectedModelName: String {
+        modelManager.selectedModel?.name ?? String(localized: "No model selected")
+    }
+
+    private var downloadedModelCount: Int {
+        modelManager.models.filter { $0.downloadState.isDownloaded && $0.engine == .mlx }.count
+    }
+
+    private var downloadedStorageText: String {
+        let totalGB = modelManager.models
+            .filter { $0.downloadState.isDownloaded && $0.engine == .mlx }
+            .reduce(0.0) { $0 + $1.sizeGB }
+        return totalGB > 0
+            ? String(format: String(localized: "%.1f GB on device", defaultValue: "%.1f GB on device"), totalGB)
+            : String(localized: "No local downloads")
+    }
+
+    private var primaryStatusTitle: String {
+        if modelManager.selectedModel == nil {
+            return String(localized: "Choose a model")
+        }
+        if !monetizationManager.hasPro && monetizationManager.freeMessagesRemainingToday <= 3 {
+            return String(localized: "Free messages running low")
+        }
+        if historyRetentionDays != 0 {
+            return String(localized: "Auto-delete is on")
+        }
+        if lowPowerMode {
+            return String(localized: "Low Power Mode is on")
+        }
+        return String(localized: "Everything looks ready")
+    }
+
+    private var primaryStatusDetail: String {
+        if modelManager.selectedModel == nil {
+            return String(localized: "Pick a model to start chatting locally.")
+        }
+        if !monetizationManager.hasPro && monetizationManager.freeMessagesRemainingToday <= 3 {
+            return String(
+                format: String(
+                    localized: "%lld free messages left today.",
+                    defaultValue: "%lld free messages left today."
+                ),
+                Int64(monetizationManager.freeMessagesRemainingToday)
+            )
+        }
+        if historyRetentionDays != 0 {
+            return String(
+                format: String(
+                    localized: "Chats will be removed after %@.",
+                    defaultValue: "Chats will be removed after %@."
+                ),
+                retentionLabel(for: historyRetentionDays).lowercased()
+            )
+        }
+        if lowPowerMode {
+            return String(localized: "Performance is tuned for lower battery impact.")
+        }
+        return String(localized: "Your current setup is ready for fast on-device use.")
+    }
+
+    private var primaryStatusTint: Color {
+        if modelManager.selectedModel == nil {
+            return .orange
+        }
+        if !monetizationManager.hasPro && monetizationManager.freeMessagesRemainingToday <= 3 {
+            return .orange
+        }
+        if historyRetentionDays != 0 || lowPowerMode {
+            return .blue
+        }
+        return .green
+    }
+
+    private var primaryStatusIcon: String {
+        if modelManager.selectedModel == nil {
+            return "exclamationmark.circle.fill"
+        }
+        if !monetizationManager.hasPro && monetizationManager.freeMessagesRemainingToday <= 3 {
+            return "exclamationmark.circle.fill"
+        }
+        if historyRetentionDays != 0 || lowPowerMode {
+            return "slider.horizontal.3"
+        }
+        return "checkmark.circle.fill"
+    }
+
+    private var privacySummary: String {
+        historyRetentionDays == 0
+            ? String(localized: "Chats stay on device until you delete them.")
+            : String(
+                format: String(
+                    localized: "Chats are removed automatically after %@.",
+                    defaultValue: "Chats are removed automatically after %@."
+                ),
+                retentionLabel(for: historyRetentionDays).lowercased()
+            )
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 24) {
-                    monetizationSection
-
-                    // Models & Personality
-                    settingsGroup(header: "AI") {
-                        NavigationLink {
-                            ModelDownloadView()
-                        } label: {
-                            settingsRow(title: "Models", icon: "square.stack.3d.up.fill", iconColor: .blue, trailingIcon: "chevron.right")
-                        }
-
-                        Divider().padding(.leading, 56)
-
-                        NavigationLink {
-                            AIPersonalityView()
-                        } label: {
-                            settingsRow(title: "AI Personality", icon: "brain.head.profile", iconColor: .purple, trailingIcon: "chevron.right")
-                        }
-                    }
-
-                    // Privacy Controls
+                VStack(spacing: 22) {
+                    overviewSection
+                    aiSection
+                    preferencesSection
                     privacyControlsSection
-
-                    // Voice & Performance
-                    settingsGroup(header: "Preferences") {
-                        Toggle(isOn: $autoRead) {
-                            settingsRow(title: "Speak Button", icon: "speaker.wave.2.fill", iconColor: .orange, trailingIcon: "")
-                        }
-                        .padding(.trailing, 16)
-
-                        Divider().padding(.leading, 56)
-
-                        Toggle(isOn: $lowPowerMode) {
-                            settingsRow(title: "Low Power Mode", icon: "battery.25", iconColor: .green, trailingIcon: "")
-                        }
-                        .padding(.trailing, 16)
-                    }
-
-                    // Footer: Legal + About
-                    footerSection
+                    #if DEBUG
+                    debugSection
+                    #endif
+                    moreSection
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 20)
+                .padding(.top, 20)
+                .padding(.bottom, 32)
             }
-            .background(Color(white: 0.98))
+            .background(settingsBackground.ignoresSafeArea())
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Done") { dismiss() }
-                        .fontWeight(.medium)
+                        .fontWeight(.semibold)
                 }
             }
         }
         .sheet(isPresented: $isUpgradeSheetPresented) {
             UpgradeView(feature: .allModels)
         }
+        #if DEBUG
+        .onAppear {
+            debugProModeEnabled = monetizationManager.debugProOverrideEnabled
+        }
+        .onChange(of: debugProModeEnabled) {
+            monetizationManager.setDebugProOverrideEnabled(debugProModeEnabled)
+        }
+        #endif
     }
 
-    // MARK: - Privacy Controls Section
+    private var settingsBackground: some View {
+        LinearGradient(
+            colors: [
+                Color(red: 0.98, green: 0.96, blue: 0.93),
+                Color(red: 0.95, green: 0.96, blue: 0.99),
+                Color(red: 0.97, green: 0.97, blue: 0.97)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
 
-    private var monetizationSection: some View {
-        settingsGroup {
-            Button {
-                presentUpgradeSheet()
-            } label: {
-                HStack(spacing: 16) {
-                    Image(systemName: monetizationManager.hasPro ? "checkmark.seal.fill" : "crown.fill")
-                        .font(.body)
-                        .foregroundStyle(monetizationManager.hasPro ? .green : .orange)
-                        .frame(width: 24)
+    private var overviewSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Own AI")
+                            .font(.title2.weight(.bold))
+                            .foregroundStyle(.white)
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(monetizationManager.hasPro ? "Own AI Pro Unlocked" : "Upgrade to Own AI Pro")
-                            .font(.body)
-                            .foregroundStyle(Color(white: 0.1))
-                        Text(monetizationManager.hasPro ? "All premium features are available on this device." : "Unlock all models, advanced personality controls, docs, and conversation mode.")
-                            .font(.caption)
-                            .foregroundStyle(Color(white: 0.45))
+                        Text("Control your model, privacy, and performance in one place.")
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.82))
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    Spacer()
+                    Spacer(minLength: 16)
 
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(Color(white: 0.7))
+                    Button {
+                        presentUpgradeSheet()
+                    } label: {
+                        Text(monetizationManager.hasPro ? "Pro" : "Upgrade")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(monetizationManager.hasPro ? Color(red: 0.12, green: 0.38, blue: 0.24) : Color(red: 0.33, green: 0.18, blue: 0.03))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(.white.opacity(0.92), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 16)
+
+                HStack(alignment: .top, spacing: 12) {
+                    rowIcon(systemImage: primaryStatusIcon, tint: primaryStatusTint)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(primaryStatusTitle)
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(.white)
+
+                        Text(primaryStatusDetail)
+                            .font(.subheadline)
+                            .foregroundStyle(.white.opacity(0.80))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
-            .buttonStyle(.plain)
+            .padding(20)
+            .background(
+                LinearGradient(
+                    colors: [
+                        Color(red: 0.18, green: 0.23, blue: 0.36),
+                        Color(red: 0.48, green: 0.31, blue: 0.22)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ),
+                in: RoundedRectangle(cornerRadius: 28, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(.white.opacity(0.14), lineWidth: 1)
+            )
+            .shadow(color: .black.opacity(0.10), radius: 22, y: 12)
+
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    summaryTile(
+                        title: String(localized: "Current model"),
+                        detail: selectedModelName,
+                        systemImage: "cpu",
+                        tint: .blue
+                    )
+
+                    summaryTile(
+                        title: downloadedModelCount == 1
+                            ? String(localized: "1 local model")
+                            : String(format: String(localized: "%lld local models", defaultValue: "%lld local models"), Int64(downloadedModelCount)),
+                        detail: downloadedStorageText,
+                        systemImage: "internaldrive.fill",
+                        tint: .teal
+                    )
+
+                    summaryTile(
+                        title: monetizationManager.hasPro ? String(localized: "Pro is active") : String(localized: "Free plan"),
+                        detail: monetizationManager.hasPro
+                            ? String(localized: "Premium tools are available.")
+                            : String(format: String(localized: "%lld free messages left today.", defaultValue: "%lld free messages left today."), Int64(monetizationManager.freeMessagesRemainingToday)),
+                        systemImage: monetizationManager.hasPro ? "checkmark.seal.fill" : "crown.fill",
+                        tint: monetizationManager.hasPro ? .green : .orange
+                    )
+                }
+
+                VStack(spacing: 12) {
+                    summaryTile(
+                        title: String(localized: "Current model"),
+                        detail: selectedModelName,
+                        systemImage: "cpu",
+                        tint: .blue
+                    )
+
+                    summaryTile(
+                        title: downloadedModelCount == 1
+                            ? String(localized: "1 local model")
+                            : String(format: String(localized: "%lld local models", defaultValue: "%lld local models"), Int64(downloadedModelCount)),
+                        detail: downloadedStorageText,
+                        systemImage: "internaldrive.fill",
+                        tint: .teal
+                    )
+
+                    summaryTile(
+                        title: monetizationManager.hasPro ? String(localized: "Pro is active") : String(localized: "Free plan"),
+                        detail: monetizationManager.hasPro
+                            ? String(localized: "Premium tools are available.")
+                            : String(format: String(localized: "%lld free messages left today.", defaultValue: "%lld free messages left today."), Int64(monetizationManager.freeMessagesRemainingToday)),
+                        systemImage: monetizationManager.hasPro ? "checkmark.seal.fill" : "crown.fill",
+                        tint: monetizationManager.hasPro ? .green : .orange
+                    )
+                }
+            }
+        }
+    }
+
+    private var aiSection: some View {
+        settingsSection(String(localized: "AI")) {
+            NavigationLink {
+                ModelDownloadView()
+            } label: {
+                settingsLinkRow(
+                    title: String(localized: "Models"),
+                    subtitle: selectedModelName,
+                    icon: "square.stack.3d.up.fill",
+                    tint: .blue
+                )
+            }
+
+            sectionDivider
+
+            NavigationLink {
+                AIPersonalityView()
+            } label: {
+                settingsLinkRow(
+                    title: String(localized: "AI Personality"),
+                    subtitle: String(localized: "Tune tone, style, and how the assistant responds."),
+                    icon: "brain.head.profile",
+                    tint: .purple
+                )
+            }
+        }
+    }
+
+    private var preferencesSection: some View {
+        settingsSection(String(localized: "Preferences")) {
+            settingsToggleRow(
+                title: String(localized: "Read replies aloud"),
+                subtitle: String(localized: "Shows a speak control on responses for hands-free playback."),
+                icon: "speaker.wave.2.fill",
+                tint: .orange,
+                isOn: $autoRead
+            )
+
+            sectionDivider
+
+            settingsToggleRow(
+                title: String(localized: "Low Power Mode"),
+                subtitle: String(localized: "Favor lighter local behavior to reduce battery and thermal load."),
+                icon: "battery.25",
+                tint: .green,
+                isOn: $lowPowerMode
+            )
         }
     }
 
     private var privacyControlsSection: some View {
-        settingsGroup(header: "Privacy") {
-            // Auto-Delete picker
-            HStack(spacing: 16) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.body).foregroundStyle(.orange).frame(width: 24)
-                Text("Auto-Delete Chats")
-                    .font(.body).foregroundStyle(Color(white: 0.1))
-                Spacer()
+        settingsSection("Privacy") {
+            HStack(spacing: 14) {
+                rowIcon(systemImage: "clock.arrow.circlepath", tint: .orange)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Auto-Delete Chats")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(Color.primary.opacity(0.92))
+
+                    Text(privacySummary)
+                        .font(.footnote)
+                        .foregroundStyle(Color.primary.opacity(0.58))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 12)
+
                 Picker("Auto-Delete Chats", selection: $historyRetentionDays) {
                     ForEach(retentionOptions, id: \.self) { days in
                         Text(retentionLabel(for: days)).tag(days)
@@ -135,27 +371,39 @@ struct SettingsView: View {
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)
+                .tint(Color.primary.opacity(0.75))
             }
-            .padding(.horizontal, 16).padding(.vertical, 16)
+            .padding(.horizontal, 18)
+            .padding(.vertical, 16)
             .onChange(of: historyRetentionDays) {
                 historyManager.updateRetention(days: historyRetentionDays)
             }
 
-            Divider().padding(.leading, 56)
+            sectionDivider
 
-            // Delete All Chats
             Button {
                 showClearHistoryConfirmation = true
             } label: {
-                HStack(spacing: 16) {
-                    Image(systemName: "trash.fill")
-                        .font(.body).foregroundStyle(.red).frame(width: 24)
-                    Text("Delete All Chats")
-                        .font(.body).foregroundStyle(.red)
+                HStack(spacing: 14) {
+                    rowIcon(systemImage: "trash.fill", tint: .red)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Delete All Chats")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(.red)
+
+                        Text("Remove every saved conversation from this device.")
+                            .font(.footnote)
+                            .foregroundStyle(Color.red.opacity(0.72))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
                     Spacer()
                 }
-                .padding(.horizontal, 16).padding(.vertical, 16)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
             }
+            .buttonStyle(.plain)
         }
         .alert("Delete all chats?", isPresented: $showClearHistoryConfirmation) {
             Button("Cancel", role: .cancel) { }
@@ -165,59 +413,87 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Footer (Legal + About)
-
-    private var footerSection: some View {
+    private var moreSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("More")
-                .font(.headline)
-                .foregroundStyle(Color(white: 0.2))
+            sectionTitle(String(localized: "More"))
 
-            VStack(spacing: 0) {
-                // Data & Privacy
-                Button { showDataPrivacySheet = true } label: {
-                    settingsRow(title: "Data & Privacy", icon: "hand.raised.fill", iconColor: .purple, trailingIcon: "chevron.right")
+            settingsCard {
+                Button {
+                    showDataPrivacySheet = true
+                } label: {
+                    settingsLinkRow(
+                        title: String(localized: "Data & Privacy"),
+                        subtitle: String(localized: "See what stays on-device and when Apple services may be involved."),
+                        icon: "hand.raised.fill",
+                        tint: .indigo
+                    )
                 }
 
-                Divider().padding(.leading, 56)
+                sectionDivider
 
                 Link(destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/privacy.html")!) {
-                    settingsRow(title: "Privacy Policy", icon: "lock.doc.fill", iconColor: .blue, trailingIcon: "arrow.up.right")
+                    settingsLinkRow(
+                        title: String(localized: "Privacy Policy"),
+                        subtitle: String(localized: "Open the latest policy in your browser."),
+                        icon: "lock.doc.fill",
+                        tint: .blue,
+                        trailingIcon: "arrow.up.right"
+                    )
                 }
 
-                Divider().padding(.leading, 56)
+                sectionDivider
 
                 Link(destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/terms.html")!) {
-                    settingsRow(title: "Terms of Service", icon: "doc.text.fill", iconColor: .gray, trailingIcon: "arrow.up.right")
+                    settingsLinkRow(
+                        title: String(localized: "Terms of Service"),
+                        subtitle: String(localized: "Review the legal terms for using the app."),
+                        icon: "doc.text.fill",
+                        tint: .gray,
+                        trailingIcon: "arrow.up.right"
+                    )
                 }
 
-                Divider().padding(.leading, 56)
+                sectionDivider
 
-                Button { openMail(subject: "Support Request") } label: {
-                    settingsRow(title: "Support", icon: "questionmark.circle.fill", iconColor: .orange, trailingIcon: "chevron.right")
+                Button {
+                    openMail(subject: String(localized: "Support Request"))
+                } label: {
+                    settingsLinkRow(
+                        title: String(localized: "Support"),
+                        subtitle: String(localized: "Get help with billing, downloads, models, or account issues."),
+                        icon: "questionmark.circle.fill",
+                        tint: .orange
+                    )
                 }
 
-                Divider().padding(.leading, 56)
+                sectionDivider
 
-                // Version info inline
-                HStack {
-                    Text("Version")
-                        .font(.body).foregroundStyle(Color(white: 0.3))
+                HStack(spacing: 14) {
+                    rowIcon(systemImage: "app.badge", tint: .teal)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Version")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(Color.primary.opacity(0.92))
+
+                        let shortVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+                        let buildVersion = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+
+                        Text("\(shortVersion) (\(buildVersion))")
+                            .font(.footnote)
+                            .foregroundStyle(Color.primary.opacity(0.58))
+                    }
+
                     Spacer()
-                    Text("\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0") (\(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"))")
-                        .font(.body).foregroundStyle(Color(white: 0.6))
-                }
-                .padding(.horizontal, 16).padding(.vertical, 14)
-            }
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
 
-            Text("Made in Switzerland")
-                .font(.footnote)
-                .foregroundStyle(Color(white: 0.5))
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.top, 4)
+                    Text("Made in Switzerland")
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(Color.primary.opacity(0.45))
+                        .multilineTextAlignment(.trailing)
+                }
+                .padding(.horizontal, 18)
+                .padding(.vertical, 16)
+            }
         }
         .sheet(isPresented: $showDataPrivacySheet) {
             DataPrivacySheet()
@@ -226,44 +502,164 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Helpers
-
-    private func settingsGroup<Content: View>(header: String? = nil, @ViewBuilder content: () -> Content) -> some View {
+    #if DEBUG
+    private var debugSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let header {
-                Text(header)
-                    .font(.headline)
-                    .foregroundStyle(Color(white: 0.2))
+            sectionTitle("Debug")
+
+            settingsCard {
+                settingsToggleRow(
+                    title: "Force Pro",
+                    subtitle: "Debug-only entitlement override for testing premium flows on this device.",
+                    icon: "hammer.fill",
+                    tint: .pink,
+                    isOn: $debugProModeEnabled
+                )
             }
-            VStack(spacing: 0) {
-                content()
-            }
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
-            .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        }
+    }
+    #endif
+
+    private var sectionDivider: some View {
+        Divider()
+            .padding(.leading, 70)
+    }
+
+    private func sectionTitle(_ text: String) -> some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .tracking(0.8)
+            .textCase(.uppercase)
+            .foregroundStyle(Color.primary.opacity(0.48))
+            .padding(.horizontal, 6)
+    }
+
+    private func settingsSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionTitle(title)
+            settingsCard(content: content)
         }
     }
 
-    private func settingsRow(title: String, icon: String, iconColor: Color, trailingIcon: String) -> some View {
-        HStack(spacing: 16) {
-            Image(systemName: icon)
-                .font(.body).foregroundStyle(iconColor).frame(width: 24)
-            Text(title)
-                .font(.body).foregroundStyle(Color(white: 0.1))
-            Spacer()
-            if !trailingIcon.isEmpty {
-                Image(systemName: trailingIcon)
-                    .font(.caption.weight(.bold)).foregroundStyle(Color(white: 0.7))
+    private func settingsCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(spacing: 0) {
+            content()
+        }
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 26, style: .continuous)
+                .stroke(Color.white.opacity(0.72), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.05), radius: 18, y: 10)
+    }
+
+    private func settingsLinkRow(
+        title: String,
+        subtitle: String,
+        icon: String,
+        tint: Color,
+        trailingIcon: String = "chevron.right"
+    ) -> some View {
+        HStack(spacing: 14) {
+            rowIcon(systemImage: icon, tint: tint)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Color.primary.opacity(0.92))
+
+                Text(subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(Color.primary.opacity(0.58))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 12)
+
+            Image(systemName: trailingIcon)
+                .font(.footnote.weight(.bold))
+                .foregroundStyle(Color.primary.opacity(0.35))
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+        .contentShape(Rectangle())
+    }
+
+    private func settingsToggleRow(
+        title: String,
+        subtitle: String,
+        icon: String,
+        tint: Color,
+        isOn: Binding<Bool>
+    ) -> some View {
+        HStack(spacing: 14) {
+            rowIcon(systemImage: icon, tint: tint)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(Color.primary.opacity(0.92))
+
+                Text(subtitle)
+                    .font(.footnote)
+                    .foregroundStyle(Color.primary.opacity(0.58))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 12)
+
+            Toggle(title, isOn: isOn)
+                .labelsHidden()
+                .tint(tint)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 16)
+    }
+
+    private func rowIcon(systemImage: String, tint: Color) -> some View {
+        Image(systemName: systemImage)
+            .font(.system(size: 15, weight: .semibold))
+            .foregroundStyle(tint)
+            .frame(width: 38, height: 38)
+            .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func summaryTile(title: String, detail: String, systemImage: String, tint: Color) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            rowIcon(systemImage: systemImage, tint: tint)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.primary.opacity(0.9))
+
+                Text(detail)
+                    .font(.caption)
+                    .foregroundStyle(Color.primary.opacity(0.58))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(2)
             }
         }
-        .padding(.horizontal, 16).padding(.vertical, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(
+            Color.white.opacity(0.72),
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.white.opacity(0.82), lineWidth: 1)
+        )
     }
 
     private func retentionLabel(for days: Int) -> String {
         switch days {
-        case 0: return "Never"
-        case 1: return "1 day"
-        default: return "\(days) days"
+        case 0:
+            return String(localized: "Never")
+        case 1:
+            return String(localized: "1 day")
+        default:
+            return String(format: String(localized: "%lld days", defaultValue: "%lld days"), Int64(days))
         }
     }
 

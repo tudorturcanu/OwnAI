@@ -1,0 +1,159 @@
+{
+  "" : {
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/MLXVLM-primary.dia",
+    "emit-module-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/MLXVLM-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/MLXVLM-primary-emit-module.dia",
+    "pch" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/MLXVLM-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/MLXVLM-primary.swiftdeps"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/Libraries/MLXVLM/MediaProcessing.swift" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/MediaProcessing.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/MediaProcessing.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/MediaProcessing.dia",
+    "index-unit-output-path" : "/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/MediaProcessing.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/MediaProcessing.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/MediaProcessing.o",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/MediaProcessing.swiftdeps",
+    "swiftmodule" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/MediaProcessing~partial.swiftmodule"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/Libraries/MLXVLM/Models/FastVLM.swift" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/FastVLM.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/FastVLM.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/FastVLM.dia",
+    "index-unit-output-path" : "/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/FastVLM.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/FastVLM.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/FastVLM.o",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/FastVLM.swiftdeps",
+    "swiftmodule" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/FastVLM~partial.swiftmodule"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/Libraries/MLXVLM/Models/Gemma3.swift" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Gemma3.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Gemma3.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Gemma3.dia",
+    "index-unit-output-path" : "/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Gemma3.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Gemma3.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Gemma3.o",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Gemma3.swiftdeps",
+    "swiftmodule" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Gemma3~partial.swiftmodule"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/Libraries/MLXVLM/Models/Idefics3.swift" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Idefics3.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Idefics3.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Idefics3.dia",
+    "index-unit-output-path" : "/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Idefics3.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Idefics3.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Idefics3.o",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Idefics3.swiftdeps",
+    "swiftmodule" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Idefics3~partial.swiftmodule"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/Libraries/MLXVLM/Models/LFM2VL.swift" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/LFM2VL.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/LFM2VL.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/LFM2VL.dia",
+    "index-unit-output-path" : "/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/LFM2VL.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/LFM2VL.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/LFM2VL.o",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/LFM2VL.swiftdeps",
+    "swiftmodule" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/LFM2VL~partial.swiftmodule"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/Libraries/MLXVLM/Models/Mistral3.swift" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Mistral3.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Mistral3.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Mistral3.dia",
+    "index-unit-output-path" : "/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Mistral3.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Mistral3.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Mistral3.o",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Mistral3.swiftdeps",
+    "swiftmodule" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Mistral3~partial.swiftmodule"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/Libraries/MLXVLM/Models/Paligemma.swift" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Paligemma.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Paligemma.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Paligemma.dia",
+    "index-unit-output-path" : "/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Paligemma.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Paligemma.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Paligemma.o",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Paligemma.swiftdeps",
+    "swiftmodule" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Paligemma~partial.swiftmodule"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/Libraries/MLXVLM/Models/Pixtral.swift" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Pixtral.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Pixtral.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Pixtral.dia",
+    "index-unit-output-path" : "/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Pixtral.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Pixtral.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Pixtral.o",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Pixtral.swiftdeps",
+    "swiftmodule" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Pixtral~partial.swiftmodule"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/Libraries/MLXVLM/Models/Qwen25VL.swift" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen25VL.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen25VL.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen25VL.dia",
+    "index-unit-output-path" : "/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen25VL.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen25VL.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen25VL.o",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen25VL.swiftdeps",
+    "swiftmodule" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen25VL~partial.swiftmodule"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/Libraries/MLXVLM/Models/Qwen2VL.swift" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen2VL.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen2VL.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen2VL.dia",
+    "index-unit-output-path" : "/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen2VL.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen2VL.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen2VL.o",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen2VL.swiftdeps",
+    "swiftmodule" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen2VL~partial.swiftmodule"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/Libraries/MLXVLM/Models/Qwen3VL.swift" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen3VL.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen3VL.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen3VL.dia",
+    "index-unit-output-path" : "/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen3VL.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen3VL.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen3VL.o",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen3VL.swiftdeps",
+    "swiftmodule" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/Qwen3VL~partial.swiftmodule"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/Libraries/MLXVLM/Models/QwenVL.swift" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/QwenVL.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/QwenVL.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/QwenVL.dia",
+    "index-unit-output-path" : "/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/QwenVL.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/QwenVL.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/QwenVL.o",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/QwenVL.swiftdeps",
+    "swiftmodule" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/QwenVL~partial.swiftmodule"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/Libraries/MLXVLM/Models/SmolVLM2.swift" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/SmolVLM2.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/SmolVLM2.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/SmolVLM2.dia",
+    "index-unit-output-path" : "/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/SmolVLM2.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/SmolVLM2.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/SmolVLM2.o",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/SmolVLM2.swiftdeps",
+    "swiftmodule" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/SmolVLM2~partial.swiftmodule"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/Libraries/MLXVLM/VLMModel.swift" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/VLMModel.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/VLMModel.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/VLMModel.dia",
+    "index-unit-output-path" : "/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/VLMModel.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/VLMModel.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/VLMModel.o",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/VLMModel.swiftdeps",
+    "swiftmodule" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/VLMModel~partial.swiftmodule"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/Libraries/MLXVLM/VLMModelFactory.swift" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/VLMModelFactory.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/VLMModelFactory.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/VLMModelFactory.dia",
+    "index-unit-output-path" : "/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/VLMModelFactory.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/VLMModelFactory.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/VLMModelFactory.o",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/VLMModelFactory.swiftdeps",
+    "swiftmodule" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/mlx-swift-lm/build/mlx-swift-lm.build/Debug-iphonesimulator/MLXVLM.build/Objects-normal/arm64/VLMModelFactory~partial.swiftmodule"
+  }
+}

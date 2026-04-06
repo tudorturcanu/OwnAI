@@ -1,0 +1,216 @@
+{
+  "" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAI-primary.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAI-primary.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAI-primary.dia",
+    "emit-module-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAI-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAI-primary-emit-module.dia",
+    "pch" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAI-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAI-primary.swiftdeps"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/ContentView.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ContentView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ContentView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ContentView.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/LocalAIApp.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAIApp.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAIApp.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAIApp.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Models/ChatHistory.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistory.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistory.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistory.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Models/ChatMessage.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatMessage.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatMessage.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatMessage.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Models/ConversationDocument.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ConversationDocument.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ConversationDocument.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ConversationDocument.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Models/DocumentSection.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentSection.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentSection.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentSection.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Models/ModelHealth.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelHealth.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelHealth.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelHealth.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Models/ModelInfo.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelInfo.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelInfo.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelInfo.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Models/PersonalityPreset.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/PersonalityPreset.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/PersonalityPreset.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/PersonalityPreset.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/AppleFoundationModelBridge.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AppleFoundationModelBridge.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AppleFoundationModelBridge.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AppleFoundationModelBridge.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/ChatHistoryStore.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryStore.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryStore.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryStore.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/DiskSpace.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DiskSpace.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DiskSpace.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DiskSpace.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/DocumentManager.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentManager.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentManager.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentManager.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/IdleTimerCoordinator.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/IdleTimerCoordinator.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/IdleTimerCoordinator.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/IdleTimerCoordinator.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/LLMEngine.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LLMEngine.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LLMEngine.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LLMEngine.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/MLXStorage.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MLXStorage.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MLXStorage.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MLXStorage.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/MemoryProfiler.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MemoryProfiler.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MemoryProfiler.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MemoryProfiler.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/ModelManager.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelManager.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelManager.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelManager.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/MonetizationManager.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MonetizationManager.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MonetizationManager.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MonetizationManager.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/NotificationManager.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/NotificationManager.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/NotificationManager.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/NotificationManager.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/RAGEngine.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/RAGEngine.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/RAGEngine.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/RAGEngine.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/SecureFileStore.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SecureFileStore.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SecureFileStore.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SecureFileStore.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/SpeechManager.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SpeechManager.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SpeechManager.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SpeechManager.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/WatchConnectivitySessionManager.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivitySessionManager.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivitySessionManager.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivitySessionManager.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/AIPersonalityView.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AIPersonalityView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AIPersonalityView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AIPersonalityView.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/ChatEmptyStateView.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatEmptyStateView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatEmptyStateView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatEmptyStateView.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/ChatHistoryView.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryView.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/ChatView.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatView.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/Components/AnimatedChatBackgroundView.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AnimatedChatBackgroundView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AnimatedChatBackgroundView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AnimatedChatBackgroundView.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/Components/DataPrivacySheet.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DataPrivacySheet.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DataPrivacySheet.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DataPrivacySheet.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/Components/MessageBubble.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MessageBubble.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MessageBubble.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MessageBubble.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/Components/SparkleView.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SparkleView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SparkleView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SparkleView.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/Components/SuggestionCard.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SuggestionCard.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SuggestionCard.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SuggestionCard.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/Components/SyntaxHighlighter.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SyntaxHighlighter.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SyntaxHighlighter.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SyntaxHighlighter.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/Components/ThinkingBubble.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ThinkingBubble.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ThinkingBubble.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ThinkingBubble.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/ModelDownloadView.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelDownloadView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelDownloadView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelDownloadView.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/OnboardingView.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/OnboardingView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/OnboardingView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/OnboardingView.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/SettingsView.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SettingsView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SettingsView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SettingsView.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/UpgradeView.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/UpgradeView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/UpgradeView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/UpgradeView.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/Shared/WatchConnectivityModels.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivityModels.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivityModels.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivityModels.o"
+  },
+  "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "index-unit-output-path" : "/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Release-iphonesimulator/LocalAI.build/Objects-normal/x86_64/GeneratedAssetSymbols.o"
+  }
+}

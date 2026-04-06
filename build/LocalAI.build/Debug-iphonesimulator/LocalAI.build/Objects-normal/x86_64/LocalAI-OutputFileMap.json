@@ -1,0 +1,419 @@
+{
+  "" : {
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAI-primary.dia",
+    "emit-module-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAI-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAI-primary-emit-module.dia",
+    "pch" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAI-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAI-primary.swiftdeps"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/ContentView.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ContentView.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ContentView.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ContentView.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ContentView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ContentView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ContentView.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ContentView.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ContentView~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/LocalAIApp.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAIApp.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAIApp.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAIApp.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAIApp.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAIApp.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAIApp.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAIApp.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LocalAIApp~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Models/ChatHistory.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistory.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistory.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistory.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistory.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistory.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistory.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistory.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistory~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Models/ChatMessage.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatMessage.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatMessage.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatMessage.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatMessage.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatMessage.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatMessage.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatMessage.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatMessage~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Models/ConversationDocument.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ConversationDocument.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ConversationDocument.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ConversationDocument.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ConversationDocument.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ConversationDocument.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ConversationDocument.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ConversationDocument.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ConversationDocument~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Models/DocumentSection.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentSection.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentSection.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentSection.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentSection.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentSection.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentSection.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentSection.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentSection~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Models/ModelHealth.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelHealth.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelHealth.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelHealth.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelHealth.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelHealth.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelHealth.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelHealth.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelHealth~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Models/ModelInfo.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelInfo.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelInfo.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelInfo.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelInfo.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelInfo.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelInfo.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelInfo.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelInfo~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Models/PersonalityPreset.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/PersonalityPreset.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/PersonalityPreset.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/PersonalityPreset.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/PersonalityPreset.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/PersonalityPreset.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/PersonalityPreset.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/PersonalityPreset.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/PersonalityPreset~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/AppleFoundationModelBridge.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AppleFoundationModelBridge.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AppleFoundationModelBridge.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AppleFoundationModelBridge.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AppleFoundationModelBridge.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AppleFoundationModelBridge.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AppleFoundationModelBridge.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AppleFoundationModelBridge.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AppleFoundationModelBridge~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/ChatHistoryStore.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryStore.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryStore.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryStore.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryStore.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryStore.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryStore.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryStore.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryStore~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/DiskSpace.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DiskSpace.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DiskSpace.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DiskSpace.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DiskSpace.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DiskSpace.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DiskSpace.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DiskSpace.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DiskSpace~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/DocumentManager.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentManager.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentManager.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentManager.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentManager.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentManager.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentManager.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentManager.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DocumentManager~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/IdleTimerCoordinator.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/IdleTimerCoordinator.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/IdleTimerCoordinator.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/IdleTimerCoordinator.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/IdleTimerCoordinator.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/IdleTimerCoordinator.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/IdleTimerCoordinator.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/IdleTimerCoordinator.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/IdleTimerCoordinator~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/LLMEngine.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LLMEngine.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LLMEngine.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LLMEngine.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LLMEngine.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LLMEngine.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LLMEngine.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LLMEngine.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/LLMEngine~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/MLXStorage.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MLXStorage.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MLXStorage.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MLXStorage.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MLXStorage.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MLXStorage.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MLXStorage.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MLXStorage.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MLXStorage~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/MemoryProfiler.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MemoryProfiler.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MemoryProfiler.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MemoryProfiler.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MemoryProfiler.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MemoryProfiler.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MemoryProfiler.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MemoryProfiler.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MemoryProfiler~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/ModelManager.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelManager.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelManager.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelManager.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelManager.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelManager.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelManager.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelManager.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelManager~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/MonetizationManager.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MonetizationManager.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MonetizationManager.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MonetizationManager.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MonetizationManager.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MonetizationManager.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MonetizationManager.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MonetizationManager.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MonetizationManager~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/NotificationManager.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/NotificationManager.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/NotificationManager.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/NotificationManager.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/NotificationManager.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/NotificationManager.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/NotificationManager.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/NotificationManager.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/NotificationManager~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/RAGEngine.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/RAGEngine.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/RAGEngine.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/RAGEngine.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/RAGEngine.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/RAGEngine.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/RAGEngine.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/RAGEngine.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/RAGEngine~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/SecureFileStore.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SecureFileStore.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SecureFileStore.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SecureFileStore.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SecureFileStore.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SecureFileStore.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SecureFileStore.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SecureFileStore.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SecureFileStore~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/SpeechManager.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SpeechManager.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SpeechManager.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SpeechManager.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SpeechManager.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SpeechManager.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SpeechManager.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SpeechManager.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SpeechManager~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Services/WatchConnectivitySessionManager.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivitySessionManager.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivitySessionManager.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivitySessionManager.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivitySessionManager.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivitySessionManager.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivitySessionManager.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivitySessionManager.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivitySessionManager~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/AIPersonalityView.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AIPersonalityView.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AIPersonalityView.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AIPersonalityView.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AIPersonalityView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AIPersonalityView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AIPersonalityView.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AIPersonalityView.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AIPersonalityView~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/ChatEmptyStateView.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatEmptyStateView.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatEmptyStateView.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatEmptyStateView.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatEmptyStateView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatEmptyStateView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatEmptyStateView.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatEmptyStateView.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatEmptyStateView~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/ChatHistoryView.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryView.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryView.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryView.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryView.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryView.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatHistoryView~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/ChatView.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatView.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatView.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatView.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatView.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatView.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ChatView~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/Components/AnimatedChatBackgroundView.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AnimatedChatBackgroundView.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AnimatedChatBackgroundView.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AnimatedChatBackgroundView.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AnimatedChatBackgroundView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AnimatedChatBackgroundView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AnimatedChatBackgroundView.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AnimatedChatBackgroundView.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/AnimatedChatBackgroundView~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/Components/DataPrivacySheet.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DataPrivacySheet.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DataPrivacySheet.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DataPrivacySheet.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DataPrivacySheet.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DataPrivacySheet.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DataPrivacySheet.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DataPrivacySheet.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/DataPrivacySheet~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/Components/MessageBubble.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MessageBubble.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MessageBubble.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MessageBubble.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MessageBubble.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MessageBubble.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MessageBubble.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MessageBubble.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/MessageBubble~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/Components/SparkleView.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SparkleView.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SparkleView.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SparkleView.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SparkleView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SparkleView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SparkleView.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SparkleView.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SparkleView~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/Components/SuggestionCard.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SuggestionCard.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SuggestionCard.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SuggestionCard.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SuggestionCard.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SuggestionCard.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SuggestionCard.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SuggestionCard.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SuggestionCard~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/Components/SyntaxHighlighter.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SyntaxHighlighter.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SyntaxHighlighter.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SyntaxHighlighter.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SyntaxHighlighter.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SyntaxHighlighter.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SyntaxHighlighter.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SyntaxHighlighter.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SyntaxHighlighter~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/Components/ThinkingBubble.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ThinkingBubble.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ThinkingBubble.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ThinkingBubble.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ThinkingBubble.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ThinkingBubble.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ThinkingBubble.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ThinkingBubble.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ThinkingBubble~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/ModelDownloadView.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelDownloadView.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelDownloadView.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelDownloadView.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelDownloadView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelDownloadView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelDownloadView.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelDownloadView.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/ModelDownloadView~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/OnboardingView.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/OnboardingView.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/OnboardingView.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/OnboardingView.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/OnboardingView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/OnboardingView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/OnboardingView.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/OnboardingView.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/OnboardingView~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/SettingsView.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SettingsView.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SettingsView.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SettingsView.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SettingsView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SettingsView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SettingsView.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SettingsView.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/SettingsView~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/LocalAI/Views/UpgradeView.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/UpgradeView.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/UpgradeView.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/UpgradeView.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/UpgradeView.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/UpgradeView.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/UpgradeView.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/UpgradeView.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/UpgradeView~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/Shared/WatchConnectivityModels.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivityModels.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivityModels.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivityModels.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivityModels.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivityModels.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivityModels.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivityModels.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/WatchConnectivityModels~partial.swiftmodule"
+  },
+  "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/GeneratedAssetSymbols.dia",
+    "index-unit-output-path" : "/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/GeneratedAssetSymbols.swiftdeps",
+    "swiftmodule" : "/Users/teo/Documents/LocalAI copy/build/LocalAI.build/Debug-iphonesimulator/LocalAI.build/Objects-normal/x86_64/GeneratedAssetSymbols~partial.swiftmodule"
+  }
+}

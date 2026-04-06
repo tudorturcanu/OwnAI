@@ -48,10 +48,10 @@ struct ChatHistoryView: View {
         }
 
         var groups: [(title: String, conversations: [ChatConversation])] = []
-        if !today.isEmpty { groups.append(("Today", today)) }
-        if !yesterday.isEmpty { groups.append(("Yesterday", yesterday)) }
-        if !previous7Days.isEmpty { groups.append(("Previous 7 Days", previous7Days)) }
-        if !earlier.isEmpty { groups.append(("Earlier", earlier)) }
+        if !today.isEmpty { groups.append((String(localized: "Today"), today)) }
+        if !yesterday.isEmpty { groups.append((String(localized: "Yesterday"), yesterday)) }
+        if !previous7Days.isEmpty { groups.append((String(localized: "Previous 7 Days"), previous7Days)) }
+        if !earlier.isEmpty { groups.append((String(localized: "Earlier"), earlier)) }
         return groups
     }
     

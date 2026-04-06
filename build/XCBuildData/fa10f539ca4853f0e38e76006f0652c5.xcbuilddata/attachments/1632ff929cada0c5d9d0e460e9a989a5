@@ -1,0 +1,176 @@
+{
+  "" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/AnyLanguageModel-primary.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/AnyLanguageModel-primary.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/AnyLanguageModel-primary.dia",
+    "emit-module-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/AnyLanguageModel-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/AnyLanguageModel-primary-emit-module.dia",
+    "pch" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/AnyLanguageModel-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/AnyLanguageModel-primary.swiftdeps"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Availability.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Availability.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Availability.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Availability.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/ConvertibleFromGeneratedContent.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/ConvertibleFromGeneratedContent.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/ConvertibleFromGeneratedContent.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/ConvertibleFromGeneratedContent.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/ConvertibleToGeneratedContent.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/ConvertibleToGeneratedContent.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/ConvertibleToGeneratedContent.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/ConvertibleToGeneratedContent.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/DynamicGenerationSchema.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/DynamicGenerationSchema.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/DynamicGenerationSchema.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/DynamicGenerationSchema.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Extensions/Character+Extensions.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Character+Extensions.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Character+Extensions.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Character+Extensions.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Extensions/JSONDecoder+Extensions.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/JSONDecoder+Extensions.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/JSONDecoder+Extensions.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/JSONDecoder+Extensions.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Extensions/URLSession+Extensions.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/URLSession+Extensions.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/URLSession+Extensions.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/URLSession+Extensions.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Generable.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Generable.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Generable.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Generable.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/GeneratedContent.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/GeneratedContent.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/GeneratedContent.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/GeneratedContent.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/GenerationGuide.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/GenerationGuide.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/GenerationGuide.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/GenerationGuide.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/GenerationID.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/GenerationID.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/GenerationID.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/GenerationID.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/GenerationOptions.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/GenerationOptions.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/GenerationOptions.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/GenerationOptions.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/GenerationSchema.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/GenerationSchema.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/GenerationSchema.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/GenerationSchema.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Instructions.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Instructions.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Instructions.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Instructions.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/LanguageModel.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/LanguageModel.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/LanguageModel.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/LanguageModel.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/LanguageModelFeedback.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/LanguageModelFeedback.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/LanguageModelFeedback.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/LanguageModelFeedback.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/LanguageModelSession.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/LanguageModelSession.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/LanguageModelSession.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/LanguageModelSession.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Models/AnthropicLanguageModel.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/AnthropicLanguageModel.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/AnthropicLanguageModel.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/AnthropicLanguageModel.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Models/CoreMLLanguageModel.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/CoreMLLanguageModel.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/CoreMLLanguageModel.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/CoreMLLanguageModel.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Models/GeminiLanguageModel.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/GeminiLanguageModel.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/GeminiLanguageModel.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/GeminiLanguageModel.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Models/LlamaLanguageModel.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/LlamaLanguageModel.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/LlamaLanguageModel.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/LlamaLanguageModel.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Models/MLXLanguageModel.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/MLXLanguageModel.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/MLXLanguageModel.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/MLXLanguageModel.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Models/OllamaLanguageModel.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/OllamaLanguageModel.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/OllamaLanguageModel.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/OllamaLanguageModel.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Models/OpenAILanguageModel.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/OpenAILanguageModel.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/OpenAILanguageModel.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/OpenAILanguageModel.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Models/OpenResponsesLanguageModel.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/OpenResponsesLanguageModel.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/OpenResponsesLanguageModel.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/OpenResponsesLanguageModel.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Models/SystemLanguageModel.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/SystemLanguageModel.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/SystemLanguageModel.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/SystemLanguageModel.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Prompt.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Prompt.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Prompt.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Prompt.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/SendableMetatype.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/SendableMetatype.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/SendableMetatype.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/SendableMetatype.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Shared/Locked.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Locked.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Locked.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Locked.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Shared/StructuredGeneration.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/StructuredGeneration.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/StructuredGeneration.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/StructuredGeneration.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Tool.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Tool.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Tool.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Tool.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/ToolExecution.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/ToolExecution.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/ToolExecution.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/ToolExecution.o"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/Sources/AnyLanguageModel/Transcript.swift" : {
+    "index-unit-output-path" : "/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Transcript.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Transcript.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/AnyLanguageModel/build/AnyLanguageModel.build/Release-iphonesimulator/AnyLanguageModel.build/Objects-normal/x86_64/Transcript.o"
+  }
+}

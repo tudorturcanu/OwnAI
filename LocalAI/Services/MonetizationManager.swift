@@ -14,6 +14,7 @@ enum PremiumFeature: String, CaseIterable, Identifiable {
     case advancedPersonality
     case unlimitedDocuments
     case voiceMode
+    case imageInput
 
     var id: String { rawValue }
 
@@ -27,6 +28,8 @@ enum PremiumFeature: String, CaseIterable, Identifiable {
             return "Unlimited Document Chat"
         case .voiceMode:
             return "Conversation Mode"
+        case .imageInput:
+            return "Image Input"
         }
     }
 
@@ -40,6 +43,8 @@ enum PremiumFeature: String, CaseIterable, Identifiable {
             return "Attach more than one document per chat and build richer local research workflows."
         case .voiceMode:
             return "Keep the conversation going hands-free with automatic listen and spoken replies."
+        case .imageInput:
+            return "Attach photos and ask questions about what you see — powered by on-device vision."
         }
     }
 
@@ -53,6 +58,8 @@ enum PremiumFeature: String, CaseIterable, Identifiable {
             return "doc.text.fill"
         case .voiceMode:
             return "waveform"
+        case .imageInput:
+            return "photo.fill"
         }
     }
 }
@@ -62,10 +69,13 @@ enum PremiumFeature: String, CaseIterable, Identifiable {
 final class MonetizationManager {
     static let freeDailyMessageLimitRange = 6...10
     static let productIDs = [
-        "ownai.pro.monthly",
-        "ownai.pro.yearly",
+        "ownai.pro.monthly.v2",
+        "ownai.pro.yearly.v2",
         "ownai.pro.lifetime"
     ]
+    #if DEBUG
+    private static let debugProOverrideDefaultsKey = "monetization.debugProOverrideEnabled"
+    #endif
 
     static let freeModelIDs: Set<String> = [
         ModelInfo.appleFoundation.id,
@@ -78,6 +88,9 @@ final class MonetizationManager {
     var isLoadingProducts = false
     var isProcessingPurchase = false
     var purchaseErrorMessage: String?
+    #if DEBUG
+    var debugProOverrideEnabled = UserDefaults.standard.bool(forKey: debugProOverrideDefaultsKey)
+    #endif
 
     @ObservationIgnored
     @AppStorage("monetization.freeDailyMessageCount")
@@ -96,13 +109,23 @@ final class MonetizationManager {
     private var storedFreeDailyMessageLimit = 10
 
     @ObservationIgnored
+    @AppStorage("monetization.cachedPurchasedProductIDs")
+    private var storedPurchasedProductIDs = ""
+
+    @ObservationIgnored
     private var updatesTask: Task<Void, Never>?
 
     var hasPro: Bool {
-        !purchasedProductIDs.isEmpty
+        #if DEBUG
+        if debugProOverrideEnabled {
+            return true
+        }
+        #endif
+        return !purchasedProductIDs.isEmpty
     }
 
     init() {
+        purchasedProductIDs = loadCachedPurchasedProductIDs()
         updatesTask = observeTransactionUpdates()
         Task {
             await refreshProducts()
@@ -131,9 +154,11 @@ final class MonetizationManager {
         var nextPurchasedIDs: Set<String> = []
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result else { continue }
+            guard isActiveEntitlement(transaction) else { continue }
             nextPurchasedIDs.insert(transaction.productID)
         }
         purchasedProductIDs = nextPurchasedIDs
+        cachePurchasedProductIDs(nextPurchasedIDs)
     }
 
     func purchase(_ product: Product) async -> Bool {
@@ -148,8 +173,8 @@ final class MonetizationManager {
                     purchaseErrorMessage = "Purchase verification failed."
                     return false
                 }
-                purchasedProductIDs.insert(transaction.productID)
                 await transaction.finish()
+                await refreshEntitlements()
                 purchaseErrorMessage = nil
                 return true
             case .userCancelled, .pending:
@@ -180,10 +205,17 @@ final class MonetizationManager {
 
     func canUse(_ feature: PremiumFeature) -> Bool {
         switch feature {
-        case .allModels, .advancedPersonality, .unlimitedDocuments, .voiceMode:
+        case .allModels, .advancedPersonality, .unlimitedDocuments, .voiceMode, .imageInput:
             return hasPro
         }
     }
+
+    #if DEBUG
+    func setDebugProOverrideEnabled(_ isEnabled: Bool) {
+        debugProOverrideEnabled = isEnabled
+        UserDefaults.standard.set(isEnabled, forKey: Self.debugProOverrideDefaultsKey)
+    }
+    #endif
 
     var freeMessagesUsedToday: Int {
         refreshDailyCounterIfNeeded()
@@ -218,10 +250,48 @@ final class MonetizationManager {
         Task {
             for await result in Transaction.updates {
                 guard case .verified(let transaction) = result else { continue }
-                purchasedProductIDs.insert(transaction.productID)
                 await transaction.finish()
+                await refreshEntitlements()
             }
         }
+    }
+
+    private func isActiveEntitlement(_ transaction: StoreKit.Transaction) -> Bool {
+        if transaction.revocationDate != nil {
+            return false
+        }
+
+        if let expirationDate = transaction.expirationDate, expirationDate <= Date.now {
+            return false
+        }
+
+        if transaction.isUpgraded {
+            return false
+        }
+
+        return true
+    }
+
+    private func loadCachedPurchasedProductIDs() -> Set<String> {
+        guard let data = storedPurchasedProductIDs.data(using: .utf8) else {
+            return []
+        }
+
+        guard let decoded = try? JSONDecoder().decode([String].self, from: data) else {
+            return []
+        }
+
+        return Set(decoded)
+    }
+
+    private func cachePurchasedProductIDs(_ productIDs: Set<String>) {
+        let encodedIDs = Array(productIDs).sorted()
+        guard let data = try? JSONEncoder().encode(encodedIDs),
+              let json = String(data: data, encoding: .utf8) else {
+            return
+        }
+
+        storedPurchasedProductIDs = json
     }
 
     private func productSortOrder(lhs: Product, rhs: Product) -> Bool {
@@ -230,9 +300,9 @@ final class MonetizationManager {
 
     private func rank(for product: Product) -> Int {
         switch product.id {
-        case "ownai.pro.yearly":
+        case "ownai.pro.yearly.v2", "ownai.pro.yearly1":
             return 0
-        case "ownai.pro.monthly":
+        case "ownai.pro.monthly.v2", "ownai.pro.monthly1":
             return 1
         case "ownai.pro.lifetime":
             return 2

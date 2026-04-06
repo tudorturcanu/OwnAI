@@ -6,6 +6,7 @@ struct ChatMessage: Identifiable, Equatable, Codable {
     let content: String
     let thinkingContent: String?
     let sourceTitles: [String]
+    let imageFileName: String?
     var isStreaming: Bool = false
 
     init(
@@ -14,6 +15,7 @@ struct ChatMessage: Identifiable, Equatable, Codable {
         content: String,
         thinkingContent: String? = nil,
         sourceTitles: [String] = [],
+        imageFileName: String? = nil,
         isStreaming: Bool = false
     ) {
         self.id = id
@@ -21,6 +23,7 @@ struct ChatMessage: Identifiable, Equatable, Codable {
         self.content = content
         self.thinkingContent = thinkingContent
         self.sourceTitles = sourceTitles
+        self.imageFileName = imageFileName
         self.isStreaming = isStreaming
     }
 
@@ -30,6 +33,7 @@ struct ChatMessage: Identifiable, Equatable, Codable {
         case content
         case thinkingContent
         case sourceTitles
+        case imageFileName
         case isStreaming
     }
 
@@ -40,6 +44,7 @@ struct ChatMessage: Identifiable, Equatable, Codable {
         content = try container.decode(String.self, forKey: .content)
         thinkingContent = try container.decodeIfPresent(String.self, forKey: .thinkingContent)
         sourceTitles = try container.decodeIfPresent([String].self, forKey: .sourceTitles) ?? []
+        imageFileName = try container.decodeIfPresent(String.self, forKey: .imageFileName)
         isStreaming = try container.decodeIfPresent(Bool.self, forKey: .isStreaming) ?? false
     }
 

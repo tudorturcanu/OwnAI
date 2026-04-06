@@ -17,6 +17,49 @@ import Combine
 import MLXLMCommon
 #endif
 
+private final class DownloadProgressLimiter {
+    private struct State {
+        var progress: Double
+        var timestamp: CFTimeInterval
+    }
+
+    private let lock = NSLock()
+    private var states: [String: State] = [:]
+    private let minimumInterval: CFTimeInterval = 0.12
+    private let minimumDelta: Double = 0.01
+
+    func shouldEmit(modelID: String, progress: Double, now: CFTimeInterval = CACurrentMediaTime()) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        if progress >= 0.99 {
+            states[modelID] = State(progress: progress, timestamp: now)
+            return true
+        }
+
+        guard let previous = states[modelID] else {
+            states[modelID] = State(progress: progress, timestamp: now)
+            return true
+        }
+
+        let progressDelta = progress - previous.progress
+        let timeDelta = now - previous.timestamp
+
+        guard progressDelta >= minimumDelta || timeDelta >= minimumInterval else {
+            return false
+        }
+
+        states[modelID] = State(progress: progress, timestamp: now)
+        return true
+    }
+
+    func reset(modelID: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        states.removeValue(forKey: modelID)
+    }
+}
+
 enum DownloadErrorAction {
     case retry
     case freeSpace
@@ -51,6 +94,16 @@ enum DownloadErrorAction {
 final class ModelManager: ObservableObject {
     nonisolated let objectWillChange = ObservableObjectPublisher()
 
+    struct OnboardingRecommendation: Equatable {
+        let modelID: String
+        let title: String
+        let summary: String
+        let detail: String
+        let actionTitle: String
+        let prefersImmediateUse: Bool
+        let usesFallback: Bool
+    }
+
     private enum DownloadFailureReason: Equatable {
         case lowStorage(requiredGB: Double, availableGB: Double)
         case network
@@ -83,6 +136,7 @@ final class ModelManager: ObservableObject {
     private var downloadTasks: [String: Task<Void, Never>] = [:]
     private var backgroundTaskIDs: [String: UIBackgroundTaskIdentifier] = [:]
     private var downloadFailures: [String: DownloadFailure] = [:]
+    @ObservationIgnored private let downloadProgressLimiter = DownloadProgressLimiter()
     private var thinkingPreferencesVersion = 0
     
     // MARK: - Computed Properties
@@ -150,16 +204,15 @@ final class ModelManager: ObservableObject {
         
         // Warn user when app goes to background during an active download
         NotificationCenter.default.addObserver(
-            forName: UIApplication.willResignActiveNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            guard let self else { return }
-            guard self.downloadNotifications else { return }
-            guard let activeModelID = self.downloadTasks.keys.first,
-                  let model = self.models.first(where: { $0.id == activeModelID }) else { return }
-            NotificationManager.shared.postDownloadBackgroundWarning(modelName: model.name)
-        }
+            self,
+            selector: #selector(handleWillResignActive),
+            name: UIApplication.willResignActiveNotification,
+            object: nil
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self, name: UIApplication.willResignActiveNotification, object: nil)
     }
     
     // MARK: - Public Methods
@@ -190,6 +243,156 @@ final class ModelManager: ObservableObject {
         ensureSelection()
     }
 
+    func onboardingRecommendation() -> OnboardingRecommendation? {
+        if let downloadedBest = bestDownloadedFreeModel() {
+            return recommendation(
+                for: downloadedBest,
+                title: "Recommended for this device",
+                summary: "Already ready on this device.",
+                detail: downloadedBest.engine == .appleFoundation
+                    ? "Apple Intelligence is available now, so you can start chatting without downloading anything."
+                    : "\(downloadedBest.name) is already available locally, so it will get you to the first reply fastest.",
+                actionTitle: "Use \(downloadedBest.name)",
+                prefersImmediateUse: true,
+                usesFallback: false
+            )
+        }
+
+        if isAppleIntelligenceAvailable {
+            return recommendation(
+                for: .appleFoundation,
+                title: "Recommended for this iPhone",
+                summary: "Fastest start with no download.",
+                detail: "Apple Intelligence is available now, so you can begin immediately. For fully local processing, you can still download an on-device model later.",
+                actionTitle: "Use Apple Intelligence",
+                prefersImmediateUse: true,
+                usesFallback: false
+            )
+        }
+
+        let availableStorage = DiskSpace.availableGB()
+        let freeMLXModels = models
+            .filter { $0.engine == .mlx }
+            .filter { MonetizationManager.freeModelIDs.contains($0.id) }
+            .filter { shouldShowModelInCatalog($0) }
+
+        let preferredLocalModel: ModelInfo?
+
+        if UIDevice.current.userInterfaceIdiom != .phone {
+            preferredLocalModel = freeMLXModels.first(where: { $0.id == ModelInfo.gemma2_2b_4bit.id })
+                ?? freeMLXModels.sorted { $0.sizeGB > $1.sizeGB }.first
+        } else if availableStorage >= requiredSpaceGB(for: .gemma2_2b_4bit)
+                    && ModelInfo.gemma2_2b_4bit.currentDeviceFit != .unsupported {
+            preferredLocalModel = freeMLXModels.first(where: { $0.id == ModelInfo.gemma2_2b_4bit.id })
+        } else if availableStorage >= requiredSpaceGB(for: .gemma3_1b_qat_4bit) {
+            preferredLocalModel = freeMLXModels.first(where: { $0.id == ModelInfo.gemma3_1b_qat_4bit.id })
+        } else {
+            preferredLocalModel = freeMLXModels.first(where: { $0.id == ModelInfo.gemma3_270m_qat_4bit.id })
+                ?? freeMLXModels.sorted { $0.sizeGB < $1.sizeGB }.first
+        }
+
+        if let preferredLocalModel {
+            let detail: String
+            if preferredLocalModel.id == ModelInfo.gemma2_2b_4bit.id {
+                detail = "This device should handle \(preferredLocalModel.name) well, and it gives a better quality baseline than the ultra-small models."
+            } else if preferredLocalModel.id == ModelInfo.gemma3_1b_qat_4bit.id {
+                detail = "\(preferredLocalModel.name) keeps the download light while still fitting comfortably on this device."
+            } else {
+                detail = "\(preferredLocalModel.name) is the safest local starting point when storage or device headroom is tighter."
+            }
+
+            return recommendation(
+                for: preferredLocalModel,
+                title: "Recommended for this iPhone",
+                summary: "\(preferredLocalModel.sizeLabel) download, fully on-device.",
+                detail: detail,
+                actionTitle: preferredLocalModel.downloadState.isDownloaded
+                    ? "Use \(preferredLocalModel.name)"
+                    : "Download \(preferredLocalModel.name)",
+                prefersImmediateUse: preferredLocalModel.downloadState.isDownloaded,
+                usesFallback: false
+            )
+        }
+
+        guard let fallback = bestAvailableModel() ?? models.first(where: { $0.engine == .appleFoundation }) else {
+            return nil
+        }
+
+        return recommendation(
+            for: fallback,
+            title: "Recommended for this device",
+            summary: "Using the best available fallback.",
+            detail: "A first-choice starter model is not available right now, so this fallback keeps onboarding moving instead of leaving you without a usable model.",
+            actionTitle: "Continue",
+            prefersImmediateUse: fallback.downloadState.isDownloaded || fallback.engine == .appleFoundation,
+            usesFallback: true
+        )
+    }
+
+    @discardableResult
+    func applyOnboardingRecommendation() -> OnboardingRecommendation? {
+        applyOnboardingChoice(preferredModelID: nil)
+    }
+
+    @discardableResult
+    func applyOnboardingChoice(preferredModelID: String?) -> OnboardingRecommendation? {
+        if let preferredModelID,
+           let preferredModel = models.first(where: { $0.id == preferredModelID }) {
+            let recommendation = recommendation(
+                for: preferredModel,
+                title: "Selected for onboarding",
+                summary: preferredModel.downloadState.isDownloaded || preferredModel.engine == .appleFoundation
+                    ? "Using your selected model."
+                    : "\(preferredModel.sizeLabel) download selected.",
+                detail: deviceFitSummary(for: preferredModel),
+                actionTitle: preferredModel.downloadState.isDownloaded || preferredModel.engine == .appleFoundation
+                    ? "Use \(preferredModel.name)"
+                    : "Download \(preferredModel.name)",
+                prefersImmediateUse: preferredModel.downloadState.isDownloaded || preferredModel.engine == .appleFoundation,
+                usesFallback: false
+            )
+            return applyOnboardingChoice(using: recommendation)
+        }
+
+        guard let recommendation = onboardingRecommendation() else {
+            print("[ModelManager] onboarding recommendation unavailable")
+            ensureSelection()
+            return nil
+        }
+
+        return applyOnboardingChoice(using: recommendation)
+    }
+
+    @discardableResult
+    private func applyOnboardingChoice(using recommendation: OnboardingRecommendation) -> OnboardingRecommendation? {
+        guard let model = models.first(where: { $0.id == recommendation.modelID }) else {
+            print("[ModelManager] onboarding recommendation unavailable")
+            ensureSelection()
+            return nil
+        }
+
+        print("[ModelManager] onboarding recommendation accepted model=\(model.id) fallback=\(recommendation.usesFallback)")
+
+        if model.engine == .appleFoundation || model.downloadState.isDownloaded {
+            selectModel(model.id)
+            return recommendation
+        }
+
+        if preflightFailure(for: model) == nil {
+            selectedModelID = model.id
+            downloadModel(model.id)
+            return recommendation
+        }
+
+        if let fallback = bestAvailableModel() {
+            print("[ModelManager] onboarding recommendation fallback model=\(fallback.id)")
+            selectModel(fallback.id)
+        } else {
+            ensureSelection()
+        }
+        return recommendation
+    }
+
     func downloadErrorAction(for modelID: String) -> DownloadErrorAction {
         guard let failure = downloadFailures[modelID] else { return .retry }
         switch failure.reason {
@@ -200,6 +403,14 @@ final class ModelManager: ObservableObject {
         case .network, .simulatorUnsupported, .unknown:
             return .retry
         }
+    }
+
+    @objc
+    private func handleWillResignActive() {
+        guard downloadNotifications else { return }
+        guard let activeModelID = downloadTasks.keys.first,
+              let model = models.first(where: { $0.id == activeModelID }) else { return }
+        NotificationManager.shared.postDownloadBackgroundWarning(modelName: model.name)
     }
 
     func repairModel(_ modelID: String) {
@@ -223,7 +434,7 @@ final class ModelManager: ObservableObject {
         let model = models[index]
         guard model.engine == .mlx else { return }
         guard downloadTasks[modelID] == nil else { return }
-        guard deviceCompatibilityMessage(for: model) == nil else { return }
+        guard compatibilityMessage(for: model) == nil else { return }
 
         if let failure = preflightFailure(for: model) {
             applyDownloadFailure(failure, for: modelID)
@@ -232,9 +443,8 @@ final class ModelManager: ObservableObject {
         
         print("[ModelManager] download start id=\(modelID)")
         downloadFailures.removeValue(forKey: modelID)
+        downloadProgressLimiter.reset(modelID: modelID)
         models[index].downloadState = .downloading(progress: 0.02)
-        updateIdleTimer()
-        beginBackgroundTask(for: modelID)
 
         if downloadNotifications {
             Task { @MainActor in
@@ -299,12 +509,15 @@ final class ModelManager: ObservableObject {
             #endif
             await MainActor.run {
                 self.downloadTasks.removeValue(forKey: modelID)
+                self.downloadProgressLimiter.reset(modelID: modelID)
                 self.updateIdleTimer()
                 self.endBackgroundTask(for: modelID)
             }
         }
-        
+
         downloadTasks[modelID] = task
+        updateIdleTimer()
+        beginBackgroundTask(for: modelID)
     }
     
     /// Cancel an ongoing download
@@ -312,6 +525,7 @@ final class ModelManager: ObservableObject {
         downloadTasks[modelID]?.cancel()
         downloadTasks.removeValue(forKey: modelID)
         downloadFailures.removeValue(forKey: modelID)
+        downloadProgressLimiter.reset(modelID: modelID)
         
         if let index = models.firstIndex(where: { $0.id == modelID }) {
             models[index].downloadState = .notDownloaded
@@ -474,10 +688,11 @@ final class ModelManager: ObservableObject {
                 try Task.checkCancellation()
                 _ = try await hub.snapshot(from: modelID) { progress, _ in
                     let fraction = max(0.0, min(progress.fractionCompleted, 0.99))
+                    guard self.downloadProgressLimiter.shouldEmit(modelID: modelID, progress: fraction) else {
+                        return
+                    }
                     Task { @MainActor in
-                        if let idx = self.models.firstIndex(where: { $0.id == modelID }) {
-                            self.models[idx].downloadState = .downloading(progress: fraction)
-                        }
+                        self.setDownloadProgress(fraction, for: modelID)
                     }
                 }
                 return
@@ -495,6 +710,18 @@ final class ModelManager: ObservableObject {
         }
     }
     #endif
+
+    private func setDownloadProgress(_ progress: Double, for modelID: String) {
+        guard let idx = models.firstIndex(where: { $0.id == modelID }) else { return }
+        let clampedProgress = max(0.0, min(progress, 0.99))
+
+        if case .downloading(let currentProgress) = models[idx].downloadState,
+           clampedProgress <= currentProgress {
+            return
+        }
+
+        models[idx].downloadState = .downloading(progress: clampedProgress)
+    }
     
     private func checkAvailability() async {
         // Check Apple Foundation availability
@@ -640,7 +867,7 @@ final class ModelManager: ObservableObject {
         if model.engine == .appleFoundation {
             return isAppleIntelligenceAvailable
         }
-        if deviceCompatibilityMessage(for: model) != nil {
+        if compatibilityMessage(for: model) != nil {
             return false
         }
         return model.downloadState.isDownloaded
@@ -656,6 +883,38 @@ final class ModelManager: ObservableObject {
         return downloadedMLX.first
     }
 
+    func bestDownloadedFreeModel() -> ModelInfo? {
+        if let apple = models.first(where: { $0.id == ModelInfo.appleFoundation.id && isModelUsable($0) }) {
+            return apple
+        }
+
+        return models
+            .filter { MonetizationManager.freeModelIDs.contains($0.id) }
+            .filter(isModelUsable)
+            .sorted { lhs, rhs in
+                if lhs.sizeGB != rhs.sizeGB {
+                    return lhs.sizeGB > rhs.sizeGB
+                }
+                return lhs.name < rhs.name
+            }
+            .first
+    }
+
+    func isOnboardingRecommended(_ model: ModelInfo) -> Bool {
+        onboardingRecommendation()?.modelID == model.id
+    }
+
+    func deviceFitSummary(for model: ModelInfo) -> String {
+        switch model.currentDeviceFit {
+        case .recommended:
+            return model.isAppleFoundation ? "Best match for this device" : "Recommended for this device"
+        case .supported:
+            return "Should run well on this device"
+        case .unsupported:
+            return "Too heavy for this device"
+        }
+    }
+
     func quickTestResult(for modelID: String) -> ModelQuickTestResult? {
         ModelHealthStore.shared.loadResults()[modelID]
     }
@@ -668,15 +927,38 @@ final class ModelManager: ObservableObject {
         if model.engine == .appleFoundation {
             return isAppleIntelligenceDeviceSupported
         }
-        return deviceCompatibilityMessage(for: model) == nil
+        return compatibilityMessage(for: model) == nil
     }
 
-    func deviceCompatibilityMessage(for model: ModelInfo) -> String? {
+    func compatibilityMessage(for model: ModelInfo) -> String? {
         guard model.engine == .mlx else { return nil }
+        if ModelInfo.runtimeUnsupportedModelIDs.contains(model.id) {
+            return "This model isn't supported by the current bundled MLX runtime yet."
+        }
         let idiom = UIDevice.current.userInterfaceIdiom
         if idiom == .phone && model.requiresLargeDeviceOnPhone {
             return "Requires an iPad Pro or Mac. This model exceeds the practical memory budget for iPhone."
         }
         return nil
+    }
+
+    private func recommendation(
+        for model: ModelInfo,
+        title: String,
+        summary: String,
+        detail: String,
+        actionTitle: String,
+        prefersImmediateUse: Bool,
+        usesFallback: Bool
+    ) -> OnboardingRecommendation {
+        OnboardingRecommendation(
+            modelID: model.id,
+            title: title,
+            summary: summary,
+            detail: detail,
+            actionTitle: actionTitle,
+            prefersImmediateUse: prefersImmediateUse,
+            usesFallback: usesFallback
+        )
     }
 }

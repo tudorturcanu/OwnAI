@@ -1,0 +1,16 @@
+{
+  "" : {
+    "const-values" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntax509.build/Objects-normal/arm64/SwiftSyntax509-primary.swiftconstvalues",
+    "dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntax509.build/Objects-normal/arm64/SwiftSyntax509-primary.d",
+    "diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntax509.build/Objects-normal/arm64/SwiftSyntax509-primary.dia",
+    "emit-module-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntax509.build/Objects-normal/arm64/SwiftSyntax509-primary-emit-module.d",
+    "emit-module-diagnostics" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntax509.build/Objects-normal/arm64/SwiftSyntax509-primary-emit-module.dia",
+    "pch" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntax509.build/Objects-normal/arm64/SwiftSyntax509-primary-Bridging-header.pch",
+    "swift-dependencies" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntax509.build/Objects-normal/arm64/SwiftSyntax509-primary.swiftdeps"
+  },
+  "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/Sources/VersionMarkerModules/SwiftSyntax509/Empty.swift" : {
+    "index-unit-output-path" : "/swift-syntax.build/Release-iphonesimulator/SwiftSyntax509.build/Objects-normal/arm64/Empty.o",
+    "llvm-bc" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntax509.build/Objects-normal/arm64/Empty.bc",
+    "object" : "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-syntax/build/swift-syntax.build/Release-iphonesimulator/SwiftSyntax509.build/Objects-normal/arm64/Empty.o"
+  }
+}
