@@ -663,9 +663,7 @@ struct ModelCard: View {
     @ViewBuilder
     private var actionButton: some View {
         if let compatibilityMessage = modelManager.compatibilityMessage(for: model), !model.isAppleFoundation {
-            let title = ModelInfo.runtimeUnsupportedModelIDs.contains(model.id)
-                ? String(localized: "Unavailable in this build")
-                : String(localized: "Requires iPad Pro or Mac")
+            let title = String(localized: "Requires iPad Pro or Mac")
             switch model.downloadState {
             case .downloaded:
                 HStack(spacing: 12) {
@@ -674,8 +672,8 @@ struct ModelCard: View {
                         modelManager.deleteModel(model.id)
                     })
                 }
-            case .downloading(let progress):
-                DownloadingButton(progress: progress, sizeGB: model.sizeGB, action: {
+            case .downloading(let progress, let speedBytesPerSecond):
+                DownloadingButton(progress: progress, speedBytesPerSecond: speedBytesPerSecond, action: {
                     modelManager.cancelDownload(model.id)
                 })
             default:
@@ -698,13 +696,13 @@ struct ModelCard: View {
                 } else {
                     DownloadButton(sizeLabel: model.sizeLabel, action: {
                         requireConsentAndPerform {
-                            modelManager.downloadModel(model.id)
+                            modelManager.downloadModel(model.id, selectWhenFinished: true)
                         }
                     })
                 }
                 
-            case .downloading(let progress):
-                DownloadingButton(progress: progress, sizeGB: model.sizeGB, action: {
+            case .downloading(let progress, let speedBytesPerSecond):
+                DownloadingButton(progress: progress, speedBytesPerSecond: speedBytesPerSecond, action: {
                     modelManager.cancelDownload(model.id)
                 })
                 
@@ -760,13 +758,13 @@ struct ModelCard: View {
     private func handleDownloadErrorAction(_ action: DownloadErrorAction) {
         switch action {
         case .retry:
-            modelManager.downloadModel(model.id)
+            modelManager.downloadModel(model.id, selectWhenFinished: true)
         case .freeSpace:
             if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
                 openURL(settingsURL)
             }
         case .repair:
-            modelManager.repairModel(model.id)
+            modelManager.repairModel(model.id, selectWhenFinished: true)
         }
     }
 }
@@ -1135,24 +1133,26 @@ struct DownloadButton: View {
     
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 4) {
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.down.circle.fill")
-                        .font(.body.bold())
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.body.bold())
+
+                VStack(alignment: .leading, spacing: 2) {
                     Text("Download")
-                        .fontWeight(.semibold)
+                        .font(.subheadline.weight(.semibold))
+                    Text("\(sizeLabel) • Ready when it finishes")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.78))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.9)
                 }
 
-                Text("\(sizeLabel) • Select it after the download finishes")
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.78))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+                Spacer(minLength: 8)
             }
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 16)
-            .padding(.vertical, 13)
+            .padding(.vertical, 12)
             .background(
                 LinearGradient(
                     colors: [.blue, .blue.opacity(0.85)],
@@ -1218,99 +1218,78 @@ struct UnsupportedModelButton: View {
 
 struct DownloadingButton: View {
     let progress: Double
-    let sizeGB: Double
+    let speedBytesPerSecond: Double?
     let action: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
-    @ScaledMetric(relativeTo: .body) private var progressBarHeight = 8.0
-    @ScaledMetric(relativeTo: .body) private var closeButtonSize = 34.0
-    @State private var estimate = DownloadEstimate()
+    @ScaledMetric(relativeTo: .body) private var progressBarHeight = 6.0
+    @ScaledMetric(relativeTo: .body) private var closeButtonSize = 32.0
 
     private var clampedProgress: Double {
         max(0.0, min(progress, 0.99))
     }
 
-    private var downloadedBytes: Double {
-        sizeGB * 1_000_000_000 * clampedProgress
-    }
-
     private var statusLine: String {
-        let downloadedLabel = Self.byteCountFormatter.string(fromByteCount: Int64(downloadedBytes))
-        guard let speedBytesPerSecond = estimate.speedBytesPerSecond,
+        guard let speedBytesPerSecond,
               speedBytesPerSecond > 50_000 else {
-            return "\(downloadedLabel) downloaded, estimating speed..."
+            return "Measuring download speed..."
         }
 
         let speedLabel = Self.speedFormatter.string(fromByteCount: Int64(speedBytesPerSecond)) + "/s"
-        let remainingLabel = estimate.remainingLabel(progress: clampedProgress, totalBytes: sizeGB * 1_000_000_000)
-        return "\(downloadedLabel) (\(speedLabel)) - \(remainingLabel) remaining"
+        return "Current speed: \(speedLabel)"
     }
 
     private var panelShape: RoundedRectangle {
-        RoundedRectangle(cornerRadius: 16)
+        RoundedRectangle(cornerRadius: 12)
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .center, spacing: 10) {
-                progressBar
+        HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Text("Downloading")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.blue)
 
-                Button(role: .cancel, action: action) {
-                    Label("Cancel download", systemImage: "xmark")
-                        .labelStyle(.iconOnly)
-                        .font(.footnote.bold())
-                        .foregroundStyle(.white.opacity(0.9))
-                        .frame(width: closeButtonSize, height: closeButtonSize)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color.white.opacity(0.12))
-                        )
-                }
-                .accessibilityInputLabels(["Cancel", "Stop download"])
-            }
-
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                if differentiateWithoutColor {
                     Text("\(Int(clampedProgress * 100))%")
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.78))
+                        .foregroundStyle(Color.blue.opacity(0.78))
                         .monospacedDigit()
                 }
 
+                progressBar
+
                 Text(statusLine)
-                    .font(.caption)
-                    .foregroundStyle(.white.opacity(0.92))
+                    .font(.caption2)
+                    .foregroundStyle(Color(white: 0.43))
                     .monospacedDigit()
                     .lineLimit(1)
                     .minimumScaleFactor(0.82)
                     .allowsTightening(true)
                     .contentTransition(.numericText())
             }
+
+            Button(role: .cancel, action: action) {
+                Image(systemName: "xmark")
+                    .font(.caption.bold())
+                    .foregroundStyle(Color(white: 0.45))
+                    .frame(width: closeButtonSize, height: closeButtonSize)
+                    .background(Color.black.opacity(0.04))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .accessibilityLabel("Cancel download")
+            .accessibilityInputLabels(["Cancel", "Stop download"])
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.vertical, 10)
         .background(
             panelShape
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(white: 0.20),
-                            Color(white: 0.16)
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+                .fill(Color.blue.opacity(0.05))
         )
         .overlay(
             panelShape
-                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+                .strokeBorder(Color.blue.opacity(0.08), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.16), radius: 10, y: 5)
-        .onChange(of: progress, initial: true) { _, newValue in
-            estimate.ingest(progress: newValue, totalBytes: sizeGB * 1_000_000_000)
-        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Download in progress")
         .accessibilityValue("\(Int(clampedProgress * 100)) percent complete. \(statusLine)")
@@ -1324,27 +1303,20 @@ struct DownloadingButton: View {
 
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color.white.opacity(0.12))
+                    .fill(Color.blue.opacity(0.12))
 
                 Capsule()
                     .fill(
                         LinearGradient(
                             colors: [
-                                .white,
-                                Color.white.opacity(0.92)
+                                Color.blue,
+                                Color.blue.opacity(0.72)
                             ],
                             startPoint: .leading,
                             endPoint: .trailing
                         )
                     )
                     .frame(width: fillWidth)
-                    .overlay(alignment: .trailing) {
-                        Circle()
-                            .fill(.white)
-                            .frame(width: progressBarHeight + 2, height: progressBarHeight + 2)
-                            .shadow(color: .white.opacity(0.35), radius: 3)
-                            .opacity(clampedProgress > 0.015 ? 1 : 0)
-                    }
                     .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: clampedProgress)
 
                 if !reduceMotion {
@@ -1352,34 +1324,23 @@ struct DownloadingButton: View {
                         .fill(
                             LinearGradient(
                                 colors: [
-                                    .white.opacity(0),
-                                    .white.opacity(0.24),
-                                    .white.opacity(0)
+                                    Color.white.opacity(0),
+                                    Color.white.opacity(0.35),
+                                    Color.white.opacity(0)
                                 ],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
                         )
-                        .frame(width: min(availableWidth * 0.22, 90), height: progressBarHeight)
-                        .offset(x: max(0, handleOffset - min(availableWidth * 0.18, 72)))
+                        .frame(width: min(availableWidth * 0.16, 56), height: progressBarHeight)
+                        .offset(x: max(0, handleOffset - min(availableWidth * 0.12, 44)))
                         .blendMode(.plusLighter)
                         .animation(.easeInOut(duration: 0.25), value: clampedProgress)
                 }
             }
         }
-        .frame(height: max(progressBarHeight, 30))
+        .frame(height: progressBarHeight)
     }
-
-    private static let byteCountFormatter: ByteCountFormatter = {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useGB, .useMB]
-        formatter.countStyle = .file
-        formatter.includesUnit = true
-        formatter.isAdaptive = true
-        formatter.zeroPadsFractionDigits = true
-        return formatter
-    }()
-
     private static let speedFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
         formatter.allowedUnits = [.useGB, .useMB, .useKB]
@@ -1389,66 +1350,6 @@ struct DownloadingButton: View {
         formatter.zeroPadsFractionDigits = true
         return formatter
     }()
-}
-
-private struct DownloadEstimate {
-    private(set) var lastProgress: Double?
-    private(set) var lastSampleDate: Date?
-    private(set) var speedBytesPerSecond: Double?
-
-    mutating func ingest(progress: Double, totalBytes: Double, now: Date = .now) {
-        let clampedProgress = max(0.0, min(progress, 0.99))
-
-        defer {
-            lastProgress = clampedProgress
-            lastSampleDate = now
-        }
-
-        guard let previousProgress = lastProgress,
-              let previousDate = lastSampleDate else {
-            return
-        }
-
-        let elapsed = now.timeIntervalSince(previousDate)
-        guard elapsed >= 0.25 else { return }
-
-        let deltaProgress = clampedProgress - previousProgress
-        guard deltaProgress > 0 else { return }
-
-        let instantaneousSpeed = (totalBytes * deltaProgress) / elapsed
-        if let currentSpeed = speedBytesPerSecond {
-            speedBytesPerSecond = (currentSpeed * 0.72) + (instantaneousSpeed * 0.28)
-        } else {
-            speedBytesPerSecond = instantaneousSpeed
-        }
-    }
-
-    func remainingLabel(progress: Double, totalBytes: Double) -> String {
-        guard let speedBytesPerSecond,
-              speedBytesPerSecond > 50_000 else {
-            return "calculating time"
-        }
-
-        let remainingBytes = max(0, 1.0 - progress) * totalBytes
-        let seconds = remainingBytes / speedBytesPerSecond
-        guard seconds.isFinite else { return "calculating time" }
-
-        if seconds < 60 {
-            return "\(max(1, Int(seconds.rounded()))) sec"
-        }
-
-        let minutes = Int((seconds / 60).rounded())
-        if minutes < 60 {
-            return "\(minutes) min"
-        }
-
-        let hours = minutes / 60
-        let remainingMinutes = minutes % 60
-        if remainingMinutes == 0 {
-            return "\(hours) hr"
-        }
-        return "\(hours) hr \(remainingMinutes) min"
-    }
 }
 
 struct DeleteButton: View {

@@ -80,10 +80,10 @@ struct UpgradeView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(feature.title)
+                    Text(LocalizedStringKey(feature.title))
                         .font(.title3.bold())
                         .foregroundStyle(Color(white: 0.1))
-                    Text(feature.subtitle)
+                    Text(LocalizedStringKey(feature.subtitle))
                         .font(.subheadline)
                         .foregroundStyle(Color(white: 0.45))
                         .fixedSize(horizontal: false, vertical: true)
@@ -266,10 +266,10 @@ struct UpgradeView: View {
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Color(white: 0.1))
-                Text(subtitle)
+                Text(LocalizedStringKey(subtitle))
                     .font(.caption)
                     .foregroundStyle(Color(white: 0.48))
                     .fixedSize(horizontal: false, vertical: true)

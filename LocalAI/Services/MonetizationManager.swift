@@ -73,9 +73,6 @@ final class MonetizationManager {
         "ownai.pro.yearly.v2",
         "ownai.pro.lifetime"
     ]
-    #if DEBUG
-    private static let debugProOverrideDefaultsKey = "monetization.debugProOverrideEnabled"
-    #endif
 
     static let freeModelIDs: Set<String> = [
         ModelInfo.appleFoundation.id,
@@ -88,9 +85,6 @@ final class MonetizationManager {
     var isLoadingProducts = false
     var isProcessingPurchase = false
     var purchaseErrorMessage: String?
-    #if DEBUG
-    var debugProOverrideEnabled = UserDefaults.standard.bool(forKey: debugProOverrideDefaultsKey)
-    #endif
 
     @ObservationIgnored
     @AppStorage("monetization.freeDailyMessageCount")
@@ -116,11 +110,6 @@ final class MonetizationManager {
     private var updatesTask: Task<Void, Never>?
 
     var hasPro: Bool {
-        #if DEBUG
-        if debugProOverrideEnabled {
-            return true
-        }
-        #endif
         return !purchasedProductIDs.isEmpty
     }
 
@@ -209,13 +198,6 @@ final class MonetizationManager {
             return hasPro
         }
     }
-
-    #if DEBUG
-    func setDebugProOverrideEnabled(_ isEnabled: Bool) {
-        debugProOverrideEnabled = isEnabled
-        UserDefaults.standard.set(isEnabled, forKey: Self.debugProOverrideDefaultsKey)
-    }
-    #endif
 
     var freeMessagesUsedToday: Int {
         refreshDailyCounterIfNeeded()

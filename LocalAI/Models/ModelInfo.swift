@@ -13,6 +13,7 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
     case appleIntelligence
     case gemma
     case qwen
+    case glm
     case deepSeek
     case tinyLlama
     case llama
@@ -29,6 +30,8 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "Gemma"
         case .qwen:
             return "Qwen"
+        case .glm:
+            return "GLM"
         case .deepSeek:
             return "DeepSeek"
         case .tinyLlama:
@@ -50,6 +53,8 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "Google's compact local models"
         case .qwen:
             return "Alibaba's multilingual family"
+        case .glm:
+            return "Z.ai's large agentic models"
         case .deepSeek:
             return "Compact reasoning-style models"
         case .tinyLlama:
@@ -71,6 +76,8 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "sparkles"
         case .qwen:
             return "globe"
+        case .glm:
+            return "cpu"
         case .deepSeek:
             return "brain.head.profile"
         case .tinyLlama:
@@ -250,7 +257,7 @@ enum ModelEngine: String, Equatable {
 /// Represents the download state of a model
 enum DownloadState: Equatable {
     case notDownloaded
-    case downloading(progress: Double)
+    case downloading(progress: Double, speedBytesPerSecond: Double?)
     case downloaded
     case builtin  // For Apple Foundation Model
     case error(message: String)
@@ -343,6 +350,9 @@ struct ModelInfo: Identifiable, Equatable {
         if lowercasedID.contains("deepseek") {
             return "DeepSeek"
         }
+        if lowercasedID.contains("glm") {
+            return "Z.ai (GLM)"
+        }
         if lowercasedID.contains("qwen") {
             return "Alibaba Cloud (Qwen)"
         }
@@ -391,12 +401,10 @@ struct ModelInfo: Identifiable, Equatable {
         engine == .appleFoundation || ModelInfo.vlmMLXModelIDs.contains(id)
     }
 
-    /// Some catalog entries may be ahead of the bundled MLX runtime support.
-    static let runtimeUnsupportedModelIDs: Set<String> = [
-        "mlx-community/gemma-4-e2b-it-4bit",
-        "mlx-community/gemma-4-e4b-it-4bit",
-        "mlx-community/gemma-4-26b-a4b-it-4bit"
-    ]
+    /// Whether this model is experimental and should only be shown on macOS.
+    var isMacExperimental: Bool {
+        id == "mlx-community/GLM-5.1-4bit"
+    }
 
     var sizeLabel: String {
         if engine == .appleFoundation {
@@ -824,6 +832,22 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// GLM 5.1 (4-bit MLX)
+    static let glm51_4bit = ModelInfo(
+        id: "mlx-community/GLM-5.1-4bit",
+        name: "GLM 5.1",
+        description: "Z.ai's flagship agentic engineering model converted to MLX. This is an experimental, extremely large local model intended for very high-memory Apple Silicon systems.",
+        family: .glm,
+        sizeGB: 419,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/zai-org/GLM-5.1"),
+        privacyURL: nil,
+        shortDescription: "Experimental flagship GLM model for high-memory Macs.",
+        recommendedFor: "Best for experimental coding and long-horizon agentic tasks on machines with hundreds of GB of memory.",
+        badges: [.bestForCoding, .reasoning, .higherQuality, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// Qwen2-VL 2B Instruct — multimodal vision-language model (4-bit MLX)
     static let qwen2VL_2b_4bit = ModelInfo(
         id: "mlx-community/Qwen2-VL-2B-Instruct-4bit",
@@ -862,7 +886,6 @@ extension ModelInfo {
         .gemma3_270m_qat_4bit,
         .qwen3_0_6b_4bit,
         .qwen25_0_5b_instruct_4bit,
-        .tinyllama11b_chat_4bit,
         // Compact (0.7–1.1 GB)
         .llama32_1b_4bit,
         .gemma3_1b_qat_4bit,
@@ -875,7 +898,6 @@ extension ModelInfo {
         .qwen25VL_3b_3bit,
         // Mid-range (1.7–4 GB)
         .gemma3n_e2b_it_lm_4bit,
-        .gemma4_e2b_it_4bit,
         .gemma2_2b_4bit,
         .smolLM3_3b_4bit,
         .qwen25_3b_instruct_4bit,
@@ -887,6 +909,7 @@ extension ModelInfo {
         .qwen3_4b_4bit,
         // Large (4+ GB) — iPad Pro / Mac
         .deepseek_r1_distill_qwen_7b_4bit,
+        .glm51_4bit,
         .qwen25_7b_instruct_4bit,
         .llama31_8b_4bit,
         .qwen3_8b_4bit

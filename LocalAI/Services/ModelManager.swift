@@ -60,6 +60,150 @@ private final class DownloadProgressLimiter {
     }
 }
 
+private final class DownloadDiagnostics {
+    private struct State {
+        let modelName: String
+        let expectedBytes: Double
+        let startedAt: CFTimeInterval
+        var rawCallbacks = 0
+        var suppressedCallbacks = 0
+        var emittedCallbacks = 0
+        var mainActorUpdates = 0
+        var lastProgress: Double = 0
+        var lastProgressTimestamp: CFTimeInterval
+        var lastLoggedProgress: Double = 0
+        var lastLoggedTimestamp: CFTimeInterval
+    }
+
+    private let lock = NSLock()
+    private var states: [String: State] = [:]
+    private let minimumLogInterval: CFTimeInterval = 2.0
+    private let minimumLogProgressDelta: Double = 0.05
+
+    func start(modelID: String, modelName: String, expectedBytes: Double, now: CFTimeInterval = CACurrentMediaTime()) {
+        lock.lock()
+        defer { lock.unlock() }
+        states[modelID] = State(
+            modelName: modelName,
+            expectedBytes: expectedBytes,
+            startedAt: now,
+            lastProgressTimestamp: now,
+            lastLoggedTimestamp: now
+        )
+        print("[ModelManager] download diagnostics start id=\(modelID) name=\(modelName) expected=\(Self.byteString(expectedBytes))")
+    }
+
+    func recordSnapshotCallback(
+        modelID: String,
+        progress: Double,
+        emitted: Bool,
+        now: CFTimeInterval = CACurrentMediaTime()
+    ) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard var state = states[modelID] else { return }
+        state.rawCallbacks += 1
+        if emitted {
+            state.emittedCallbacks += 1
+        } else {
+            state.suppressedCallbacks += 1
+        }
+
+        let previousProgress = state.lastProgress
+        let previousTimestamp = state.lastProgressTimestamp
+        if progress > previousProgress {
+            state.lastProgress = progress
+            state.lastProgressTimestamp = now
+        }
+
+        let elapsedSinceLastLog = now - state.lastLoggedTimestamp
+        let progressSinceLastLog = progress - state.lastLoggedProgress
+        let shouldLog = emitted && (
+            elapsedSinceLastLog >= minimumLogInterval ||
+            progressSinceLastLog >= minimumLogProgressDelta ||
+            progress >= 0.99
+        )
+
+        if shouldLog {
+            let deltaProgress = max(0, progress - previousProgress)
+            let deltaTime = max(0.001, now - previousTimestamp)
+            let instantaneousSpeed = state.expectedBytes > 0
+                ? (state.expectedBytes * deltaProgress) / deltaTime
+                : 0
+            let downloadedBytes = state.expectedBytes * progress
+            print(
+                "[ModelManager] download progress id=\(modelID) progress=\(Int(progress * 100))% downloaded=\(Self.byteString(downloadedBytes)) speed=\(Self.byteString(instantaneousSpeed))/s raw=\(state.rawCallbacks) emitted=\(state.emittedCallbacks) suppressed=\(state.suppressedCallbacks)"
+            )
+            state.lastLoggedTimestamp = now
+            state.lastLoggedProgress = progress
+        }
+
+        states[modelID] = state
+    }
+
+    func recordMainActorUpdate(
+        modelID: String,
+        progress: Double,
+        enqueuedAt: CFTimeInterval,
+        now: CFTimeInterval = CACurrentMediaTime()
+    ) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard var state = states[modelID] else { return }
+        state.mainActorUpdates += 1
+
+        let queueDelay = now - enqueuedAt
+        if queueDelay >= 0.08 {
+            print(
+                "[ModelManager] download main-thread lag id=\(modelID) progress=\(Int(progress * 100))% delay=\(String(format: "%.0f", queueDelay * 1000))ms updates=\(state.mainActorUpdates)"
+            )
+        }
+
+        states[modelID] = state
+    }
+
+    func finish(modelID: String, finalProgress: Double, now: CFTimeInterval = CACurrentMediaTime()) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard let state = states.removeValue(forKey: modelID) else { return }
+        let duration = max(0.001, now - state.startedAt)
+        let downloadedBytes = state.expectedBytes * finalProgress
+        let averageSpeed = downloadedBytes / duration
+        print(
+            "[ModelManager] download diagnostics finish id=\(modelID) name=\(state.modelName) duration=\(String(format: "%.1f", duration))s downloaded=\(Self.byteString(downloadedBytes)) avg=\(Self.byteString(averageSpeed))/s raw=\(state.rawCallbacks) emitted=\(state.emittedCallbacks) suppressed=\(state.suppressedCallbacks) mainActor=\(state.mainActorUpdates)"
+        )
+    }
+
+    func cancel(modelID: String, now: CFTimeInterval = CACurrentMediaTime()) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard let state = states.removeValue(forKey: modelID) else { return }
+        let duration = max(0.001, now - state.startedAt)
+        print(
+            "[ModelManager] download diagnostics cancel id=\(modelID) name=\(state.modelName) duration=\(String(format: "%.1f", duration))s raw=\(state.rawCallbacks) emitted=\(state.emittedCallbacks) suppressed=\(state.suppressedCallbacks) mainActor=\(state.mainActorUpdates)"
+        )
+    }
+
+    func fail(modelID: String, message: String, now: CFTimeInterval = CACurrentMediaTime()) {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard let state = states.removeValue(forKey: modelID) else { return }
+        let duration = max(0.001, now - state.startedAt)
+        print(
+            "[ModelManager] download diagnostics fail id=\(modelID) name=\(state.modelName) duration=\(String(format: "%.1f", duration))s progress=\(Int(state.lastProgress * 100))% raw=\(state.rawCallbacks) emitted=\(state.emittedCallbacks) suppressed=\(state.suppressedCallbacks) mainActor=\(state.mainActorUpdates) error=\(message)"
+        )
+    }
+
+    private static func byteString(_ bytes: Double) -> String {
+        ByteCountFormatter.string(fromByteCount: Int64(bytes.rounded()), countStyle: .file)
+    }
+}
+
 enum DownloadErrorAction {
     case retry
     case freeSpace
@@ -93,6 +237,23 @@ enum DownloadErrorAction {
 @Observable
 final class ModelManager: ObservableObject {
     nonisolated let objectWillChange = ObservableObjectPublisher()
+    private static let requiredMLXDownloadGlobs = [
+        "config.json",
+        "params.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "tokenizer.model",
+        "sentencepiece.bpe.model",
+        "vocab.json",
+        "merges.txt",
+        "special_tokens_map.json",
+        "generation_config.json",
+        "chat_template.json",
+        "chat_template.jinja",
+        "*.safetensors",
+        "*.safetensors.index.json",
+        "*.bin"
+    ]
 
     struct OnboardingRecommendation: Equatable {
         let modelID: String
@@ -137,6 +298,7 @@ final class ModelManager: ObservableObject {
     private var backgroundTaskIDs: [String: UIBackgroundTaskIdentifier] = [:]
     private var downloadFailures: [String: DownloadFailure] = [:]
     @ObservationIgnored private let downloadProgressLimiter = DownloadProgressLimiter()
+    @ObservationIgnored private let downloadDiagnostics = DownloadDiagnostics()
     private var thinkingPreferencesVersion = 0
     
     // MARK: - Computed Properties
@@ -247,7 +409,7 @@ final class ModelManager: ObservableObject {
         if let downloadedBest = bestDownloadedFreeModel() {
             return recommendation(
                 for: downloadedBest,
-                title: "Recommended for this device",
+                title: "Recommended",
                 summary: "Already ready on this device.",
                 detail: downloadedBest.engine == .appleFoundation
                     ? "Apple Intelligence is available now, so you can start chatting without downloading anything."
@@ -261,7 +423,7 @@ final class ModelManager: ObservableObject {
         if isAppleIntelligenceAvailable {
             return recommendation(
                 for: .appleFoundation,
-                title: "Recommended for this iPhone",
+                title: "Recommended",
                 summary: "Fastest start with no download.",
                 detail: "Apple Intelligence is available now, so you can begin immediately. For fully local processing, you can still download an on-device model later.",
                 actionTitle: "Use Apple Intelligence",
@@ -303,7 +465,7 @@ final class ModelManager: ObservableObject {
 
             return recommendation(
                 for: preferredLocalModel,
-                title: "Recommended for this iPhone",
+                title: "Recommended",
                 summary: "\(preferredLocalModel.sizeLabel) download, fully on-device.",
                 detail: detail,
                 actionTitle: preferredLocalModel.downloadState.isDownloaded
@@ -320,7 +482,7 @@ final class ModelManager: ObservableObject {
 
         return recommendation(
             for: fallback,
-            title: "Recommended for this device",
+            title: "Recommended",
             summary: "Using the best available fallback.",
             detail: "A first-choice starter model is not available right now, so this fallback keeps onboarding moving instead of leaving you without a usable model.",
             actionTitle: "Continue",
@@ -413,7 +575,7 @@ final class ModelManager: ObservableObject {
         NotificationManager.shared.postDownloadBackgroundWarning(modelName: model.name)
     }
 
-    func repairModel(_ modelID: String) {
+    func repairModel(_ modelID: String, selectWhenFinished: Bool = false) {
         guard let index = models.firstIndex(where: { $0.id == modelID }) else { return }
         guard models[index].engine == .mlx else { return }
 
@@ -424,12 +586,12 @@ final class ModelManager: ObservableObject {
         MLXStorage.removeModelArtifacts(for: modelID)
         models[index].downloadState = .notDownloaded
         downloadFailures.removeValue(forKey: modelID)
-        downloadModel(modelID)
+        downloadModel(modelID, selectWhenFinished: selectWhenFinished)
         #endif
     }
     
     /// Start downloading a model
-    func downloadModel(_ modelID: String) {
+    func downloadModel(_ modelID: String, selectWhenFinished: Bool = false) {
         guard let index = models.firstIndex(where: { $0.id == modelID }) else { return }
         let model = models[index]
         guard model.engine == .mlx else { return }
@@ -444,7 +606,12 @@ final class ModelManager: ObservableObject {
         print("[ModelManager] download start id=\(modelID)")
         downloadFailures.removeValue(forKey: modelID)
         downloadProgressLimiter.reset(modelID: modelID)
-        models[index].downloadState = .downloading(progress: 0.02)
+        downloadDiagnostics.start(
+            modelID: modelID,
+            modelName: model.name,
+            expectedBytes: model.sizeGB * 1_000_000_000
+        )
+        models[index].downloadState = .downloading(progress: 0.02, speedBytesPerSecond: nil)
 
         if downloadNotifications {
             Task { @MainActor in
@@ -476,15 +643,18 @@ final class ModelManager: ObservableObject {
                         NotificationManager.shared.postDownloadCompleted(modelName: model.name)
                     }
                 }
+                self.downloadDiagnostics.finish(modelID: modelID, finalProgress: 1.0)
                 print("[ModelManager] download complete id=\(modelID)")
                 await MainActor.run {
-                    if self.selectedModelID == nil {
+                    if selectWhenFinished || self.selectedModelID == nil {
                         self.selectedModelID = modelID
                     }
                 }
             } catch is CancellationError {
+                self.downloadDiagnostics.cancel(modelID: modelID)
                 print("[ModelManager] download cancelled id=\(modelID)")
             } catch let failureError as DownloadFailureError {
+                self.downloadDiagnostics.fail(modelID: modelID, message: failureError.failure.message)
                 await MainActor.run {
                     self.applyDownloadFailure(failureError.failure, for: modelID)
                 }
@@ -496,6 +666,7 @@ final class ModelManager: ObservableObject {
                 print("[ModelManager] download failed id=\(modelID) error=\(failureError.failure.message)")
             } catch {
                 let failure = self.classifyDownloadError(error, for: model)
+                self.downloadDiagnostics.fail(modelID: modelID, message: failure.message)
                 await MainActor.run {
                     self.applyDownloadFailure(failure, for: modelID)
                 }
@@ -683,17 +854,100 @@ final class ModelManager: ObservableObject {
     private func downloadModelContainerWithRetry(modelID: String, model: ModelInfo) async throws {
         let maxAttempts = 3
         let hub = HubApi(downloadBase: MLXStorage.persistentBaseURL().deletingLastPathComponent())
+        var shouldTryFullRepoFallback = true
+
+        do {
+            print("[ModelManager] download filter id=\(modelID) globs=\(Self.requiredMLXDownloadGlobs.joined(separator: ","))")
+            try await runSnapshotDownload(
+                hub: hub,
+                modelID: modelID,
+                matching: Self.requiredMLXDownloadGlobs,
+                maxAttempts: maxAttempts,
+                model: model
+            )
+            return
+        } catch {
+            if error is CancellationError { throw error }
+            let failure = classifyDownloadError(error, for: model)
+            shouldTryFullRepoFallback = failure.reason == .corrupted || failure.reason == .unknown
+            if !shouldTryFullRepoFallback {
+                throw DownloadFailureError(failure: failure)
+            }
+            print("[ModelManager] download fallback id=\(modelID) reason=\(failure.message)")
+        }
+
+        do {
+            try await runSnapshotDownload(
+                hub: hub,
+                modelID: modelID,
+                matching: [],
+                maxAttempts: maxAttempts,
+                model: model
+            )
+            return
+        } catch {
+            if error is CancellationError { throw error }
+            let failure = classifyDownloadError(error, for: model)
+            throw DownloadFailureError(failure: failure)
+        }
+    }
+
+    private func runSnapshotDownload(
+        hub: HubApi,
+        modelID: String,
+        matching globs: [String],
+        maxAttempts: Int,
+        model: ModelInfo
+    ) async throws {
+        let filenames = try await hub.getFilenames(from: modelID, matching: globs)
+        let metadata = try await hub.getFileMetadata(from: modelID, matching: globs)
+        let files = zip(filenames, metadata).map { (filename: $0.0, size: Double($0.1.size ?? 0)) }
+        let totalBytes = max(1.0, files.reduce(0.0) { $0 + max(0.0, $1.size) })
+        var completedBytes = 0.0
+
         for attempt in 1...maxAttempts {
             do {
                 try Task.checkCancellation()
-                _ = try await hub.snapshot(from: modelID) { progress, _ in
-                    let fraction = max(0.0, min(progress.fractionCompleted, 0.99))
-                    guard self.downloadProgressLimiter.shouldEmit(modelID: modelID, progress: fraction) else {
-                        return
+                completedBytes = 0.0
+                for file in files {
+                    try Task.checkCancellation()
+                    let bytesBeforeFile = completedBytes
+                    let effectiveFileBytes = max(1.0, file.size)
+                    _ = try await hub.snapshot(from: modelID, matching: [file.filename]) { progress, speed in
+                        let fileFraction = max(0.0, min(progress.fractionCompleted, 1.0))
+                        let aggregateProgress = min(
+                            0.99,
+                            max(0.0, (bytesBeforeFile + (effectiveFileBytes * fileFraction)) / totalBytes)
+                        )
+                        let callbackTime = CACurrentMediaTime()
+                        let shouldEmit = self.downloadProgressLimiter.shouldEmit(
+                            modelID: modelID,
+                            progress: aggregateProgress,
+                            now: callbackTime
+                        )
+                        self.downloadDiagnostics.recordSnapshotCallback(
+                            modelID: modelID,
+                            progress: aggregateProgress,
+                            emitted: shouldEmit,
+                            now: callbackTime
+                        )
+                        guard shouldEmit else {
+                            return
+                        }
+                        Task { @MainActor in
+                            self.downloadDiagnostics.recordMainActorUpdate(
+                                modelID: modelID,
+                                progress: aggregateProgress,
+                                enqueuedAt: callbackTime
+                            )
+                            self.setDownloadProgress(
+                                aggregateProgress,
+                                speedBytesPerSecond: speed,
+                                for: modelID
+                            )
+                        }
                     }
-                    Task { @MainActor in
-                        self.setDownloadProgress(fraction, for: modelID)
-                    }
+                    completedBytes += effectiveFileBytes
                 }
                 return
             } catch {
@@ -705,22 +959,31 @@ final class ModelManager: ObservableObject {
                     try await Task.sleep(nanoseconds: delay)
                     continue
                 }
-                throw DownloadFailureError(failure: failure)
+                throw error
             }
         }
     }
     #endif
 
-    private func setDownloadProgress(_ progress: Double, for modelID: String) {
+    private func setDownloadProgress(_ progress: Double, speedBytesPerSecond: Double?, for modelID: String) {
         guard let idx = models.firstIndex(where: { $0.id == modelID }) else { return }
         let clampedProgress = max(0.0, min(progress, 0.99))
 
-        if case .downloading(let currentProgress) = models[idx].downloadState,
+        if case .downloading(let currentProgress, let currentSpeed) = models[idx].downloadState,
            clampedProgress <= currentProgress {
+            if speedBytesPerSecond != currentSpeed {
+                models[idx].downloadState = .downloading(
+                    progress: currentProgress,
+                    speedBytesPerSecond: speedBytesPerSecond
+                )
+            }
             return
         }
 
-        models[idx].downloadState = .downloading(progress: clampedProgress)
+        models[idx].downloadState = .downloading(
+            progress: clampedProgress,
+            speedBytesPerSecond: speedBytesPerSecond
+        )
     }
     
     private func checkAvailability() async {
@@ -907,7 +1170,7 @@ final class ModelManager: ObservableObject {
     func deviceFitSummary(for model: ModelInfo) -> String {
         switch model.currentDeviceFit {
         case .recommended:
-            return model.isAppleFoundation ? "Best match for this device" : "Recommended for this device"
+            return model.isAppleFoundation ? "Best" : "Recommended"
         case .supported:
             return "Should run well on this device"
         case .unsupported:
@@ -927,14 +1190,19 @@ final class ModelManager: ObservableObject {
         if model.engine == .appleFoundation {
             return isAppleIntelligenceDeviceSupported
         }
+        // Mac-experimental models (e.g. GLM 5.1) are only shown on macOS
+        if model.isMacExperimental {
+            #if targetEnvironment(macCatalyst)
+            return true
+            #else
+            return UIDevice.current.userInterfaceIdiom == .mac
+            #endif
+        }
         return compatibilityMessage(for: model) == nil
     }
 
     func compatibilityMessage(for model: ModelInfo) -> String? {
         guard model.engine == .mlx else { return nil }
-        if ModelInfo.runtimeUnsupportedModelIDs.contains(model.id) {
-            return "This model isn't supported by the current bundled MLX runtime yet."
-        }
         let idiom = UIDevice.current.userInterfaceIdiom
         if idiom == .phone && model.requiresLargeDeviceOnPhone {
             return "Requires an iPad Pro or Mac. This model exceeds the practical memory budget for iPhone."

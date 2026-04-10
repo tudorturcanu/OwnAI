@@ -176,8 +176,8 @@ struct OnboardingView: View {
                     .foregroundStyle(Color(white: 0.1))
                 
                 Text(modelManager.isAppleIntelligenceDeviceSupported ?
-                     "Experience the power of AI,\non-device and with Apple Intelligence." :
-                     "Experience the power of AI,\nrunning entirely on your device.")
+                     LocalizedStringKey("Experience the power of AI,\non-device and with Apple Intelligence.") :
+                     LocalizedStringKey("Experience the power of AI,\nrunning entirely on your device."))
                     .font(.body)
                     .multilineTextAlignment(.center)
                     .foregroundStyle(Color(white: 0.5))
@@ -316,7 +316,7 @@ struct OnboardingView: View {
                     Button {
                         isPresented = false
                     } label: {
-                        Text(secondaryActionTitle)
+                        Text(LocalizedStringKey(secondaryActionTitle))
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.orange)
                             .frame(maxWidth: .infinity)
@@ -462,7 +462,7 @@ struct OnboardingView: View {
                             }
                         }
                     } label: {
-                        Text(privacyPrimaryActionTitle)
+                        Text(LocalizedStringKey(privacyPrimaryActionTitle))
                             .font(.headline.weight(.bold))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -500,7 +500,7 @@ struct OnboardingView: View {
         }
         if let activeModel = effectiveOnboardingModel {
             switch activeModel.downloadState {
-            case .downloading(let progress):
+            case .downloading(let progress, _):
                 return String(
                     format: String(
                         localized: "Continue While %@ Downloads (%lld%%)",
@@ -605,11 +605,11 @@ struct OnboardingView: View {
                 .frame(width: 32)
             
             VStack(alignment: .leading, spacing: 2) {
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.headline)
                     .foregroundStyle(Color(white: 0.2))
                 
-                Text(subtitle)
+                Text(LocalizedStringKey(subtitle))
                     .font(.subheadline)
                     .foregroundStyle(Color(white: 0.6))
             }
@@ -623,7 +623,7 @@ struct OnboardingView: View {
             HStack(spacing: 8) {
                 Image(systemName: icon)
                     .foregroundStyle(iconColor)
-                Text(title)
+                Text(LocalizedStringKey(title))
                     .font(.subheadline.bold())
                     .foregroundStyle(Color(white: 0.2))
             }
@@ -634,7 +634,7 @@ struct OnboardingView: View {
                         Circle()
                             .fill(iconColor.opacity(0.5))
                             .frame(width: 5, height: 5)
-                        Text(item)
+                        Text(LocalizedStringKey(item))
                             .font(.caption)
                             .foregroundStyle(Color(white: 0.5))
                     }
@@ -658,7 +658,7 @@ struct OnboardingView: View {
                     .foregroundStyle(model.engine == .appleFoundation ? .orange : .blue)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(recommendation.title)
+                    Text(LocalizedStringKey(recommendation.title))
                         .font(.subheadline.bold())
                         .foregroundStyle(Color(white: 0.15))
                     Text(model.name)
@@ -677,18 +677,18 @@ struct OnboardingView: View {
                     .clipShape(Capsule())
             }
 
-            Text(recommendation.summary)
+            Text(LocalizedStringKey(recommendation.summary))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color(white: 0.25))
 
-            Text(recommendation.detail)
+            Text(LocalizedStringKey(recommendation.detail))
                 .font(.caption)
                 .foregroundStyle(Color(white: 0.5))
 
             HStack(spacing: 8) {
                 recommendationChip(
                     icon: model.engine == .appleFoundation ? "bolt.fill" : "lock.shield.fill",
-                    title: model.engine == .appleFoundation ? "Fastest start" : model.privacyLabel
+                    title: model.engine == .appleFoundation ? String(localized: "Fastest start") : model.privacyLabel
                 )
                 recommendationChip(
                     icon: model.currentDeviceFit.iconName,
@@ -710,7 +710,7 @@ struct OnboardingView: View {
         HStack(spacing: 6) {
             Image(systemName: icon)
                 .font(.caption.weight(.semibold))
-            Text(title)
+            Text(LocalizedStringKey(title))
                 .font(.caption.weight(.medium))
         }
         .foregroundStyle(Color(white: 0.38))

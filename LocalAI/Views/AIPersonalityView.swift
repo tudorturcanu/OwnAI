@@ -54,7 +54,7 @@ struct AIPersonalityView: View {
                                     HStack(spacing: 6) {
                                         Image(systemName: preset.icon)
                                             .font(.footnote)
-                                        Text(preset.name)
+                                        Text(LocalizedStringKey(preset.name))
                                             .font(.subheadline.weight(.medium))
                                     }
                                     .padding(.horizontal, 16)
@@ -85,10 +85,10 @@ struct AIPersonalityView: View {
                         HStack {
                             Spacer()
                             
-                            if systemPrompt != "You are a helpful AI assistant." {
+                            if systemPrompt != String(localized: "You are a helpful AI assistant.") {
                                 Button("Reset Default") {
                                     withAnimation {
-                                        systemPrompt = "You are a helpful AI assistant."
+                                        systemPrompt = String(localized: "You are a helpful AI assistant.")
                                     }
                                 }
                                 .font(.caption.weight(.medium))
@@ -205,7 +205,7 @@ struct AIPersonalityView: View {
 
                             Picker("Response Size", selection: $responseCharacterLimit) {
                                 ForEach(responseLengthOptions, id: \.self) { option in
-                                    Text(responseLengthLabel(for: option)).tag(option)
+                                    Text(LocalizedStringKey(responseLengthLabel(for: option))).tag(option)
                                 }
                             }
                             .pickerStyle(.menu)
@@ -274,9 +274,9 @@ struct AIPersonalityView: View {
     private func responseLengthLabel(for limit: Int) -> String {
         switch limit {
         case 0:
-            return "Unlimited"
+            return String(localized: "Unlimited")
         default:
-            return "\(limit) chars"
+            return String(format: String(localized: "%lld chars", defaultValue: "%lld chars"), Int64(limit))
         }
     }
 
