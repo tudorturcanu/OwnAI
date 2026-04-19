@@ -7,10 +7,13 @@
 
 import Foundation
 import SwiftUI
-import LocalAIKit
 import UIKit
-
 #if !targetEnvironment(simulator)
+import MLXLLM
+import MLXHuggingFace
+import MLXLMCommon
+import MLXVLM
+import Tokenizers
 #endif
 
 /// Engine state for LLM operations
@@ -39,14 +42,13 @@ final class LLMEngine {
     @ObservationIgnored @AppStorage("maxTokens") var maxTokens: Int = 512
     @ObservationIgnored @AppStorage("lowPowerMode") var lowPowerMode: Bool = false
     
-    private typealias LocalSession = LanguageModelSession
-    
     // Apple Foundation
     private let appleFoundationBridge = AppleFoundationModelBridge()
     
     #if !targetEnvironment(simulator)
     // MLX
-    private var mlxSession: LocalSession?
+    private var mlxSession: ChatSession?
+    private var mlxModelContainer: ModelContainer?
     private var mlxModelID: String?
     #endif
     
@@ -158,6 +160,7 @@ final class LLMEngine {
         appleFoundationBridge.resetSession()
         #if !targetEnvironment(simulator)
         mlxSession = nil
+        mlxModelContainer = nil
         mlxModelID = nil
         #endif
         loadTask?.cancel()
@@ -181,19 +184,8 @@ final class LLMEngine {
         #if !targetEnvironment(simulator)
         guard isSceneActive else { return }
         // Recreate MLX session with same model to clear conversation history
-        if let session = mlxSession, let modelID = mlxModelID {
-            let persistentPath = MLXStorage.modelDirectory(for: modelID)
-            let mlxModel: MLXLanguageModel
-            if FileManager.default.fileExists(atPath: persistentPath.path) {
-                mlxModel = MLXLanguageModel(modelId: modelID, directory: persistentPath)
-            } else {
-                mlxModel = MLXLanguageModel(modelId: modelID)
-            }
-            let instructions: Instructions? = mlxSessionInstructions(for: modelID).map {
-                Instructions($0)
-            }
-            mlxSession = LocalSession(model: mlxModel, instructions: instructions)
-            mlxSession?.prewarm()
+        if let container = mlxModelContainer, let modelID = mlxModelID {
+            mlxSession = ChatSession(container, instructions: mlxSessionInstructions(for: modelID))
         }
         #endif
     }
@@ -251,11 +243,22 @@ final class LLMEngine {
         let effectiveTopP = lowPowerMode ? min(currentTopP, 0.9) : currentTopP
         let effectiveTemperature = lowPowerMode ? min(currentTemperature, 0.6) : currentTemperature
         let effectiveMaxTokens = lowPowerMode ? min(currentMaxTokens, 256) : currentMaxTokens
+        #if !targetEnvironment(simulator)
+        let mlxGenerateParameters = makeMlxGenerateParameters(
+            topP: effectiveTopP,
+            temperature: effectiveTemperature,
+            maxTokens: effectiveMaxTokens
+        )
+        #endif
         // Capture state on MainActor
         #if !targetEnvironment(simulator)
         let currentMlxSession = self.mlxSession
         let freshMlxSession = usesEphemeralMlxSession
-            ? self.makeFreshMlxSession(modelID: model.id, systemPrompt: effectiveSystemPrompt)
+            ? try await self.makeFreshMlxSession(
+                modelID: model.id,
+                systemPrompt: effectiveSystemPrompt,
+                generateParameters: mlxGenerateParameters
+            )
             : nil
         #endif
         
@@ -283,7 +286,7 @@ final class LLMEngine {
                     #if targetEnvironment(simulator)
                     throw LLMError.generationFailed("MLX is not available on the simulator.")
                     #else
-                    let session: LocalSession
+                    let session: ChatSession
                     if usesEphemeralMlxSession {
                         guard let freshMlxSession else {
                             throw LLMError.modelNotLoaded
@@ -296,28 +299,25 @@ final class LLMEngine {
                         throw LLMError.modelNotLoaded
                     }
                     
-                    let options = GenerationOptions(
-                        sampling: GenerationOptions.SamplingMode.random(probabilityThreshold: effectiveTopP),
-                        temperature: effectiveTemperature,
-                        maximumResponseTokens: effectiveMaxTokens
-                    )
                     // Stream MLX output so users see first tokens sooner and keep MLX errors throwable.
                     var lastContent = ""
-                    let stream: LocalSession.ResponseStream<String>
+                    let stream: AsyncThrowingStream<String, Error>
                     
                     // For VLM models (e.g. Qwen2-VL), pass the image directly via Transcript.ImageSegment
                     if model.supportsVision, let image {
-                        let imageSegment = try Transcript.ImageSegment(image: image, format: .jpeg())
-                        stream = session.streamResponse(to: effectiveMlxPrompt, image: imageSegment, options: options)
+                        stream = session.streamResponse(
+                            to: effectiveMlxPrompt,
+                            image: try Self.makeMlxInputImage(from: image)
+                        )
                     } else {
-                        stream = session.streamResponse(to: effectiveMlxPrompt, options: options)
+                        stream = session.streamResponse(to: effectiveMlxPrompt)
                     }
                     
-                    for try await snapshot in stream {
+                    for try await chunk in stream {
                         if Task.isCancelled { break }
-                        lastContent = Self.trimRepeatedLoopIfNeeded(in: snapshot.content)
+                        lastContent = Self.trimRepeatedLoopIfNeeded(in: lastContent + chunk)
                         await self.updateResponseIfNeeded(lastContent, force: false)
-                        if Self.shouldStopStreaming(content: snapshot.content) {
+                        if Self.shouldStopStreaming(content: lastContent) {
                             break
                         }
                     }
@@ -436,10 +436,18 @@ final class LLMEngine {
         let effectiveTemperature = lowPowerMode ? min(currentTemperature, 0.6) : currentTemperature
         let effectiveMaxTokens = lowPowerMode ? min(currentMaxTokens, 256) : currentMaxTokens
         #if !targetEnvironment(simulator)
-        let freshMlxSession = self.makeFreshMlxSession(
-            modelID: model.id,
-            systemPrompt: effectiveSystemPrompt
+        let mlxGenerateParameters = makeMlxGenerateParameters(
+            topP: effectiveTopP,
+            temperature: effectiveTemperature,
+            maxTokens: effectiveMaxTokens
         )
+        let freshMlxSession = model.engine == .mlx
+            ? try await self.makeFreshMlxSession(
+                modelID: model.id,
+                systemPrompt: effectiveSystemPrompt,
+                generateParameters: mlxGenerateParameters
+            )
+            : nil
         #endif
 
         let task = Task.detached(priority: .userInitiated) { [weak self] in
@@ -464,18 +472,15 @@ final class LLMEngine {
             #if targetEnvironment(simulator)
             throw LLMError.generationFailed("MLX is not available on the simulator.")
             #else
-            let session = freshMlxSession
-            let options = GenerationOptions(
-                sampling: GenerationOptions.SamplingMode.random(probabilityThreshold: effectiveTopP),
-                temperature: effectiveTemperature,
-                maximumResponseTokens: effectiveMaxTokens
-            )
+            guard let session = freshMlxSession else {
+                throw LLMError.modelNotLoaded
+            }
 
-            let stream = session.streamResponse(to: effectiveMlxPrompt, options: options)
-            for try await snapshot in stream {
+            let stream = session.streamResponse(to: effectiveMlxPrompt)
+            for try await chunk in stream {
                 if Task.isCancelled { break }
-                response = Self.trimRepeatedLoopIfNeeded(in: snapshot.content)
-                if Self.shouldStopStreaming(content: snapshot.content) {
+                response = Self.trimRepeatedLoopIfNeeded(in: response + chunk)
+                if Self.shouldStopStreaming(content: response) {
                     break
                 }
             }
@@ -638,7 +643,7 @@ extension LLMEngine {
             #if !targetEnvironment(simulator)
             if let session = mlxSession {
                 guard model.engine != .mlx || isSceneActive else { return }
-                session.prewarm()
+                _ = session
                 return
             }
             #endif
@@ -676,6 +681,7 @@ private extension LLMEngine {
                 try appleFoundationBridge.loadSession(instructions: instructions)
                 #if !targetEnvironment(simulator)
                 mlxSession = nil
+                mlxModelContainer = nil
                 mlxModelID = nil
                 #endif
                 state = .ready
@@ -706,19 +712,10 @@ private extension LLMEngine {
                     try Task.checkCancellation()
                     try ensureGPUWorkAllowed(for: model)
                     print("[LLMEngine] MLX loading model id=\(model.id)")
-                    let persistentPath = MLXStorage.modelDirectory(for: model.id)
-                    let mlxModel: MLXLanguageModel
-                    if FileManager.default.fileExists(atPath: persistentPath.path) {
-                        mlxModel = MLXLanguageModel(modelId: model.id, directory: persistentPath)
-                    } else {
-                        mlxModel = MLXLanguageModel(modelId: model.id)
-                    }
-                    let instructions: Instructions? = mlxSessionInstructions(for: model.id).map {
-                        Instructions($0)
-                    }
-                    mlxSession = LocalSession(model: mlxModel, instructions: instructions)
+                    let container = try await loadMlxContainer(modelID: model.id)
+                    mlxModelContainer = container
+                    mlxSession = ChatSession(container, instructions: mlxSessionInstructions(for: model.id))
                     try ensureGPUWorkAllowed(for: model)
-                    mlxSession?.prewarm()
                     mlxModelID = model.id
                     print("[LLMEngine] MLX session ready id=\(model.id)")
                 }
@@ -790,22 +787,48 @@ private extension LLMEngine {
         true
     }
 
-    private func makeFreshMlxSession(modelID: String, systemPrompt: String) -> LocalSession {
-        let persistentPath = MLXStorage.modelDirectory(for: modelID)
-        let mlxModel: MLXLanguageModel
-        if FileManager.default.fileExists(atPath: persistentPath.path) {
-            mlxModel = MLXLanguageModel(modelId: modelID, directory: persistentPath)
+    private func makeFreshMlxSession(
+        modelID: String,
+        systemPrompt: String,
+        generateParameters: GenerateParameters
+    ) async throws -> ChatSession {
+        let container: ModelContainer
+        if let loadedContainer = mlxModelContainer, mlxModelID == modelID {
+            container = loadedContainer
         } else {
-            mlxModel = MLXLanguageModel(modelId: modelID)
+            container = try await loadMlxContainer(modelID: modelID)
         }
 
-        let instructions: Instructions? = {
+        let instructions: String? = {
             guard mlxModelSupportsSystemRole(modelID: modelID) else { return nil }
             let trimmed = systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-            return trimmed.isEmpty ? nil : Instructions(trimmed)
+            return trimmed.isEmpty ? nil : trimmed
         }()
 
-        return LocalSession(model: mlxModel, instructions: instructions)
+        return ChatSession(container, instructions: instructions, generateParameters: generateParameters)
+    }
+
+    private func loadMlxContainer(modelID: String) async throws -> ModelContainer {
+        let persistentPath = MLXStorage.modelDirectory(for: modelID)
+        if FileManager.default.fileExists(atPath: persistentPath.path) {
+            return try await loadModelContainer(from: persistentPath, using: #huggingFaceTokenizerLoader())
+        }
+
+        // The model isn't downloaded locally — surface a clear error rather than
+        // attempting a remote download (downloads are managed by ModelManager).
+        throw LLMError.modelNotAvailable("Download this model from Settings > Models before loading it.")
+    }
+
+    private func makeMlxGenerateParameters(
+        topP: Double,
+        temperature: Double,
+        maxTokens: Int
+    ) -> GenerateParameters {
+        GenerateParameters(
+            maxTokens: maxTokens,
+            temperature: Float(temperature),
+            topP: Float(topP)
+        )
     }
 
     private nonisolated static func shouldStopStreaming(content: String) -> Bool {
@@ -886,6 +909,17 @@ private extension LLMEngine {
         return nil
     }
 }
+
+#if !targetEnvironment(simulator)
+private extension LLMEngine {
+    nonisolated static func makeMlxInputImage(from image: UIImage) throws -> UserInput.Image {
+        guard let ciImage = CIImage(image: image) else {
+            throw LLMError.generationFailed("Unable to prepare image for MLX.")
+        }
+        return .ciImage(ciImage)
+    }
+}
+#endif
 
 
 // MARK: - Errors
