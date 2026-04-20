@@ -17,11 +17,14 @@ struct SettingsView: View {
     @AppStorage("lowPowerMode") private var lowPowerMode = false
     @AppStorage("historyRetentionDays") private var historyRetentionDays = 0
     @AppStorage("autoRead") private var autoRead = false
+    @AppStorage("smartReplyStylesEnabled") private var smartReplyStylesEnabled = false
+    @AppStorage("systemPrompt") private var systemPrompt = SettingsView.defaultSystemPrompt
     @AppStorage("downloads.allowCellular") private var allowCellularDownloads = false
     @State private var showClearHistoryConfirmation = false
     @State private var showDataPrivacySheet = false
     @State private var isUpgradeSheetPresented = false
 
+    private static let defaultSystemPrompt = "You are a helpful AI assistant."
     private let retentionOptions = [0, 7, 30, 90]
 
     private var selectedModelName: String {
@@ -227,6 +230,19 @@ struct SettingsView: View {
                 subtitle: "Speak control on responses for hands-free playback",
                 isOn: $autoRead
             )
+
+            sectionDivider
+
+            settingsToggleRow(
+                icon: "sparkles",
+                tint: .purple,
+                title: "Reply Styles",
+                subtitle: "Show quick options under replies",
+                isOn: $smartReplyStylesEnabled
+            )
+            .onChange(of: smartReplyStylesEnabled) {
+                systemPrompt = Self.defaultSystemPrompt
+            }
 
             sectionDivider
 

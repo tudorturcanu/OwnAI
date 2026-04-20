@@ -37,6 +37,7 @@ struct ChatView: View {
     @State private var selectedDocumentForSources: ConversationDocument?
     @AppStorage("systemPrompt") private var systemPrompt = "You are a helpful AI assistant."
     @AppStorage("responseCharacterLimit") private var responseCharacterLimit = 1000
+    @AppStorage("smartReplyStylesEnabled") private var smartReplyStylesEnabled = false
 
     @State private var editingMessage: ChatMessage?
     @State private var editedMessageText: String = ""
@@ -310,6 +311,10 @@ struct ChatView: View {
                                 },
                                 onRegenerateLess: { message in
                                     regenerate(message: message, style: .less)
+                                },
+                                smartReplyStyles: smartReplyStyles(for: message),
+                                onSmartReplyStyle: { message, style in
+                                    regenerate(message: message, style: style)
                                 },
                                 onBranchFromHere: { message in
                                     branchConversation(from: message)
@@ -1446,29 +1451,40 @@ struct ChatView: View {
     }
 
     private func regenerate(message: ChatMessage, style: RegenerateStyle) {
+        let smartStyle: SmartReplyStyle
+        switch style {
+        case .more:
+            smartStyle = .deeper
+        case .less:
+            smartStyle = .shorter
+        }
+
+        regenerate(message: message, style: smartStyle)
+    }
+
+    private func smartReplyStyles(for message: ChatMessage) -> [SmartReplyStyle] {
+        guard smartReplyStylesEnabled else { return [] }
+        guard message.role == .assistant else { return [] }
+        guard !message.isStreaming else { return [] }
+        guard llmEngine.state != .generating else { return [] }
+        guard historyManager.currentMessages.last?.id == message.id else { return [] }
+        guard !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
+
+        var styles: [SmartReplyStyle] = [.shorter, .deeper, .simpler, .checklist]
+        if !message.sourceTitles.isEmpty {
+            styles.append(.citeSources)
+        }
+        return styles
+    }
+
+    private func regenerate(message: ChatMessage, style: SmartReplyStyle) {
         guard message.role == .assistant else { return }
         guard llmEngine.state != .generating else { return }
         guard historyManager.currentMessages.last?.id == message.id else { return }
 
-        let instruction: String
-        switch style {
-        case .more:
-            instruction = """
-            Rewrite your previous answer with more detail.
-            Keep the same intent, but add helpful structure and examples.
-            Do not mention that you are rewriting.
-            """
-        case .less:
-            instruction = """
-            Rewrite your previous answer to be shorter and more direct.
-            Keep the core points, remove fluff, and use bullets if helpful.
-            Do not mention that you are rewriting.
-            """
-        }
-
         Task {
             await runAssistantResponse(
-                prompt: instruction,
+                prompt: style.instruction(previousAnswer: message.content),
                 conversationID: historyManager.currentConversationID,
                 assistantID: message.id,
                 existingPrefix: "",

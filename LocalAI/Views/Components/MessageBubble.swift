@@ -17,6 +17,8 @@ struct MessageBubble: View {
     let onEdit: ((ChatMessage) -> Void)?
     let onRegenerateMore: ((ChatMessage) -> Void)?
     let onRegenerateLess: ((ChatMessage) -> Void)?
+    let smartReplyStyles: [SmartReplyStyle]
+    let onSmartReplyStyle: ((ChatMessage, SmartReplyStyle) -> Void)?
     let onBranchFromHere: ((ChatMessage) -> Void)?
     let onTogglePin: ((ChatMessage) -> Void)?
     @State private var appeared = false
@@ -34,6 +36,8 @@ struct MessageBubble: View {
         onEdit: ((ChatMessage) -> Void)? = nil,
         onRegenerateMore: ((ChatMessage) -> Void)? = nil,
         onRegenerateLess: ((ChatMessage) -> Void)? = nil,
+        smartReplyStyles: [SmartReplyStyle] = [],
+        onSmartReplyStyle: ((ChatMessage, SmartReplyStyle) -> Void)? = nil,
         onBranchFromHere: ((ChatMessage) -> Void)? = nil,
         onTogglePin: ((ChatMessage) -> Void)? = nil
     ) {
@@ -44,6 +48,8 @@ struct MessageBubble: View {
         self.onEdit = onEdit
         self.onRegenerateMore = onRegenerateMore
         self.onRegenerateLess = onRegenerateLess
+        self.smartReplyStyles = smartReplyStyles
+        self.onSmartReplyStyle = onSmartReplyStyle
         self.onBranchFromHere = onBranchFromHere
         self.onTogglePin = onTogglePin
     }
@@ -117,6 +123,15 @@ struct MessageBubble: View {
                         action: recoveryAction.action
                     )
                 }
+
+                if message.role == .assistant,
+                   !smartReplyStyles.isEmpty,
+                   let onSmartReplyStyle {
+                    smartReplyStyleChips(
+                        styles: smartReplyStyles,
+                        action: { style in onSmartReplyStyle(message, style) }
+                    )
+                }
             }
             
             if message.role == .assistant {
@@ -168,6 +183,39 @@ struct MessageBubble: View {
         let title: String
         let systemImage: String
         let action: () -> Void
+    }
+
+    private func smartReplyStyleChips(
+        styles: [SmartReplyStyle],
+        action: @escaping (SmartReplyStyle) -> Void
+    ) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(styles) { style in
+                    Button {
+                        action(style)
+                    } label: {
+                        Label(style.title, systemImage: style.systemImage)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Color(white: 0.22))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 7)
+                            .background(Color.white.opacity(0.9))
+                            .clipShape(Capsule())
+                            .overlay(
+                                Capsule()
+                                    .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(String(localized: "Rewrites the latest reply in this style."))
+                }
+            }
+            .padding(.leading, 4)
+            .padding(.trailing, 12)
+        }
+        .frame(maxWidth: 320, alignment: .leading)
+        .padding(.top, 2)
     }
 
     @ViewBuilder
