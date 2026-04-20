@@ -247,7 +247,8 @@ final class LLMEngine {
         let mlxGenerateParameters = makeMlxGenerateParameters(
             topP: effectiveTopP,
             temperature: effectiveTemperature,
-            maxTokens: effectiveMaxTokens
+            maxTokens: effectiveMaxTokens,
+            modelID: model.id
         )
         #endif
         // Capture state on MainActor
@@ -439,7 +440,8 @@ final class LLMEngine {
         let mlxGenerateParameters = makeMlxGenerateParameters(
             topP: effectiveTopP,
             temperature: effectiveTemperature,
-            maxTokens: effectiveMaxTokens
+            maxTokens: effectiveMaxTokens,
+            modelID: model.id
         )
         let freshMlxSession = model.engine == .mlx
             ? try await self.makeFreshMlxSession(
@@ -696,6 +698,11 @@ private extension LLMEngine {
             state = .error(message: "MLX is not available on the simulator.")
             throw LLMError.modelNotAvailable("MLX is not available on the simulator.")
             #else
+            if model.requiresUnsupportedMLXQuantization {
+                let message = "This model uses 1-bit MLX quantization, which is not supported by the current MLX runtime."
+                state = .error(message: message)
+                throw LLMError.modelNotAvailable(message)
+            }
             if UIDevice.current.userInterfaceIdiom == .phone && model.requiresLargeDeviceOnPhone {
                 let message = "This model requires an iPad Pro or Mac. It exceeds the practical memory budget for iPhone."
                 state = .error(message: message)
@@ -811,6 +818,13 @@ private extension LLMEngine {
     private func loadMlxContainer(modelID: String) async throws -> ModelContainer {
         let persistentPath = MLXStorage.modelDirectory(for: modelID)
         if FileManager.default.fileExists(atPath: persistentPath.path) {
+            if ModelInfo.vlmMLXModelIDs.contains(modelID) {
+                return try await VLMModelFactory.shared.loadContainer(
+                    from: persistentPath,
+                    using: #huggingFaceTokenizerLoader()
+                )
+            }
+
             return try await loadModelContainer(from: persistentPath, using: #huggingFaceTokenizerLoader())
         }
 
@@ -822,12 +836,17 @@ private extension LLMEngine {
     private func makeMlxGenerateParameters(
         topP: Double,
         temperature: Double,
-        maxTokens: Int
+        maxTokens: Int,
+        modelID: String
     ) -> GenerateParameters {
-        GenerateParameters(
-            maxTokens: maxTokens,
+        let isVisionModel = ModelInfo.vlmMLXModelIDs.contains(modelID)
+        return GenerateParameters(
+            maxTokens: isVisionModel && UIDevice.current.userInterfaceIdiom == .phone ? min(maxTokens, 192) : maxTokens,
+            maxKVSize: isVisionModel ? 512 : nil,
+            kvBits: isVisionModel ? 4 : nil,
             temperature: Float(temperature),
-            topP: Float(topP)
+            topP: Float(topP),
+            prefillStepSize: isVisionModel ? 128 : 512
         )
     }
 
@@ -912,11 +931,33 @@ private extension LLMEngine {
 
 #if !targetEnvironment(simulator)
 private extension LLMEngine {
+    nonisolated static let mlxVisionImageMaxDimension: CGFloat = 512
+
     nonisolated static func makeMlxInputImage(from image: UIImage) throws -> UserInput.Image {
-        guard let ciImage = CIImage(image: image) else {
+        let preparedImage = downsampleMlxVisionImageIfNeeded(image)
+        guard let ciImage = CIImage(image: preparedImage) else {
             throw LLMError.generationFailed("Unable to prepare image for MLX.")
         }
         return .ciImage(ciImage)
+    }
+
+    nonisolated static func downsampleMlxVisionImageIfNeeded(_ image: UIImage) -> UIImage {
+        let pixelWidth = image.size.width * image.scale
+        let pixelHeight = image.size.height * image.scale
+        let longestEdge = max(pixelWidth, pixelHeight)
+        guard longestEdge > mlxVisionImageMaxDimension else { return image }
+
+        let scale = mlxVisionImageMaxDimension / longestEdge
+        let targetSize = CGSize(
+            width: max(1, floor(pixelWidth * scale)),
+            height: max(1, floor(pixelHeight * scale))
+        )
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: targetSize, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: targetSize))
+        }
     }
 }
 #endif

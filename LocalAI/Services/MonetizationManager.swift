@@ -15,36 +15,51 @@ enum PremiumFeature: String, CaseIterable, Identifiable {
     case unlimitedDocuments
     case voiceMode
     case imageInput
+    case savedPrompts
+    case conversationExport
+    case chatFolders
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .allModels:
-            return "All Models"
+            return String(localized: "All Models")
         case .advancedPersonality:
-            return "Advanced Personality"
+            return String(localized: "Advanced Personality")
         case .unlimitedDocuments:
-            return "Unlimited Document Chat"
+            return String(localized: "Unlimited Document Chat")
         case .voiceMode:
-            return "Conversation Mode"
+            return String(localized: "Conversation Mode")
         case .imageInput:
-            return "Image Input"
+            return String(localized: "Image Input")
+        case .savedPrompts:
+            return String(localized: "Prompt Library")
+        case .conversationExport:
+            return String(localized: "Conversation Export")
+        case .chatFolders:
+            return String(localized: "Chat Folders")
         }
     }
 
     var subtitle: String {
         switch self {
         case .allModels:
-            return "Unlock the full local model catalog, including higher-quality and specialty models."
+            return String(localized: "Unlock the full local model catalog, including higher-quality and specialty models.")
         case .advancedPersonality:
-            return "Use custom system prompts, response tuning, and deeper control over how the assistant behaves."
+            return String(localized: "Use custom system prompts, response tuning, and deeper control over how the assistant behaves.")
         case .unlimitedDocuments:
-            return "Attach more than one document per chat and build richer local research workflows."
+            return String(localized: "Attach more than one document per chat and build richer local research workflows.")
         case .voiceMode:
-            return "Keep the conversation going hands-free with automatic listen and spoken replies."
+            return String(localized: "Keep the conversation going hands-free with automatic listen and spoken replies.")
         case .imageInput:
-            return "Attach photos and ask questions about what you see — powered by on-device vision."
+            return String(localized: "Attach photos and ask questions about what you see — powered by on-device vision.")
+        case .savedPrompts:
+            return String(localized: "Save up to 20 named system prompts and switch AI personas instantly.")
+        case .conversationExport:
+            return String(localized: "Export any chat as Markdown or plain text and share it anywhere.")
+        case .chatFolders:
+            return String(localized: "Organize conversations into named folders to keep your chats tidy.")
         }
     }
 
@@ -60,6 +75,12 @@ enum PremiumFeature: String, CaseIterable, Identifiable {
             return "waveform"
         case .imageInput:
             return "photo.fill"
+        case .savedPrompts:
+            return "books.vertical.fill"
+        case .conversationExport:
+            return "square.and.arrow.up.fill"
+        case .chatFolders:
+            return "folder.fill"
         }
     }
 }
@@ -68,6 +89,7 @@ enum PremiumFeature: String, CaseIterable, Identifiable {
 @Observable
 final class MonetizationManager {
     static let freeDailyMessageLimitRange = 6...10
+
     static let productIDs = [
         "ownai.pro.monthly.v2",
         "ownai.pro.yearly.v2",
@@ -109,7 +131,20 @@ final class MonetizationManager {
     @ObservationIgnored
     private var updatesTask: Task<Void, Never>?
 
+    #if DEBUG
+    var debugProEnabled = UserDefaults.standard.bool(forKey: "monetization.debugProEnabled") {
+        didSet {
+            UserDefaults.standard.set(debugProEnabled, forKey: "monetization.debugProEnabled")
+        }
+    }
+    #endif
+
     var hasPro: Bool {
+        #if DEBUG
+        if debugProEnabled {
+            return true
+        }
+        #endif
         return !purchasedProductIDs.isEmpty
     }
 
@@ -135,7 +170,7 @@ final class MonetizationManager {
             products = fetchedProducts.sorted(by: productSortOrder)
             purchaseErrorMessage = nil
         } catch {
-            purchaseErrorMessage = "Could not load upgrade options right now."
+            purchaseErrorMessage = String(localized: "Could not load upgrade options right now.")
         }
     }
 
@@ -159,7 +194,7 @@ final class MonetizationManager {
             switch result {
             case .success(let verification):
                 guard case .verified(let transaction) = verification else {
-                    purchaseErrorMessage = "Purchase verification failed."
+                    purchaseErrorMessage = String(localized: "Purchase verification failed.")
                     return false
                 }
                 await transaction.finish()
@@ -169,7 +204,7 @@ final class MonetizationManager {
             case .userCancelled, .pending:
                 return false
             @unknown default:
-                purchaseErrorMessage = "Purchase could not be completed."
+                purchaseErrorMessage = String(localized: "Purchase could not be completed.")
                 return false
             }
         } catch {
@@ -184,7 +219,7 @@ final class MonetizationManager {
             await refreshEntitlements()
             purchaseErrorMessage = nil
         } catch {
-            purchaseErrorMessage = "Could not restore purchases right now."
+            purchaseErrorMessage = String(localized: "Could not restore purchases right now.")
         }
     }
 
@@ -194,7 +229,8 @@ final class MonetizationManager {
 
     func canUse(_ feature: PremiumFeature) -> Bool {
         switch feature {
-        case .allModels, .advancedPersonality, .unlimitedDocuments, .voiceMode, .imageInput:
+        case .allModels, .advancedPersonality, .unlimitedDocuments, .voiceMode, .imageInput,
+             .savedPrompts, .conversationExport, .chatFolders:
             return hasPro
         }
     }

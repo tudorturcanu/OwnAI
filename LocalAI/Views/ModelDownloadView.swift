@@ -49,7 +49,7 @@ struct ModelDownloadView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Model Families")
+                    Text(String(localized: "Model Families"))
                         .font(.headline)
                         .foregroundStyle(Color(white: 0.2))
 
@@ -68,7 +68,7 @@ struct ModelDownloadView: View {
             .padding(.bottom, 40)
         }
         .background(Color(white: 0.96))
-        .navigationTitle("Manage Models")
+        .navigationTitle(String(localized: "Manage Models"))
         .navigationBarTitleDisplayMode(.large)
     }
     
@@ -113,7 +113,7 @@ struct ModelDownloadView: View {
                 Image(systemName: "applewatch.radiowaves.left.and.right")
                     .foregroundStyle(.orange.opacity(0.85))
 
-                Text("Using Apple Watch too? Smaller models usually reply faster because requests still run on your iPhone.")
+                Text(String(localized: "Using Apple Watch too? Smaller models usually reply faster because requests still run on your iPhone."))
                     .font(.caption)
                     .foregroundStyle(Color(white: 0.45))
             }
@@ -159,16 +159,16 @@ struct ModelFamilyDetailView: View {
                     HStack(spacing: 10) {
                         Image(systemName: family.symbolName)
                             .foregroundStyle(.blue)
-                        Text(family.title)
+                        Text(LocalizedStringKey(family.title))
                             .font(.title3.bold())
                             .foregroundStyle(Color(white: 0.1))
                     }
 
-                    Text(family.subtitle)
+                    Text(LocalizedStringKey(family.subtitle))
                         .font(.subheadline)
                         .foregroundStyle(Color(white: 0.45))
 
-                    Text(familyGuidance)
+                    Text(LocalizedStringKey(familyGuidance))
                         .font(.caption)
                         .foregroundStyle(Color(white: 0.5))
 
@@ -197,7 +197,7 @@ struct ModelFamilyDetailView: View {
             .padding(.bottom, 40)
         }
         .background(Color(white: 0.96))
-        .navigationTitle(family.title)
+        .navigationTitle(LocalizedStringKey(family.title))
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -256,12 +256,12 @@ struct FamilyCard: View {
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
-                        Text(group.family.title)
+                        Text(LocalizedStringKey(group.family.title))
                             .font(.title3.bold())
                             .foregroundStyle(Color(white: 0.1))
 
                         if selectedModel != nil {
-                            Text("ACTIVE")
+                             Text(String(localized: "ACTIVE"))
                                 .font(.caption2.bold())
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 6)
@@ -271,7 +271,7 @@ struct FamilyCard: View {
                         }
                     }
 
-                    Text(group.family.subtitle)
+                    Text(LocalizedStringKey(group.family.subtitle))
                         .font(.subheadline)
                         .foregroundStyle(Color(white: 0.5))
                         .lineLimit(2)
@@ -287,27 +287,27 @@ struct FamilyCard: View {
 
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 10) {
-                    InfoTag(icon: "square.stack.3d.up", text: modelCountText)
-                    InfoTag(icon: "externaldrive", text: group.sizeRangeText)
+                    InfoTag(icon: "square.stack.3d.up", text: LocalizedStringKey(modelCountText))
+                    InfoTag(icon: "externaldrive", text: LocalizedStringKey(group.sizeRangeText))
                     if group.downloadedCount > 0 {
-                        InfoTag(icon: "checkmark.circle.fill", text: readyText, isHighlighted: true)
+                        InfoTag(icon: "checkmark.circle.fill", text: LocalizedStringKey(readyText), isHighlighted: true)
                     }
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 10) {
-                        InfoTag(icon: "square.stack.3d.up", text: modelCountText)
-                        InfoTag(icon: "externaldrive", text: group.sizeRangeText)
+                        InfoTag(icon: "square.stack.3d.up", text: LocalizedStringKey(modelCountText))
+                        InfoTag(icon: "externaldrive", text: LocalizedStringKey(group.sizeRangeText))
                     }
 
                     if group.downloadedCount > 0 {
-                        InfoTag(icon: "checkmark.circle.fill", text: readyText, isHighlighted: true)
+                        InfoTag(icon: "checkmark.circle.fill", text: LocalizedStringKey(readyText), isHighlighted: true)
                     }
                 }
             }
 
             if let recommendedModel {
-                InfoTag(icon: "sparkles", text: String(format: String(localized: "Recommended: %@", defaultValue: "Recommended: %@"), recommendedModel.name), isHighlighted: true)
+                InfoTag(icon: "sparkles", text: LocalizedStringKey(String(format: String(localized: "Recommended: %@", defaultValue: "Recommended: %@"), recommendedModel.name)), isHighlighted: true)
             }
 
             if let selectedModel {
@@ -334,6 +334,7 @@ struct ModelCard: View {
     @Environment(ModelManager.self) private var modelManager
     @Environment(LLMEngine.self) private var llmEngine
     @Environment(MonetizationManager.self) private var monetizationManager
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var isHovered = false
     @State private var testResult: ModelQuickTestResult?
@@ -370,7 +371,7 @@ struct ModelCard: View {
                             .foregroundStyle(isAppleUnavailable ? Color(white: 0.4) : Color(white: 0.1))
                         
                         if model.isAppleFoundation && !isAppleUnavailable {
-                            Text("DEFAULT")
+                            Text(String(localized: "DEFAULT"))
                                 .font(.caption2.bold())
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 6)
@@ -393,14 +394,14 @@ struct ModelCard: View {
                             .lineLimit(3)
                     } else {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(model.shortDescription)
+                            Text(LocalizedStringKey(model.shortDescription))
                                 .font(.subheadline)
                                 .foregroundStyle(Color(white: 0.5))
                                 .lineLimit(4)
                                 .fixedSize(horizontal: false, vertical: true)
 
                             if isPremiumModel && !monetizationManager.hasPro {
-                                InfoTag(icon: "crown.fill", text: String(localized: "Pro"), isHighlighted: true)
+                                InfoTag(icon: "crown.fill", text: LocalizedStringKey(String(localized: "Pro")), isHighlighted: true)
                             }
                         }
                     }
@@ -475,6 +476,7 @@ struct ModelCard: View {
         }
         .sheet(item: $upgradeFeature) { feature in
             UpgradeView(feature: feature)
+                .environment(monetizationManager)
         }
     }
     
@@ -546,11 +548,11 @@ struct ModelCard: View {
                         .foregroundStyle(Color(white: 0.5))
                 }
                 if !hasSpace {
-                    Text("Low storage may prevent downloads or slow performance.")
+                    Text(String(localized: "Low storage may prevent downloads or slow performance."))
                         .font(.caption2)
                         .foregroundStyle(.orange)
                 }
-                Text("Inference privacy: Prompts and document text stay on-device and are not sent to third-party AI services.")
+                Text(String(localized: "Inference privacy: Prompts and document text stay on-device and are not sent to third-party AI services."))
                     .font(.caption2)
                     .foregroundStyle(Color(white: 0.45))
             }
@@ -577,7 +579,7 @@ struct ModelCard: View {
     @ViewBuilder
     private var modelInfoTags: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(modelManager.isOnboardingRecommended(model) ? modelManager.deviceFitSummary(for: model) : model.recommendedFor)
+            Text(LocalizedStringKey(modelManager.isOnboardingRecommended(model) ? modelManager.deviceFitSummary(for: model) : model.recommendedFor))
                 .font(.caption)
                 .foregroundStyle(modelManager.isOnboardingRecommended(model) ? Color.green.opacity(0.95) : Color(white: 0.42))
                 .fixedSize(horizontal: false, vertical: true)
@@ -585,38 +587,40 @@ struct ModelCard: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     if modelManager.isOnboardingRecommended(model) {
-                        InfoTag(icon: "sparkles", text: String(localized: "Recommended"), isHighlighted: true)
+                        InfoTag(icon: "sparkles", text: LocalizedStringKey(String(localized: "Recommended")), isHighlighted: true)
                     }
 
                     if model.isAppleFoundation {
-                        InfoTag(icon: "apple.logo", text: String(localized: "Built-in"), isHighlighted: true)
+                        InfoTag(icon: "apple.logo", text: LocalizedStringKey(String(localized: "Built-in")), isHighlighted: true)
                     } else {
-                        InfoTag(icon: "externaldrive", text: String(format: String(localized: "%.1f GB", defaultValue: "%.1f GB"), model.sizeGB))
+                        InfoTag(icon: "externaldrive", text: LocalizedStringKey(String(format: String(localized: "%.1f GB", defaultValue: "%.1f GB"), model.sizeGB)))
                     }
 
                     InfoTag(
                         icon: model.isAppleFoundation ? "hand.raised.fill" : "lock.shield",
-                        text: model.privacyLabel,
+                        text: LocalizedStringKey(model.privacyLabel),
                         isHighlighted: !model.isAppleFoundation
                     )
 
                     ForEach(Array(model.badges.prefix(3)), id: \.self) { badge in
                         InfoTag(
                             icon: badge.iconName,
-                            text: badge.title,
+                        text: LocalizedStringKey(badge.title),
                             isHighlighted: badge.isHighlighted
                         )
                     }
 
                     if model.downloadState.isDownloaded {
-                        InfoTag(icon: "checkmark.circle.fill", text: String(localized: "Ready"), isHighlighted: true)
+                        InfoTag(icon: "checkmark.circle.fill", text: LocalizedStringKey(String(localized: "Ready")), isHighlighted: true)
                     }
 
-                    InfoTag(
-                        icon: model.currentDeviceFit.iconName,
-                        text: model.currentDeviceFit.title,
-                        isHighlighted: model.currentDeviceFit.isHighlighted
-                    )
+                    if model.currentDeviceFit != .supported {
+                        InfoTag(
+                            icon: model.currentDeviceFit.iconName,
+                            text: LocalizedStringKey(model.currentDeviceFit.title),
+                            isHighlighted: model.currentDeviceFit.isHighlighted
+                        )
+                    }
 
                     if model.supportsThinkingToggle {
                         thinkingPill
@@ -651,7 +655,7 @@ struct ModelCard: View {
             }
             .buttonStyle(.plain)
         } else {
-            InfoTag(icon: "brain.head.profile", text: String(localized: "Thinking"))
+            InfoTag(icon: "brain.head.profile", text: LocalizedStringKey(String(localized: "Thinking")))
         }
     }
 
@@ -765,6 +769,8 @@ struct ModelCard: View {
             }
         case .repair:
             modelManager.repairModel(model.id, selectWhenFinished: true)
+        case .cellularRestricted:
+            dismiss()
         }
     }
 }
@@ -795,11 +801,11 @@ struct ModelConsentSheet: View {
                 }
                 .padding(20)
             }
-            .navigationTitle("Data & Privacy")
+            .navigationTitle(String(localized: "Data & Privacy"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                    Button(String(localized: "Cancel")) {
                         dismiss()
                         onCancel()
                     }
@@ -826,7 +832,7 @@ struct ModelConsentSheet: View {
                             .clipShape(RoundedRectangle(cornerRadius: 14))
                     }
                     
-                    Text("You can change models anytime in Settings.")
+                    Text(String(localized: "You can change models anytime in Settings."))
                         .font(.caption)
                         .foregroundStyle(Color(white: 0.5))
                 }
@@ -856,12 +862,12 @@ struct ModelConsentSheet: View {
             HStack(spacing: 8) {
                 Image(systemName: "hand.raised.fill")
                     .foregroundStyle(.orange)
-                Text("Data Sent to Apple Inc.")
+                Text(String(localized: "Data Sent to Apple Inc."))
                     .font(.headline)
                     .foregroundStyle(Color(white: 0.2))
             }
             
-            Text("When you use Apple Intelligence, the following personal data may be sent to **Apple Inc.** (including Apple Private Cloud Compute) to generate AI responses:")
+            Text(String(localized: "When you use Apple Intelligence, the following personal data may be sent to Apple Inc. (including Apple Private Cloud Compute) to generate AI responses:"))
                 .font(.subheadline)
                 .foregroundStyle(Color(white: 0.5))
             
@@ -871,7 +877,7 @@ struct ModelConsentSheet: View {
                 dataRow(icon: "text.quote", text: String(localized: "Conversation context and history"))
             }
             
-            Text("By tapping \"Allow Data Sharing & Continue\", you authorize this data transfer to Apple Inc. for AI processing.")
+            Text(String(localized: "By tapping \"Allow Data Sharing & Continue\", you authorize this data transfer to Apple Inc. for AI processing."))
                 .font(.caption)
                 .foregroundStyle(Color(white: 0.45))
                 .padding(.top, 4)
@@ -889,12 +895,12 @@ struct ModelConsentSheet: View {
             HStack(spacing: 8) {
                 Image(systemName: "lock.shield.fill")
                     .foregroundStyle(.green)
-                Text("Data NOT Sent to Any Third Party")
+                Text(String(localized: "Data NOT Sent to Any Third Party"))
                     .font(.headline)
                     .foregroundStyle(Color(white: 0.2))
             }
             
-            Text("This model runs **100% on your device**. The following data is processed locally and is **never sent** to \(model.providerName) or any third-party AI service:")
+            Text(String(format: String(localized: "This model runs 100%% on your device. The following data is processed locally and is never sent to %@ or any third-party AI service:", defaultValue: "This model runs 100%% on your device. The following data is processed locally and is never sent to %@ or any third-party AI service:"), model.providerName))
                 .font(.subheadline)
                 .foregroundStyle(Color(white: 0.5))
             
@@ -908,7 +914,7 @@ struct ModelConsentSheet: View {
             HStack(spacing: 6) {
                 Image(systemName: "info.circle.fill")
                     .foregroundStyle(.blue)
-                Text("All AI inference happens on your device. No personal data leaves your device for AI processing.")
+                Text(String(localized: "All AI inference happens on your device. No personal data leaves your device for AI processing."))
                     .font(.caption)
                     .foregroundStyle(Color(white: 0.45))
             }
@@ -930,12 +936,12 @@ struct ModelConsentSheet: View {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.down.circle.fill")
                     .foregroundStyle(.blue)
-                Text("Model Download Data")
+                Text(String(localized: "Model Download Data"))
                     .font(.headline)
                     .foregroundStyle(Color(white: 0.2))
             }
             
-            Text("To download the model files, a network request is made to **Hugging Face Inc.** (model hosting provider). This request may include:")
+            Text(String(localized: "To download the model files, a network request is made to Hugging Face Inc. (model hosting provider). This request may include:"))
                 .font(.subheadline)
                 .foregroundStyle(Color(white: 0.5))
             
@@ -944,7 +950,7 @@ struct ModelConsentSheet: View {
                 dataRow(icon: "gear", text: String(localized: "Device request headers (e.g. OS version)"))
             }
             
-            Text("No chat messages, prompts, documents, or any personal content is sent during downloads.")
+            Text(String(localized: "No chat messages, prompts, documents, or any personal content is sent during downloads."))
                 .font(.caption)
                 .foregroundStyle(Color(white: 0.45))
                 .padding(.top, 4)
@@ -962,24 +968,24 @@ struct ModelConsentSheet: View {
             HStack(spacing: 8) {
                 Image(systemName: "doc.text.fill")
                     .foregroundStyle(.blue)
-                Text("Terms & Conditions")
+                Text(String(localized: "Terms & Conditions"))
                     .font(.headline)
                     .foregroundStyle(Color(white: 0.2))
             }
             
-            Text("By continuing, you agree to the terms and conditions for this model, as well as the app's Terms of Service and Privacy Policy.")
+            Text(String(localized: "By continuing, you agree to the terms and conditions for this model, as well as the app's Terms of Service and Privacy Policy."))
                 .font(.subheadline)
                 .foregroundStyle(Color(white: 0.5))
             
             VStack(alignment: .leading, spacing: 8) {
                 if let termsURL = model.termsURL {
-                    Link("Model Terms", destination: termsURL)
+                    Link(String(localized: "Model Terms"), destination: termsURL)
                 }
                 if let privacyURL = model.privacyURL {
-                    Link("Model Privacy", destination: privacyURL)
+                    Link(String(localized: "Model Privacy"), destination: privacyURL)
                 }
-                Link("App Terms of Service", destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/terms.html")!)
-                Link("App Privacy Policy", destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/privacy.html")!)
+                Link(String(localized: "App Terms of Service"), destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/terms.html")!)
+                Link(String(localized: "App Privacy Policy"), destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/privacy.html")!)
             }
             .font(.subheadline.weight(.medium))
             .foregroundStyle(.blue)
@@ -1021,7 +1027,7 @@ struct ModelConsentSheet: View {
 
 struct InfoTag: View {
     let icon: String
-    let text: String
+    let text: LocalizedStringKey
     var isHighlighted: Bool = false
     
     var body: some View {
@@ -1055,12 +1061,12 @@ struct BuiltInButton: View {
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.body.bold())
-                    Text("Selected")
+                    Text(String(localized: "Selected"))
                         .fontWeight(.semibold)
                 } else {
                     Image(systemName: "circle")
                         .font(.body)
-                    Text("Use This Model")
+                    Text(String(localized: "Use This Model"))
                         .fontWeight(.medium)
                 }
             }
@@ -1096,12 +1102,12 @@ struct SelectButton: View {
                 if isSelected {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.body.bold())
-                    Text("Selected")
+                    Text(String(localized: "Selected"))
                         .fontWeight(.semibold)
                 } else {
                     Image(systemName: "circle")
                         .font(.body)
-                    Text("Select")
+                    Text(String(localized: "Select"))
                         .fontWeight(.medium)
                 }
             }
@@ -1138,9 +1144,9 @@ struct DownloadButton: View {
                     .font(.body.bold())
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Download")
+                    Text(String(localized: "Download"))
                         .font(.subheadline.weight(.semibold))
-                    Text("\(sizeLabel) • Ready when it finishes")
+                    Text(String(format: String(localized: "%@ • Ready when it finishes", defaultValue: "%@ • Ready when it finishes"), sizeLabel))
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.78))
                         .lineLimit(1)
@@ -1174,7 +1180,7 @@ struct UpgradeActionButton: View {
             HStack(spacing: 8) {
                 Image(systemName: "crown.fill")
                     .font(.body.bold())
-                Text("Unlock Pro")
+                Text(String(localized: "Unlock Pro"))
                     .fontWeight(.semibold)
             }
             .foregroundStyle(.white)
@@ -1232,7 +1238,7 @@ struct DownloadingButton: View {
     private var statusLine: String {
         guard let speedBytesPerSecond,
               speedBytesPerSecond > 50_000 else {
-            return "Measuring download speed..."
+            return String(localized: "Measuring download speed...")
         }
 
         let speedLabel = Self.speedFormatter.string(fromByteCount: Int64(speedBytesPerSecond)) + "/s"
@@ -1247,7 +1253,7 @@ struct DownloadingButton: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 8) {
-                    Text("Downloading")
+                    Text(String(localized: "Downloading"))
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Color.blue)
 
@@ -1368,11 +1374,11 @@ struct DeleteButton: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(ActionButtonStyle())
-        .confirmationDialog("Delete Model?", isPresented: $showConfirmation) {
-            Button("Delete", role: .destructive, action: action)
-            Button("Cancel", role: .cancel) {}
+        .confirmationDialog(String(localized: "Delete Model?"), isPresented: $showConfirmation) {
+            Button(String(localized: "Delete"), role: .destructive, action: action)
+            Button(String(localized: "Cancel"), role: .cancel) {}
         } message: {
-            Text("This will remove the downloaded model from your device. You can download it again anytime.")
+            Text(String(localized: "This will remove the downloaded model from your device. You can download it again anytime."))
         }
     }
 }

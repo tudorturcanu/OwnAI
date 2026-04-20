@@ -1,4 +1,0 @@
-module PartialJSONDecoder {
-header "PartialJSONDecoder-Swift.h"
-export *
-}

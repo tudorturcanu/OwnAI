@@ -14,6 +14,11 @@ struct MessageBubble: View {
     let showsContinue: Bool
     let onContinue: (() -> Void)?
     let recoveryAction: RecoveryAction?
+    let onEdit: ((ChatMessage) -> Void)?
+    let onRegenerateMore: ((ChatMessage) -> Void)?
+    let onRegenerateLess: ((ChatMessage) -> Void)?
+    let onBranchFromHere: ((ChatMessage) -> Void)?
+    let onTogglePin: ((ChatMessage) -> Void)?
     @State private var appeared = false
     @State private var isThinkingExpanded = false
     @State private var showCopied = false
@@ -25,12 +30,22 @@ struct MessageBubble: View {
         message: ChatMessage,
         showsContinue: Bool = false,
         onContinue: (() -> Void)? = nil,
-        recoveryAction: RecoveryAction? = nil
+        recoveryAction: RecoveryAction? = nil,
+        onEdit: ((ChatMessage) -> Void)? = nil,
+        onRegenerateMore: ((ChatMessage) -> Void)? = nil,
+        onRegenerateLess: ((ChatMessage) -> Void)? = nil,
+        onBranchFromHere: ((ChatMessage) -> Void)? = nil,
+        onTogglePin: ((ChatMessage) -> Void)? = nil
     ) {
         self.message = message
         self.showsContinue = showsContinue
         self.onContinue = onContinue
         self.recoveryAction = recoveryAction
+        self.onEdit = onEdit
+        self.onRegenerateMore = onRegenerateMore
+        self.onRegenerateLess = onRegenerateLess
+        self.onBranchFromHere = onBranchFromHere
+        self.onTogglePin = onTogglePin
     }
     
     var body: some View {
@@ -168,6 +183,18 @@ struct MessageBubble: View {
 
     private var messageCard: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if message.isPinned {
+                HStack(spacing: 6) {
+                    Image(systemName: "pin.fill")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                    Text("Pinned")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+            }
             messageContent
 
             if message.isStreaming {
@@ -210,6 +237,63 @@ struct MessageBubble: View {
                 Label("Copy", systemImage: "doc.on.doc")
             }
 
+            Button {
+                UIPasteboard.general.string = markdownRepresentation
+                let generator = UIImpactFeedbackGenerator(style: .light)
+                generator.impactOccurred()
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    showCopied = true
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        showCopied = false
+                    }
+                }
+            } label: {
+                Label("Copy as Markdown", systemImage: "doc.plaintext")
+            }
+
+            if let onTogglePin {
+                Button {
+                    onTogglePin(message)
+                } label: {
+                    Label(message.isPinned ? "Unpin" : "Pin", systemImage: message.isPinned ? "pin.slash" : "pin")
+                }
+            }
+
+            if message.role == .user, let onEdit {
+                Button {
+                    onEdit(message)
+                } label: {
+                    Label("Edit & Re-run", systemImage: "pencil")
+                }
+            }
+
+            if message.role == .assistant {
+                if let onRegenerateMore {
+                    Button {
+                        onRegenerateMore(message)
+                    } label: {
+                        Label("Regenerate (More)", systemImage: "plus.magnifyingglass")
+                    }
+                }
+                if let onRegenerateLess {
+                    Button {
+                        onRegenerateLess(message)
+                    } label: {
+                        Label("Regenerate (Less)", systemImage: "minus.magnifyingglass")
+                    }
+                }
+            }
+
+            if let onBranchFromHere {
+                Button {
+                    onBranchFromHere(message)
+                } label: {
+                    Label("Branch from Here", systemImage: "arrow.branch")
+                }
+            }
+
             if message.role == .assistant {
                 Button(role: .destructive) {
                     reportContent(message.content)
@@ -217,6 +301,23 @@ struct MessageBubble: View {
                     Label("Report Inappropriate Content", systemImage: "flag")
                 }
             }
+        }
+    }
+
+    private var markdownRepresentation: String {
+        let trimmed = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch message.role {
+        case .user:
+            if message.imageFileName != nil {
+                return "**You (with image):**\n\n\(trimmed)"
+            }
+            return "**You:**\n\n\(trimmed)"
+        case .assistant:
+            if let thinking = message.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !thinking.isEmpty {
+                return "**Assistant:**\n\n\(trimmed)\n\n<details>\n<summary>Thoughts</summary>\n\n\(thinking)\n\n</details>"
+            }
+            return "**Assistant:**\n\n\(trimmed)"
         }
     }
 

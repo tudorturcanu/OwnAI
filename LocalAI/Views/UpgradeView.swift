@@ -30,11 +30,11 @@ struct UpgradeView: View {
                 .padding(20)
             }
             .background(Color(white: 0.97))
-            .navigationTitle("Upgrade to Pro")
+            .navigationTitle(String(localized: "Upgrade to Pro"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") {
+                    Button(String(localized: "Close")) {
                         dismiss()
                     }
                     .disabled(monetizationManager.isProcessingPurchase)
@@ -90,7 +90,7 @@ struct UpgradeView: View {
                 }
             }
 
-            Text("Unlock the most capable private workflow in Own AI with more models, richer document chat, deeper control, and hands-free use.")
+            Text(String(localized: "Unlock the most capable private workflow in Own AI with more models, richer document chat, deeper control, and hands-free use."))
                 .font(.subheadline)
                 .foregroundStyle(Color(white: 0.48))
         }
@@ -102,7 +102,7 @@ struct UpgradeView: View {
 
     private var featureList: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Included in Pro")
+            Text(String(localized: "Included in Pro"))
                 .font(.headline)
                 .foregroundStyle(Color(white: 0.2))
 
@@ -130,6 +130,24 @@ struct UpgradeView: View {
                     title: String(localized: "Hands-free conversation mode"),
                     subtitle: String(localized: "Automatic listen and spoken replies for faster voice use.")
                 )
+                Divider().padding(.leading, 52)
+                upgradeRow(
+                    icon: "books.vertical.fill",
+                    title: String(localized: "Prompt Library"),
+                    subtitle: String(localized: "Save and switch between up to 20 named AI personas instantly.")
+                )
+                Divider().padding(.leading, 52)
+                upgradeRow(
+                    icon: "square.and.arrow.up.fill",
+                    title: String(localized: "Conversation Export"),
+                    subtitle: String(localized: "Export chats as Markdown or plain text and share anywhere.")
+                )
+                Divider().padding(.leading, 52)
+                upgradeRow(
+                    icon: "folder.fill",
+                    title: String(localized: "Chat Folders"),
+                    subtitle: String(localized: "Organize conversations into named folders for a tidy history.")
+                )
             }
             .background(Color.white)
             .clipShape(RoundedRectangle(cornerRadius: 18))
@@ -140,21 +158,21 @@ struct UpgradeView: View {
     @ViewBuilder
     private var productsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Plans")
+            Text(String(localized: "Plans"))
                 .font(.headline)
                 .foregroundStyle(Color(white: 0.2))
 
             if monetizationManager.isLoadingProducts {
-                ProgressView("Loading plans…")
+                ProgressView(String(localized: "Loading plans…"))
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(24)
                     .background(Color.white)
                     .clipShape(RoundedRectangle(cornerRadius: 18))
             } else if monetizationManager.products.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Plans will appear here soon.")
+                    Text(String(localized: "Plans will appear here soon."))
                         .font(.subheadline.weight(.semibold))
-                    Text("This build does not have live App Store products available yet.")
+                    Text(String(localized: "This build does not have live App Store products available yet."))
                         .font(.caption)
                         .foregroundStyle(Color(white: 0.5))
                 }
@@ -182,12 +200,12 @@ struct UpgradeView: View {
     private var restoreSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             if monetizationManager.hasPro {
-                Text("Pro is already unlocked on this device.")
+                Text(String(localized: "Pro is already unlocked on this device."))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.green)
             }
 
-            Button("Restore Purchases") {
+            Button(String(localized: "Restore Purchases")) {
                 Task {
                     await monetizationManager.restorePurchases()
                 }
@@ -201,24 +219,24 @@ struct UpgradeView: View {
 
     private var subscriptionDisclosureSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Subscription Information")
+            Text(String(localized: "Subscription Information"))
                 .font(.headline)
                 .foregroundStyle(Color(white: 0.2))
 
             VStack(alignment: .leading, spacing: 10) {
-                Text("Own AI Pro Monthly renews every month. Own AI Pro Yearly renews every year.")
+                Text(String(localized: "Own AI Pro Monthly renews every month. Own AI Pro Yearly renews every year."))
                     .font(.footnote)
                     .foregroundStyle(Color(white: 0.48))
                     .fixedSize(horizontal: false, vertical: true)
 
-                Text("Payment is charged to your Apple Account at confirmation. Auto-renewable subscriptions renew automatically unless canceled at least 24 hours before the end of the current period.")
+                Text(String(localized: "Payment is charged to your Apple Account at confirmation. Auto-renewable subscriptions renew automatically unless canceled at least 24 hours before the end of the current period."))
                     .font(.footnote)
                     .foregroundStyle(Color(white: 0.48))
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 16) {
-                    Link("Privacy Policy", destination: privacyPolicyURL)
-                    Link("Terms of Use (EULA)", destination: termsOfUseURL)
+                    Link(String(localized: "Privacy Policy"), destination: privacyPolicyURL)
+                    Link(String(localized: "Terms of Use (EULA)"), destination: termsOfUseURL)
                 }
                 .font(.footnote.weight(.semibold))
             }
@@ -240,11 +258,11 @@ struct UpgradeView: View {
                     .controlSize(.large)
                     .tint(.white)
 
-                Text("Processing purchase…")
+                Text(String(localized: "Processing purchase…"))
                     .font(.headline)
                     .foregroundStyle(.white)
 
-                Text("Please wait a moment.")
+                Text(String(localized: "Please wait a moment."))
                     .font(.subheadline)
                     .foregroundStyle(Color.white.opacity(0.85))
             }
@@ -292,7 +310,7 @@ struct UpgradeView: View {
                             .font(.headline)
                             .foregroundStyle(Color(white: 0.1))
                         if isRecommended {
-                            Text("BEST VALUE")
+                            Text(String(localized: "BEST VALUE"))
                                 .font(.caption2.bold())
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 6)
@@ -327,7 +345,7 @@ struct UpgradeView: View {
             } label: {
                 HStack {
                     Spacer()
-                    Text("Unlock Pro")
+                    Text(String(localized: "Unlock Pro"))
                         .font(.headline.weight(.semibold))
                     Spacer()
                 }

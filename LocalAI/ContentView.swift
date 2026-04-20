@@ -8,13 +8,18 @@
 import SwiftUI
 
 struct ContentView: View {
+    @Environment(LLMEngine.self) private var llmEngine
     @Environment(ChatHistoryManager.self) private var historyManager
     @Environment(ModelManager.self) private var modelManager
     @Environment(SpeechManager.self) private var speechManager
+    @Environment(MonetizationManager.self) private var monetizationManager
     @State private var showHistory = false
     @State private var showSettings = false
     @AppStorage("hasShownOnboarding") private var hasShownOnboarding = false
     @State private var showOnboarding = false
+    @State private var exportShareItems: [Any] = []
+    @State private var isExportShareSheetPresented = false
+    @State private var exportUpgradeFeature: PremiumFeature?
     
     var body: some View {
         NavigationStack {
@@ -34,6 +39,7 @@ struct ContentView: View {
                                     .foregroundStyle(Color(white: 0.3))
                                     .padding(8)
                             }
+                            .buttonStyle(.plain)
                             
                             Divider()
                                 .frame(height: 16)
@@ -48,6 +54,7 @@ struct ContentView: View {
                                     .foregroundStyle(Color(white: 0.3))
                                     .padding(8)
                             }
+                            .buttonStyle(.plain)
                         }
                         .background(Color(white: 0.95))
                         .clipShape(Capsule())
@@ -68,44 +75,77 @@ struct ContentView: View {
                                 }
                                 .foregroundStyle(Color(white: 0.2))
                             }
+                            .buttonStyle(.plain)
                             
 
                         }
                     }
                     
-                    // Right: New Chat
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            speechManager.stopSpeaking()
-                            withAnimation {
-                                historyManager.newConversation()
+                    // Right: Export + New Chat
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        HStack(spacing: 8) {
+                            // Export current conversation (Pro)
+                            if !historyManager.currentMessages.isEmpty {
+                                Button {
+                                    handleExportCurrentConversation()
+                                } label: {
+                                    Image(systemName: "square.and.arrow.up")
+                                        .font(.body.weight(.medium))
+                                        .foregroundStyle(Color(white: 0.3))
+                                        .frame(width: 32, height: 32)
+                                        .background(Color(white: 0.95))
+                                        .clipShape(Circle())
+                                }
+                                .buttonStyle(.plain)
                             }
-                        } label: {
-                            Image(systemName: "square.and.pencil")
-                                .font(.body.weight(.medium))
-                                .foregroundStyle(Color(white: 0.3))
-                                .frame(width: 32, height: 32)
-                                .background(Color(white: 0.95))
-                                .clipShape(Circle())
+
+                            Button {
+                                speechManager.stopSpeaking()
+                                withAnimation {
+                                    historyManager.newConversation()
+                                }
+                            } label: {
+                                Image(systemName: "square.and.pencil")
+                                    .font(.body.weight(.medium))
+                                    .foregroundStyle(Color(white: 0.3))
+                                    .frame(width: 32, height: 32)
+                                    .background(Color(white: 0.95))
+                                    .clipShape(Circle())
+                            }
+                            .buttonStyle(.plain)
                         }
                     }
                 }
         }
         .sheet(isPresented: $showHistory) {
             ChatHistoryView()
+                .environment(historyManager)
+                .environment(monetizationManager)
                 .environment(modelManager)
                 .environmentObject(modelManager)
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
+                .environment(llmEngine)
+                .environment(historyManager)
                 .environment(modelManager)
+                .environment(monetizationManager)
                 .environmentObject(modelManager)
         }
         .sheet(isPresented: $showOnboarding, onDismiss: { hasShownOnboarding = true }) {
             OnboardingView(isPresented: $showOnboarding)
+                .environment(llmEngine)
                 .environment(modelManager)
+                .environment(monetizationManager)
                 .environmentObject(modelManager)
                 .interactiveDismissDisabled()
+        }
+        .sheet(isPresented: $isExportShareSheetPresented, onDismiss: { exportShareItems = [] }) {
+            ShareSheet(items: exportShareItems)
+        }
+        .sheet(item: $exportUpgradeFeature) { feature in
+            UpgradeView(feature: feature)
+                .environment(monetizationManager)
         }
         .onAppear {
             if !hasShownOnboarding {
@@ -115,6 +155,29 @@ struct ContentView: View {
         .onOpenURL { url in
             handleIncomingURL(url)
         }
+    }
+
+    private func handleExportCurrentConversation() {
+        guard monetizationManager.canUse(.conversationExport) else {
+            exportUpgradeFeature = .conversationExport
+            return
+        }
+        guard let conversation = historyManager.conversations.first(where: {
+            $0.id == historyManager.currentConversationID
+        }) else { return }
+
+        let markdown = ConversationExporter.export(
+            messages: conversation.messages,
+            title: conversation.title,
+            format: .markdown
+        )
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(
+                ConversationExporter.fileName(title: conversation.title, format: .markdown)
+            )
+        try? markdown.write(to: tempURL, atomically: true, encoding: .utf8)
+        exportShareItems = [tempURL]
+        isExportShareSheetPresented = true
     }
 
     private func handleIncomingURL(_ url: URL) {

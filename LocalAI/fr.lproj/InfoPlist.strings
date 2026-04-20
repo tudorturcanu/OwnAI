@@ -2,3 +2,4 @@
 "NSCameraUsageDescription" = "Own Ai peut utiliser l’appareil photo pour vous permettre de prendre des photos et de les joindre à votre discussion.";
 "NSMicrophoneUsageDescription" = "Own Ai a besoin de l’accès au microphone pour transcrire votre voix en texte pour les conversations.";
 "NSSpeechRecognitionUsageDescription" = "Own Ai utilise la reconnaissance vocale pour convertir votre voix en texte localement sur votre appareil.";
+"NSPhotoLibraryUsageDescription" = "Own Ai a besoin d’accéder à votre bibliothèque de photos pour vous permettre de joindre des images à votre discussion.";

@@ -1,4 +1,0 @@
-module CNIODarwin {
-umbrella header "/Users/teo/Library/Developer/Xcode/DerivedData/LocalAI-dzqopfsfasrfbldiyljbzvqrtpme/SourcePackages/checkouts/swift-nio/Sources/CNIODarwin/include/CNIODarwin.h"
-export *
-}

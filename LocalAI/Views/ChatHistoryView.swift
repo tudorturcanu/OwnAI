@@ -10,19 +10,44 @@ import SwiftUI
 struct ChatHistoryView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(ChatHistoryManager.self) private var historyManager
+    @Environment(MonetizationManager.self) private var monetizationManager
+
     @State private var searchText = ""
-    
+    @State private var selectedFolderID: UUID? = nil    // nil = "All"
+    @State private var exportConversation: ChatConversation?
+    @State private var exportShareItems: [Any] = []
+    @State private var isShareSheetPresented = false
+    @State private var upgradeFeature: PremiumFeature?
+    @State private var isNewFolderPresented = false
+    @State private var newFolderName = ""
+    @State private var newFolderEmoji = "📁"
+    @State private var isMoveToFolderPresented = false
+    @State private var conversationToMove: ChatConversation?
+
+    private var folderStore: ChatFolderStore { ChatFolderStore.shared }
+
+    // MARK: - Filtered Conversations
+
     var filteredConversations: [ChatConversation] {
-        if searchText.isEmpty {
-            return historyManager.conversations
-        } else {
-            return historyManager.conversations.filter { conversation in
+        var base = historyManager.conversations
+
+        // Folder filter
+        if let folderID = selectedFolderID {
+            let assignedIDs = folderStore.conversations(in: folderID)
+            base = base.filter { assignedIDs.contains($0.id) }
+        }
+
+        // Search filter
+        if !searchText.isEmpty {
+            base = base.filter { conversation in
                 conversation.title.localizedCaseInsensitiveContains(searchText) ||
                 conversation.messages.contains { message in
                     message.content.localizedCaseInsensitiveContains(searchText)
                 }
             }
         }
+
+        return base
     }
 
     private var groupedConversations: [(title: String, conversations: [ChatConversation])] {
@@ -54,11 +79,18 @@ struct ChatHistoryView: View {
         if !earlier.isEmpty { groups.append((String(localized: "Earlier"), earlier)) }
         return groups
     }
-    
+
+    // MARK: - Body
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: 8, pinnedViews: [.sectionHeaders]) {
+                    // Folder Chips (Pro)
+                    if monetizationManager.canUse(.chatFolders) && !folderStore.folders.isEmpty {
+                        folderChipsRow
+                    }
+
                     if filteredConversations.isEmpty {
                         if searchText.isEmpty {
                             emptyState
@@ -71,7 +103,8 @@ struct ChatHistoryView: View {
                                 ForEach(section.conversations) { conversation in
                                     ConversationRow(
                                         conversation: conversation,
-                                        isSelected: conversation.id == historyManager.currentConversationID
+                                        isSelected: conversation.id == historyManager.currentConversationID,
+                                        folderLabel: folderStore.folder(for: conversation.id).map { "\($0.emoji) \($0.name)" }
                                     ) {
                                         historyManager.selectConversation(conversation.id)
                                         dismiss()
@@ -80,13 +113,59 @@ struct ChatHistoryView: View {
                                             historyManager.deleteConversation(conversation.id)
                                         }
                                     }
+                                    .swipeActions(edge: .leading) {
+                                        // Export (Pro)
+                                        Button {
+                                            handleExport(conversation)
+                                        } label: {
+                                            Label(String(localized: "Export"), systemImage: "square.and.arrow.up")
+                                        }
+                                        .tint(.blue)
+
+                                        // Move to Folder (Pro)
+                                        Button {
+                                            handleMoveToFolder(conversation)
+                                        } label: {
+                                            Label(String(localized: "Folder"), systemImage: "folder")
+                                        }
+                                        .tint(.orange)
+                                    }
                                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                         Button(role: .destructive) {
                                             withAnimation(.spring(response: 0.3)) {
                                                 historyManager.deleteConversation(conversation.id)
                                             }
                                         } label: {
-                                            Label("Delete", systemImage: "trash")
+                                            Label(String(localized: "Delete"), systemImage: "trash")
+                                        }
+                                    }
+                                    .contextMenu {
+                                        Button {
+                                            handleExport(conversation)
+                                        } label: {
+                                            Label(
+                                                String(localized: "Export as Markdown"),
+                                                systemImage: "square.and.arrow.up"
+                                            )
+                                        }
+
+                                        Button {
+                                            handleMoveToFolder(conversation)
+                                        } label: {
+                                            Label(
+                                                String(localized: "Move to Folder"),
+                                                systemImage: "folder"
+                                            )
+                                        }
+
+                                        Divider()
+
+                                        Button(role: .destructive) {
+                                            withAnimation(.spring(response: 0.3)) {
+                                                historyManager.deleteConversation(conversation.id)
+                                            }
+                                        } label: {
+                                            Label(String(localized: "Delete"), systemImage: "trash")
                                         }
                                     }
                                 }
@@ -106,53 +185,206 @@ struct ChatHistoryView: View {
                 .padding(.top, 12)
             }
             .background(Color(white: 0.96))
-            .navigationTitle("History")
+            .navigationTitle(String(localized: "History"))
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") {
+                    Button(String(localized: "Done")) {
                         dismiss()
                     }
                     .fontWeight(.medium)
                 }
-                
+
                 ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        historyManager.newConversation()
-                        dismiss()
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title3)
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [.orange, .pink],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
+                    HStack(spacing: 12) {
+                        // Folders button (Pro)
+                        Button {
+                            if monetizationManager.canUse(.chatFolders) {
+                                newFolderName = ""
+                                newFolderEmoji = "📁"
+                                isNewFolderPresented = true
+                            } else {
+                                upgradeFeature = .chatFolders
+                            }
+                        } label: {
+                            Image(systemName: "folder.badge.plus")
+                                .font(.body)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Button {
+                            historyManager.newConversation()
+                            dismiss()
+                        } label: {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title3)
+                                .foregroundStyle(
+                                    LinearGradient(
+                                        colors: [.orange, .pink],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
                                 )
-                            )
+                        }
                     }
                 }
             }
-            .searchable(text: $searchText, placement: .automatic, prompt: "Search history")
+            .searchable(text: $searchText, placement: .automatic, prompt: String(localized: "Search history"))
+        }
+        // Export share sheet
+        .sheet(isPresented: $isShareSheetPresented, onDismiss: { exportShareItems = [] }) {
+            ShareSheet(items: exportShareItems)
+        }
+        // Upgrade gate
+        .sheet(item: $upgradeFeature) { feature in
+            UpgradeView(feature: feature)
+                .environment(monetizationManager)
+        }
+        // New folder alert
+        .alert(String(localized: "New Folder"), isPresented: $isNewFolderPresented) {
+            TextField(String(localized: "Folder name"), text: $newFolderName)
+            Button(String(localized: "Create")) {
+                let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
+                folderStore.createFolder(name: name.isEmpty ? String(localized: "New Folder") : name)
+            }
+            Button(String(localized: "Cancel"), role: .cancel) { }
+        } message: {
+            Text(String(localized: "Give this folder a name."))
+        }
+        // Move to folder action sheet
+        .confirmationDialog(
+            String(localized: "Move to Folder"),
+            isPresented: $isMoveToFolderPresented,
+            titleVisibility: .visible
+        ) {
+            if let c = conversationToMove {
+                // Existing folders
+                ForEach(folderStore.folders) { folder in
+                    Button("\(folder.emoji) \(folder.name)") {
+                        folderStore.assignConversation(c.id, to: folder.id)
+                    }
+                }
+
+                // Remove from folder
+                if folderStore.folderID(for: c.id) != nil {
+                    Button(String(localized: "Remove from Folder"), role: .destructive) {
+                        folderStore.assignConversation(c.id, to: nil)
+                    }
+                }
+
+                Button(String(localized: "New Folder…")) {
+                    newFolderName = ""
+                    isNewFolderPresented = true
+                }
+
+                Button(String(localized: "Cancel"), role: .cancel) { }
+            }
         }
     }
-    
+
+    // MARK: - Folder Chips
+
+    private var folderChipsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                folderChip(
+                    id: nil,
+                    label: String(localized: "All"),
+                    systemImage: "tray.full.fill"
+                )
+
+                ForEach(folderStore.folders) { folder in
+                    folderChip(
+                        id: folder.id,
+                        label: "\(folder.emoji) \(folder.name)",
+                        systemImage: nil
+                    )
+                    .contextMenu {
+                        Button(role: .destructive) {
+                            if selectedFolderID == folder.id { selectedFolderID = nil }
+                            folderStore.deleteFolder(id: folder.id)
+                        } label: {
+                            Label(String(localized: "Delete Folder"), systemImage: "trash")
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+        }
+    }
+
+    private func folderChip(id: UUID?, label: String, systemImage: String?) -> some View {
+        let isSelected = selectedFolderID == id
+        return Button {
+            withAnimation(.spring(response: 0.3)) {
+                selectedFolderID = id
+            }
+        } label: {
+            HStack(spacing: 5) {
+                if let systemImage {
+                    Image(systemName: systemImage)
+                        .font(.caption.weight(.semibold))
+                }
+                Text(label)
+                    .font(.subheadline.weight(.medium))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(isSelected ? Color.orange : Color.white)
+            .foregroundStyle(isSelected ? .white : .primary)
+            .clipShape(Capsule())
+            .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Actions
+
+    private func handleExport(_ conversation: ChatConversation) {
+        guard monetizationManager.canUse(.conversationExport) else {
+            upgradeFeature = .conversationExport
+            return
+        }
+        let markdown = ConversationExporter.export(
+            messages: conversation.messages,
+            title: conversation.title,
+            format: .markdown
+        )
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(ConversationExporter.fileName(title: conversation.title, format: .markdown))
+        try? markdown.write(to: tempURL, atomically: true, encoding: .utf8)
+        exportShareItems = [tempURL]
+        isShareSheetPresented = true
+    }
+
+    private func handleMoveToFolder(_ conversation: ChatConversation) {
+        guard monetizationManager.canUse(.chatFolders) else {
+            upgradeFeature = .chatFolders
+            return
+        }
+        conversationToMove = conversation
+        isMoveToFolderPresented = true
+    }
+
+    // MARK: - Empty State
+
     private var emptyState: some View {
         VStack(spacing: 16) {
             Spacer()
-            
+
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.system(size: 50, weight: .light))
                 .foregroundStyle(Color(white: 0.7))
-            
-            Text("No Conversations Yet")
+
+            Text(String(localized: "No Conversations Yet"))
                 .font(.headline)
                 .foregroundStyle(Color(white: 0.4))
-            
-            Text("Start a new chat to see it here")
+
+            Text(String(localized: "Start a new chat to see it here"))
                 .font(.subheadline)
                 .foregroundStyle(Color(white: 0.6))
-            
+
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -165,11 +397,12 @@ struct ChatHistoryView: View {
 struct ConversationRow: View {
     let conversation: ChatConversation
     let isSelected: Bool
+    let folderLabel: String?
     let onSelect: () -> Void
     let onDelete: () -> Void
-    
+
     @State private var isHovered = false
-    
+
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 14) {
@@ -182,7 +415,7 @@ struct ConversationRow: View {
                             LinearGradient(colors: [Color(white: 0.92)], startPoint: .top, endPoint: .bottom)
                         )
                         .frame(width: 44, height: 44)
-                    
+
                     Image(systemName: "bubble.left.fill")
                         .font(.body)
                         .foregroundStyle(
@@ -191,13 +424,25 @@ struct ConversationRow: View {
                             LinearGradient(colors: [Color(white: 0.5)], startPoint: .top, endPoint: .bottom)
                         )
                 }
-                
+
                 // Content
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(conversation.title)
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(Color(white: 0.1))
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(conversation.title)
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(Color(white: 0.1))
+                            .lineLimit(1)
+
+                        if let folderLabel {
+                            Text(folderLabel)
+                                .font(.caption2.weight(.medium))
+                                .foregroundStyle(.orange)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.1), in: Capsule())
+                                .lineLimit(1)
+                        }
+                    }
 
                     if let lastMessage = conversation.messages.last {
                         Text(lastMessage.content.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60) + (lastMessage.content.count > 60 ? "…" : ""))
@@ -205,14 +450,14 @@ struct ConversationRow: View {
                             .foregroundStyle(Color(white: 0.45))
                             .lineLimit(1)
                     }
-                    
+
                     Text(formattedDate)
                         .font(.caption2)
                         .foregroundStyle(Color(white: 0.55))
                 }
-                
+
                 Spacer()
-                
+
                 // Message count
                 if !conversation.messages.isEmpty {
                     Text("\(conversation.messages.count)")
@@ -243,18 +488,13 @@ struct ConversationRow: View {
             .shadow(color: .black.opacity(isHovered ? 0.06 : 0.03), radius: isHovered ? 8 : 4, y: isHovered ? 4 : 2)
         }
         .buttonStyle(ConversationButtonStyle())
-        .contextMenu {
-            Button(role: .destructive, action: onDelete) {
-                Label("Delete", systemImage: "trash")
-            }
-        }
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.2)) {
                 isHovered = hovering
             }
         }
     }
-    
+
     private var formattedDate: String {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
@@ -273,4 +513,120 @@ struct ConversationButtonStyle: ButtonStyle {
 #Preview {
     ChatHistoryView()
         .environment(ChatHistoryManager())
+        .environment(MonetizationManager())
+}
+
+struct ChatFolder: Identifiable, Codable, Equatable {
+    var id: UUID
+    var name: String
+    var emoji: String
+
+    init(id: UUID = UUID(), name: String, emoji: String = "📁") {
+        self.id = id
+        self.name = name
+        self.emoji = emoji
+    }
+}
+
+@MainActor
+@Observable
+final class ChatFolderStore {
+    static let shared = ChatFolderStore()
+
+    private static let foldersKey = "chatFolders.folders.v1"
+    private static let assignmentsKey = "chatFolders.assignments.v1"
+
+    private(set) var folders: [ChatFolder] = []
+
+    /// Maps conversationID (UUID string) → folderID (UUID string)
+    private var assignments: [String: String] = [:]
+
+    private init() {
+        load()
+    }
+
+    // MARK: - Folder Management
+
+    @discardableResult
+    func createFolder(name: String, emoji: String = "📁") -> ChatFolder {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let folder = ChatFolder(
+            name: trimmed.isEmpty ? String(localized: "New Folder") : trimmed,
+            emoji: emoji
+        )
+        folders.append(folder)
+        persist()
+        return folder
+    }
+
+    func updateFolder(id: UUID, name: String, emoji: String) {
+        guard let index = folders.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        folders[index].name = trimmed.isEmpty ? String(localized: "New Folder") : trimmed
+        folders[index].emoji = emoji
+        persist()
+    }
+
+    func deleteFolder(id: UUID) {
+        folders.removeAll { $0.id == id }
+        // Remove all assignments for this folder
+        assignments = assignments.filter { $0.value != id.uuidString }
+        persist()
+    }
+
+    func moveFolders(fromOffsets: IndexSet, toOffset: Int) {
+        folders.move(fromOffsets: fromOffsets, toOffset: toOffset)
+        persist()
+    }
+
+    // MARK: - Assignment
+
+    func assignConversation(_ conversationID: UUID, to folderID: UUID?) {
+        if let folderID {
+            assignments[conversationID.uuidString] = folderID.uuidString
+        } else {
+            assignments.removeValue(forKey: conversationID.uuidString)
+        }
+        persist()
+    }
+
+    func folderID(for conversationID: UUID) -> UUID? {
+        guard let rawID = assignments[conversationID.uuidString] else { return nil }
+        return UUID(uuidString: rawID)
+    }
+
+    func folder(for conversationID: UUID) -> ChatFolder? {
+        guard let folderID = folderID(for: conversationID) else { return nil }
+        return folders.first { $0.id == folderID }
+    }
+
+    func conversations(in folderID: UUID) -> Set<UUID> {
+        Set(
+            assignments
+                .filter { $0.value == folderID.uuidString }
+                .compactMap { UUID(uuidString: $0.key) }
+        )
+    }
+
+    // MARK: - Persistence
+
+    private func persist() {
+        if let foldersData = try? JSONEncoder().encode(folders) {
+            UserDefaults.standard.set(foldersData, forKey: Self.foldersKey)
+        }
+        if let assignData = try? JSONEncoder().encode(assignments) {
+            UserDefaults.standard.set(assignData, forKey: Self.assignmentsKey)
+        }
+    }
+
+    private func load() {
+        if let data = UserDefaults.standard.data(forKey: Self.foldersKey),
+           let decoded = try? JSONDecoder().decode([ChatFolder].self, from: data) {
+            folders = decoded
+        }
+        if let data = UserDefaults.standard.data(forKey: Self.assignmentsKey),
+           let decoded = try? JSONDecoder().decode([String: String].self, from: data) {
+            assignments = decoded
+        }
+    }
 }

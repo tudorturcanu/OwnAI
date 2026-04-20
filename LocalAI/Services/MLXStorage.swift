@@ -70,14 +70,14 @@ enum MLXStorage {
         ]
 
         for candidate in candidates {
-            if containsValidArtifacts(at: candidate) {
+            if containsValidArtifacts(at: candidate, modelID: modelID) {
                 return true
             }
         }
         return false
     }
 
-    private static func containsValidArtifacts(at directory: URL) -> Bool {
+    private static func containsValidArtifacts(at directory: URL, modelID: String) -> Bool {
         guard FileManager.default.fileExists(atPath: directory.path) else { return false }
         guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else {
             return false
@@ -88,6 +88,7 @@ enum MLXStorage {
         var hasWeights = false
         var hasVocab = false
         var hasMerges = false
+        var hasProcessorConfig = false
 
         for case let fileURL as URL in enumerator {
             let filename = fileURL.lastPathComponent.lowercased()
@@ -100,17 +101,22 @@ enum MLXStorage {
             if filename == "vocab.json" {
                 hasVocab = true
             }
+            if filename == "processor_config.json" || filename == "preprocessor_config.json" || filename == "image_processor_config.json" {
+                hasProcessorConfig = true
+            }
             if filename == "merges.txt" {
                 hasMerges = true
             }
             if filename.hasSuffix(".safetensors") || filename.hasSuffix(".bin") {
                 hasWeights = true
             }
-            if hasConfig && hasWeights && (hasTokenizer || (hasVocab && hasMerges)) {
+            let hasRequiredProcessorConfig = !ModelInfo.vlmMLXModelIDs.contains(modelID) || hasProcessorConfig
+            if hasConfig && hasWeights && (hasTokenizer || (hasVocab && hasMerges)) && hasRequiredProcessorConfig {
                 return true
             }
         }
 
-        return hasConfig && hasWeights && (hasTokenizer || (hasVocab && hasMerges))
+        let hasRequiredProcessorConfig = !ModelInfo.vlmMLXModelIDs.contains(modelID) || hasProcessorConfig
+        return hasConfig && hasWeights && (hasTokenizer || (hasVocab && hasMerges)) && hasRequiredProcessorConfig
     }
 }

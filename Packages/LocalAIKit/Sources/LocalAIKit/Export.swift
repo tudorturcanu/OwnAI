@@ -1,1 +1,1 @@
-@_exported import AnyLanguageModel
+// LocalAIKit remains as a local package anchor for MLX framework linkage.

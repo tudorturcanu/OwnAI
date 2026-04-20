@@ -13,6 +13,10 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
     case appleIntelligence
     case gemma
     case qwen
+    case granite
+    case lfm
+    case bonsai
+    case exaone
     case glm
     case deepSeek
     case tinyLlama
@@ -25,46 +29,62 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
     var title: String {
         switch self {
         case .appleIntelligence:
-            return "Apple Intelligence"
+            return String(localized: "Apple Intelligence")
         case .gemma:
-            return "Gemma"
+            return String(localized: "Gemma")
         case .qwen:
-            return "Qwen"
+            return String(localized: "Qwen")
+        case .granite:
+            return String(localized: "Granite 4.0")
+        case .lfm:
+            return String(localized: "LFM 2.5")
+        case .bonsai:
+            return String(localized: "Bonsai")
+        case .exaone:
+            return String(localized: "EXAONE")
         case .glm:
-            return "GLM"
+            return String(localized: "GLM")
         case .deepSeek:
-            return "DeepSeek"
+            return String(localized: "DeepSeek")
         case .tinyLlama:
-            return "TinyLlama"
+            return String(localized: "TinyLlama")
         case .llama:
-            return "Llama"
+            return String(localized: "Llama")
         case .phi:
-            return "Phi"
+            return String(localized: "Phi")
         case .smolLM:
-            return "SmolLM"
+            return String(localized: "SmolLM")
         }
     }
 
     var subtitle: String {
         switch self {
         case .appleIntelligence:
-            return "Built-in Apple model"
+            return String(localized: "Built-in Apple model")
         case .gemma:
-            return "Google's compact local models"
+            return String(localized: "Google's compact local models")
         case .qwen:
-            return "Alibaba's multilingual family"
+            return String(localized: "Alibaba's multilingual family")
+        case .granite:
+            return String(localized: "IBM's efficient hybrid edge models")
+        case .lfm:
+            return String(localized: "Liquid AI's on-device family")
+        case .bonsai:
+            return String(localized: "Prism ML's compact Apple Silicon model")
+        case .exaone:
+            return String(localized: "LG AI Research's compact instruction models")
         case .glm:
-            return "Z.ai's large agentic models"
+            return String(localized: "Z.ai's large agentic models")
         case .deepSeek:
-            return "Compact reasoning-style models"
+            return String(localized: "Compact reasoning-style models")
         case .tinyLlama:
-            return "Ultra-small chat models"
+            return String(localized: "Ultra-small chat models")
         case .llama:
-            return "Meta's local instruction models"
+            return String(localized: "Meta's local instruction models")
         case .phi:
-            return "Microsoft's efficient reasoning models"
+            return String(localized: "Microsoft's efficient reasoning models")
         case .smolLM:
-            return "HuggingFace's ultra-compact models"
+            return String(localized: "HuggingFace's ultra-compact models")
         }
     }
 
@@ -76,6 +96,14 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "sparkles"
         case .qwen:
             return "globe"
+        case .granite:
+            return "cube.fill"
+        case .lfm:
+            return "drop.fill"
+        case .bonsai:
+            return "leaf.fill"
+        case .exaone:
+            return "sparkles"
         case .glm:
             return "cpu"
         case .deepSeek:
@@ -100,11 +128,11 @@ enum ModelDeviceFit: Equatable {
     var title: String {
         switch self {
         case .recommended:
-            return "Recommended"
+            return String(localized: "Recommended")
         case .supported:
-            return "OK"
+            return String(localized: "Good")
         case .unsupported:
-            return "Heavy"
+            return String(localized: "Heavy")
         }
     }
 
@@ -144,35 +172,35 @@ enum ModelBadge: Equatable, Hashable {
     var title: String {
         switch self {
         case .recommended:
-            return "Recommended"
+            return String(localized: "Recommended")
         case .chat:
-            return "Chat"
+            return String(localized: "Chat")
         case .images:
-            return "Images"
+            return String(localized: "Images")
         case .fastest:
-            return "Fastest"
+            return String(localized: "Fastest")
         case .bestForCoding:
-            return "Coding"
+            return String(localized: "Coding")
         case .bestForWriting:
-            return "Writing"
+            return String(localized: "Writing")
         case .everydayChat:
-            return "Everyday"
+            return String(localized: "Everyday")
         case .multilingual:
-            return "Multilingual"
+            return String(localized: "Multilingual")
         case .reasoning:
-            return "Reasoning"
+            return String(localized: "Reasoning")
         case .fullyOnDevice:
-            return "On-Device"
+            return String(localized: "On-Device")
         case .mayUseAppleProcessing:
-            return "Apple Processing"
+            return String(localized: "Apple Processing")
         case .smallDownload:
-            return "Small Download"
+            return String(localized: "Small Download")
         case .higherQuality:
-            return "Higher Quality"
+            return String(localized: "Higher Quality")
         case .newerDevices:
-            return "Newer Devices"
+            return String(localized: "Newer Devices")
         case .vision:
-            return "Vision"
+            return String(localized: "Vision")
         }
     }
 
@@ -306,8 +334,14 @@ struct ModelInfo: Identifiable, Equatable {
         engine == .mlx && sizeGB > 4.5
     }
 
+    var requiresUnsupportedMLXQuantization: Bool {
+        id == "prism-ml/Bonsai-4B-mlx-1bit"
+    }
+
     var currentDeviceFit: ModelDeviceFit {
         guard engine == .mlx else { return .recommended }
+        if requiresUnsupportedMLXQuantization { return .unsupported }
+
         let device = CurrentDeviceProfile.current
 
         switch device.idiom {
@@ -356,6 +390,18 @@ struct ModelInfo: Identifiable, Equatable {
         if lowercasedID.contains("qwen") {
             return "Alibaba Cloud (Qwen)"
         }
+        if lowercasedID.contains("granite") {
+            return "IBM Granite"
+        }
+        if lowercasedID.contains("lfm") || lowercasedID.contains("liquidai") {
+            return "Liquid AI (LFM 2.5)"
+        }
+        if lowercasedID.contains("bonsai") {
+            return "Prism ML (Bonsai)"
+        }
+        if lowercasedID.contains("exaone") {
+            return "LG AI Research (EXAONE)"
+        }
         if lowercasedID.contains("llama") {
             return "Meta Platforms, Inc. (Llama)"
         }
@@ -373,7 +419,7 @@ struct ModelInfo: Identifiable, Equatable {
 
     var supportsThinkingToggle: Bool {
         let lowercasedID = id.lowercased()
-        return lowercasedID.contains("qwen3") || lowercasedID.contains("gemma-4")
+        return lowercasedID.contains("qwen3") || lowercasedID.contains("gemma-4") || lowercasedID.contains("bonsai")
     }
 
     var thinkingPreferenceKey: String {
@@ -408,7 +454,7 @@ struct ModelInfo: Identifiable, Equatable {
 
     var sizeLabel: String {
         if engine == .appleFoundation {
-            return "No download"
+            return String(localized: "No download")
         }
         return String(format: "%.1f GB", sizeGB)
     }
@@ -419,15 +465,15 @@ extension ModelInfo {
     /// Apple's on-device Foundation Model (built into iOS 26+)
     static let appleFoundation = ModelInfo(
         id: "apple-foundation",
-        name: "Apple Intelligence",
-        description: "Apple's on-device model. Fast, private, and built right into your device. No download required.",
+        name: String(localized: "Apple Intelligence"),
+        description: String(localized: "Apple's on-device model. Fast, private, and built right into your device. No download required."),
         family: .appleIntelligence,
         sizeGB: 0,
         engine: .appleFoundation,
         termsURL: URL(string: "https://www.apple.com/legal/privacy/data/en/intelligence-engine/"),
         privacyURL: URL(string: "https://www.apple.com/legal/privacy/data/en/intelligence-engine/"),
-        shortDescription: "Built in, quick to start, and best for everyday use.",
-        recommendedFor: "Best for everyday questions when Apple Intelligence is available.",
+        shortDescription: String(localized: "Built in, quick to start, and best for everyday use."),
+        recommendedFor: String(localized: "Best for everyday questions when Apple Intelligence is available."),
         badges: [.recommended, .images, .mayUseAppleProcessing],
         downloadState: .builtin
     )
@@ -444,7 +490,7 @@ extension ModelInfo {
         privacyURL: nil,
         shortDescription: "Balanced local model for reliable everyday chats.",
         recommendedFor: "Good default for private everyday chat on most devices.",
-        badges: [.chat, .fullyOnDevice],
+        badges: [.recommended, .chat, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -480,6 +526,134 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// LFM2.5 350M MLX (4-bit)
+    static let lfm25_350m_4bit = ModelInfo(
+        id: "LiquidAI/LFM2.5-350M-MLX-4bit",
+        name: "LFM 2.5 350M",
+        description: "Liquid AI's smallest LFM 2.5 model. It is built for Apple Silicon and is a very light, iPhone-friendly general-purpose option.",
+        family: .lfm,
+        sizeGB: 0.21,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/LiquidAI/LFM2.5-350M-MLX-4bit"),
+        privacyURL: nil,
+        shortDescription: "Tiny, fast, and the lightest general-purpose LFM 2.5 option.",
+        recommendedFor: "Best when you want the smallest LFM 2.5 download for basic local chat.",
+        badges: [.fastest, .smallDownload, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Granite 4.0 H 1B (4-bit MLX)
+    static let granite4_0_h_1b_4bit = ModelInfo(
+        id: "mlx-community/granite-4.0-h-1b-4bit",
+        name: "Granite 4.0 H 1B",
+        description: "IBM's compact hybrid Granite model with a strong size-to-quality tradeoff for iPhone and iPad.",
+        family: .granite,
+        sizeGB: 1.2,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/ibm-granite/granite-4.0-h-1b"),
+        privacyURL: nil,
+        shortDescription: "Compact Granite model with good quality for its size.",
+        recommendedFor: "Best when you want a light Granite 4.0 option for everyday chat.",
+        badges: [.recommended, .everydayChat, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Granite 4.0 H Micro (4-bit MLX)
+    static let granite4_0_h_micro_4bit = ModelInfo(
+        id: "mlx-community/granite-4.0-h-micro-4bit",
+        name: "Granite 4.0 H Micro",
+        description: "IBM's 3B hybrid Granite model, optimized for strong efficiency on modern iPhones while keeping the footprint moderate.",
+        family: .granite,
+        sizeGB: 1.81,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/ibm-granite/granite-4.0-h-micro"),
+        privacyURL: nil,
+        shortDescription: "Efficient Granite model for balanced quality and speed.",
+        recommendedFor: "Best when you want the strongest compact Granite 4.0 option.",
+        badges: [.higherQuality, .everydayChat, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Granite 4.0 H Tiny (4-bit MLX)
+    static let granite4_0_h_tiny_4bit = ModelInfo(
+        id: "mlx-community/granite-4.0-h-tiny-4bit",
+        name: "Granite 4.0 H Tiny",
+        description: "IBM's larger hybrid Granite model with excellent efficiency for its class, aimed at newer iPhones with more thermal and memory headroom.",
+        family: .granite,
+        sizeGB: 3.92,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/ibm-granite/granite-4.0-h-tiny"),
+        privacyURL: nil,
+        shortDescription: "Larger Granite model for newer iPhone hardware.",
+        recommendedFor: "Best when you want the most capable Granite 4.0 model in this family.",
+        badges: [.higherQuality, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// LFM2.5 1.2B Instruct MLX (4-bit)
+    static let lfm25_1_2b_instruct_4bit = ModelInfo(
+        id: "LiquidAI/LFM2.5-1.2B-Instruct-MLX-4bit",
+        name: "LFM 2.5 1.2B",
+        description: "Liquid AI's everyday LFM 2.5 model, tuned for chat, extraction, writing, and longer conversations on iPhone.",
+        family: .lfm,
+        sizeGB: 0.63,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-MLX-4bit"),
+        privacyURL: nil,
+        shortDescription: "Balanced compact model for everyday local use.",
+        recommendedFor: "Best when you want the main everyday LFM 2.5 model on iPhone.",
+        badges: [.recommended, .everydayChat, .higherQuality, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// LFM2.5 1.2B Thinking MLX (4-bit)
+    static let lfm25_1_2b_thinking_4bit = ModelInfo(
+        id: "LiquidAI/LFM2.5-1.2B-Thinking-MLX-4bit",
+        name: "LFM 2.5 Thinking",
+        description: "Liquid AI's reasoning-focused LFM 2.5 model. It is optimized for structured reasoning, math, and programming with an iPhone-friendly footprint.",
+        family: .lfm,
+        sizeGB: 0.63,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Thinking-MLX-4bit"),
+        privacyURL: nil,
+        shortDescription: "Reasoning-first LFM 2.5 model with a compact download.",
+        recommendedFor: "Best when you want the LFM 2.5 reasoning variant for technical prompts.",
+        badges: [.bestForCoding, .reasoning, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// LFM2.5 VL 1.6B MLX (4-bit)
+    static let lfm25_vl_1_6b_4bit = ModelInfo(
+        id: "mlx-community/LFM2.5-VL-1.6B-4bit",
+        name: "LFM 2.5 VL 1.6B",
+        description: "Liquid AI's vision-language LFM 2.5 variant, converted to MLX for image understanding, document reading, and visual Q&A on newer iPhones and iPads.",
+        family: .lfm,
+        sizeGB: 1.49,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/LiquidAI/LFM2.5-VL-1.6B"),
+        privacyURL: nil,
+        shortDescription: "Vision-language LFM 2.5 for images, screenshots, and documents.",
+        recommendedFor: "Best when you want LFM 2.5 with image input on a newer device.",
+        badges: [.images, .vision, .higherQuality, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Bonsai 4B (1-bit MLX)
+    static let bonsai4b_1bit = ModelInfo(
+        id: "prism-ml/Bonsai-4B-mlx-1bit",
+        name: "Bonsai 4B",
+        description: "Prism ML's compact Apple Silicon model. It is tuned for very small local downloads on iPhone and iPad, but it relies on the newer 1-bit MLX path and is still more experimental than the mainstream catalog entries.",
+        family: .bonsai,
+        sizeGB: 0.63,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/prism-ml/Bonsai-4B-mlx-1bit"),
+        privacyURL: nil,
+        shortDescription: "Very compact and iPhone-oriented, but more experimental.",
+        recommendedFor: "Best if you want the smallest Bonsai build and are comfortable with a more experimental MLX model.",
+        badges: [.smallDownload, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// Qwen3 0.6B MLX (4-bit)
     static let qwen3_0_6b_4bit = ModelInfo(
         id: "Qwen/Qwen3-0.6B-MLX-4bit",
@@ -509,6 +683,38 @@ extension ModelInfo {
         shortDescription: "Tiny multilingual model with a very small local footprint.",
         recommendedFor: "Best when you want the lightest possible install for simple chats.",
         badges: [.fastest, .smallDownload, .multilingual, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Granite 4.0 350M (4-bit MLX)
+    static let granite4_0_350m_4bit = ModelInfo(
+        id: "mlx-community/granite-4.0-350m-4bit",
+        name: "Granite 4.0 350M",
+        description: "IBM's smallest Granite 4.0 option, tuned for very light on-device use and fast startup on iPhone.",
+        family: .granite,
+        sizeGB: 0.21,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/granite-4.0-350m-4bit"),
+        privacyURL: nil,
+        shortDescription: "Tiny Granite model for the lightest local installs.",
+        recommendedFor: "Best when you want the smallest Granite 4.0 download.",
+        badges: [.fastest, .smallDownload, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// SmolLM2 360M Instruct (4-bit MLX)
+    static let smolLM2_360m_4bit = ModelInfo(
+        id: "mlx-community/SmolLM2-360M-Instruct-4bit",
+        name: "SmolLM2 360M",
+        description: "Hugging Face's tiny instruction model, tuned for very fast local replies and an extremely small download on iPhone.",
+        family: .smolLM,
+        sizeGB: 0.20,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct"),
+        privacyURL: nil,
+        shortDescription: "Tiny, fast, and light on storage.",
+        recommendedFor: "Best when you want the smallest practical local assistant on iPhone.",
+        badges: [.fastest, .smallDownload, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -598,7 +804,7 @@ extension ModelInfo {
         name: "Gemma 4 (E2B)",
         description: "Google's multimodal Gemma 4 E2B model supports text and image input, with stronger reasoning and richer responses on newer Apple devices.",
         family: .gemma,
-        sizeGB: 3.61,
+        sizeGB: 3.58,
         engine: .mlx,
         termsURL: URL(string: "https://ai.google.dev/gemma/terms"),
         privacyURL: nil,
@@ -620,7 +826,7 @@ extension ModelInfo {
         privacyURL: nil,
         shortDescription: "High quality per GB with stronger reasoning and writing.",
         recommendedFor: "Best balance of quality and size for newer iPhones and iPads.",
-        badges: [.bestForWriting, .higherQuality, .fullyOnDevice],
+        badges: [.recommended, .bestForWriting, .multilingual, .higherQuality, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -736,6 +942,22 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Phi 3 Mini 128K Instruct (4-bit MLX)
+    static let phi3_mini_128k_4bit = ModelInfo(
+        id: "mlx-community/Phi-3-mini-128k-instruct-4bit",
+        name: "Phi 3 Mini 128K",
+        description: "Microsoft's compact Phi model with a long context window for bigger prompts, documents, and structured reasoning on iPhone.",
+        family: .phi,
+        sizeGB: 2.15,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/microsoft/Phi-3-mini-128k-instruct"),
+        privacyURL: nil,
+        shortDescription: "Compact Phi with a long context window.",
+        recommendedFor: "Best when you need a small model that can hold more context.",
+        badges: [.bestForCoding, .reasoning, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// Gemma 3 4B Instruct QAT (4-bit MLX)
     static let gemma3_4b_qat_4bit = ModelInfo(
         id: "mlx-community/gemma-3-4b-it-qat-4bit",
@@ -749,6 +971,22 @@ extension ModelInfo {
         shortDescription: "Solid mid-tier Gemma for richer on-device conversations.",
         recommendedFor: "Great step up in quality from Gemma 3 1B for devices with more headroom.",
         badges: [.everydayChat, .higherQuality, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// EXAONE 3.5 2.4B Instruct (4-bit MLX)
+    static let exaone35_2_4b_instruct_4bit = ModelInfo(
+        id: "mlx-community/EXAONE-3.5-2.4B-Instruct-4bit",
+        name: "EXAONE 3.5 2.4B",
+        description: "LG AI Research's compact instruction model with a strong size-to-quality tradeoff for modern iPhones and iPads.",
+        family: .exaone,
+        sizeGB: 1.35,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"),
+        privacyURL: nil,
+        shortDescription: "Compact general model with strong quality for its size.",
+        recommendedFor: "Good when you want a capable small model that still feels iPhone-friendly.",
+        badges: [.higherQuality, .everydayChat, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -884,28 +1122,41 @@ extension ModelInfo {
         .appleFoundation,  // Default - first in list
         // Small / ultra-light
         .gemma3_270m_qat_4bit,
+        .granite4_0_350m_4bit,
+        .lfm25_350m_4bit,
+        .bonsai4b_1bit,
+        .smolLM2_360m_4bit,
         .qwen3_0_6b_4bit,
         .qwen25_0_5b_instruct_4bit,
         // Compact (0.7–1.1 GB)
         .llama32_1b_4bit,
         .gemma3_1b_qat_4bit,
+        .granite4_0_h_1b_4bit,
         .smolLM2_1_7b_4bit,
         .qwen25_1_5b_instruct_4bit,
         .qwen3_1_7b_4bit,
         .deepseek_r1_distill_qwen_1_5b_4bit,
         // Vision  (VLM - image input capable)
         .qwen2VL_2b_4bit,
+        .lfm25_vl_1_6b_4bit,
         .qwen25VL_3b_3bit,
         // Mid-range (1.7–4 GB)
         .gemma3n_e2b_it_lm_4bit,
         .gemma2_2b_4bit,
+        .granite4_0_h_micro_4bit,
+        .granite4_0_h_tiny_4bit,
         .smolLM3_3b_4bit,
+        .lfm25_1_2b_instruct_4bit,
+        .lfm25_1_2b_thinking_4bit,
+        .exaone35_2_4b_instruct_4bit,
         .qwen25_3b_instruct_4bit,
         .llama32_3b_4bit,
+        .phi3_mini_128k_4bit,
         .phi3_mini_4k_4bit,
         .phi4_mini_4bit,
         .phi35_mini_4bit,
         .gemma3_4b_qat_4bit,
+        .gemma4_e2b_it_4bit,
         .qwen3_4b_4bit,
         // Large (4+ GB) — iPad Pro / Mac
         .deepseek_r1_distill_qwen_7b_4bit,

@@ -9,12 +9,15 @@ import SwiftUI
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(LLMEngine.self) private var llmEngine
     @Environment(ChatHistoryManager.self) private var historyManager
     @Environment(ModelManager.self) private var modelManager
     @Environment(MonetizationManager.self) private var monetizationManager
+    @AppStorage(PDFOCRMode.storageKey) private var pdfOCRModeRaw = PDFOCRMode.preferNativeText.rawValue
     @AppStorage("lowPowerMode") private var lowPowerMode = false
     @AppStorage("historyRetentionDays") private var historyRetentionDays = 0
     @AppStorage("autoRead") private var autoRead = false
+    @AppStorage("downloads.allowCellular") private var allowCellularDownloads = false
     @State private var showClearHistoryConfirmation = false
     @State private var showDataPrivacySheet = false
     @State private var isUpgradeSheetPresented = false
@@ -64,8 +67,15 @@ struct SettingsView: View {
                     headerSection
                     aiSection
                     preferencesSection
+                    documentSection
+
                     privacySection
                     aboutSection
+
+                    #if DEBUG
+                    developerSection
+                    #endif
+
                     footerBranding
                 }
                 .padding(.horizontal, 20)
@@ -84,6 +94,7 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $isUpgradeSheetPresented) {
             UpgradeView(feature: .allModels)
+                .environment(monetizationManager)
         }
     }
 
@@ -164,12 +175,16 @@ struct SettingsView: View {
         settingsSection("AI") {
             NavigationLink {
                 ModelDownloadView()
+                    .environment(llmEngine)
+                    .environment(modelManager)
+                    .environment(monetizationManager)
+                    .environmentObject(modelManager)
             } label: {
                 settingsRow(
                     icon: "square.stack.3d.up.fill",
                     tint: .blue,
                     title: "Models",
-                    subtitle: selectedModelName ?? String(localized: "No model selected")
+                    subtitle: selectedModelName
                 )
             }
             .buttonStyle(.plain)
@@ -178,6 +193,7 @@ struct SettingsView: View {
 
             NavigationLink {
                 AIPersonalityView()
+                    .environment(monetizationManager)
             } label: {
                 settingsRow(
                     icon: "brain.head.profile",
@@ -195,6 +211,16 @@ struct SettingsView: View {
     private var preferencesSection: some View {
         settingsSection("Preferences") {
             settingsToggleRow(
+                icon: "antenna.radiowaves.left.and.right",
+                tint: .blue,
+                title: "Cellular Downloads",
+                subtitle: "Allow downloading models over mobile data",
+                isOn: $allowCellularDownloads
+            )
+
+            sectionDivider
+
+            settingsToggleRow(
                 icon: "speaker.wave.2.fill",
                 tint: .orange,
                 title: "Read Replies Aloud",
@@ -211,6 +237,66 @@ struct SettingsView: View {
                 subtitle: "Lighter local behavior for lower battery impact",
                 isOn: $lowPowerMode
             )
+        }
+    }
+
+    private var documentSection: some View {
+        settingsSection("Documents") {
+            HStack(spacing: 14) {
+                rowIcon(systemImage: "doc.text.viewfinder", tint: .teal)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("PDF OCR Mode")
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.primary)
+
+                        Spacer()
+                    }
+
+                    Menu {
+                        ForEach(PDFOCRMode.allCases) { mode in
+                            Button {
+                                pdfOCRModeRaw = mode.rawValue
+                            } label: {
+                                if mode == pdfOCRMode {
+                                    Label(mode.title, systemImage: "checkmark")
+                                } else {
+                                    Text(mode.title)
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(pdfOCRMode.title)
+                                .font(.subheadline)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Spacer(minLength: 8)
+
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .accessibilityHidden(true)
+                        }
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .background(Color.teal.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    .accessibilityLabel("PDF OCR Mode")
+                    .accessibilityValue(pdfOCRMode.title)
+
+                    Text(pdfOCRMode.subtitle)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
         }
     }
 
@@ -374,6 +460,21 @@ struct SettingsView: View {
         }
     }
 
+    #if DEBUG
+    private var developerSection: some View {
+        @Bindable var monetizationManager = monetizationManager
+        return settingsSection("Developer") {
+            settingsToggleRow(
+                icon: "sparkles",
+                tint: .purple,
+                title: "Enable Pro",
+                subtitle: "Unlock all premium features for testing",
+                isOn: $monetizationManager.debugProEnabled
+            )
+        }
+    }
+    #endif
+
     // MARK: - Footer
 
     private var footerBranding: some View {
@@ -483,6 +584,10 @@ struct SettingsView: View {
         .padding(.vertical, 14)
     }
 
+    private var pdfOCRMode: PDFOCRMode {
+        PDFOCRMode(rawValue: pdfOCRModeRaw) ?? .preferNativeText
+    }
+
     private func rowIcon(systemImage: String, tint: Color) -> some View {
         Image(systemName: systemImage)
             .font(.system(size: 14, weight: .semibold))
@@ -519,6 +624,7 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView()
+        .environment(LLMEngine())
         .environment(ChatHistoryManager())
         .environment(ModelManager())
         .environment(MonetizationManager())

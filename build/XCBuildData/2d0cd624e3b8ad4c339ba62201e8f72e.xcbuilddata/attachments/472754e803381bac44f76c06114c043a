@@ -1,4 +1,0 @@
-module LocalAIKit {
-header "LocalAIKit-Swift.h"
-export *
-}

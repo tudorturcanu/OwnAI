@@ -13,19 +13,11 @@ let package = Package(
             targets: ["LocalAIKit"]
         )
     ],
-    dependencies: [
-        .package(
-            url: "https://github.com/mattt/AnyLanguageModel",
-            from: "0.6.0",
-            traits: ["MLX"]
-        )
-    ],
+    dependencies: [],
     targets: [
         .target(
             name: "LocalAIKit",
-            dependencies: [
-                .product(name: "AnyLanguageModel", package: "AnyLanguageModel")
-            ],
+            dependencies: [],
             linkerSettings: [
                 .linkedFramework("Metal"),
                 .linkedFramework("MetalPerformanceShaders"),

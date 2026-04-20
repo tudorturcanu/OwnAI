@@ -1,4 +1,0 @@
-module yyjson {
-    umbrella header "/Users/teo/Documents/LocalAI copy/Packages/LocalAIKit/.build/checkouts/yyjson/src/yyjson.h"
-    export *
-}

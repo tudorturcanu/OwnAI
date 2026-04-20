@@ -2,3 +2,4 @@
 "NSCameraUsageDescription" = "Own Ai kann die Kamera verwenden, damit du Fotos aufnehmen und an deinen Chat anhängen kannst.";
 "NSMicrophoneUsageDescription" = "Own Ai benötigt Mikrofonzugriff, um deine Sprache für Chat-Interaktionen in Text umzuwandeln.";
 "NSSpeechRecognitionUsageDescription" = "Own Ai verwendet Spracherkennung, um deine Sprache lokal auf deinem Gerät in Text umzuwandeln.";
+"NSPhotoLibraryUsageDescription" = "Own Ai benötigt Zugriff auf deine Fotomediathek, um dir das Anhängen von Bildern an deinen Chat zu ermöglichen.";

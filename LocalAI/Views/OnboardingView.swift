@@ -171,7 +171,7 @@ struct OnboardingView: View {
             
             // Title & Subtitle
             VStack(spacing: 16) {
-                Text("Welcome to Own Ai")
+                Text(String(localized: "Welcome to Own Ai"))
                     .font(.system(size: 32, weight: .bold))
                     .foregroundStyle(Color(white: 0.1))
                 
@@ -225,7 +225,7 @@ struct OnboardingView: View {
                         currentPage = privacyPageIndex
                     }
                 } label: {
-                    Text("Next")
+                    Text(String(localized: "Next"))
                         .font(.headline.weight(.bold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
@@ -297,7 +297,7 @@ struct OnboardingView: View {
                     Button {
                         applyRecommendedModel()
                     } label: {
-                        Text("Continue")
+                        Text(String(localized: "Continue"))
                             .font(.headline.weight(.bold))
                             .foregroundStyle(.white)
                             .frame(maxWidth: .infinity)
@@ -354,11 +354,11 @@ struct OnboardingView: View {
                             )
                         )
                     
-                    Text("Data & Privacy")
+                    Text(String(localized: "Data & Privacy"))
                         .font(.system(size: 28, weight: .bold))
                         .foregroundStyle(Color(white: 0.1))
                     
-                    Text("Before you begin, here's how the app handles your data.")
+                    Text(String(localized: "Before you begin, here's how the app handles your data."))
                         .font(.body)
                         .multilineTextAlignment(.center)
                         .foregroundStyle(Color(white: 0.5))
@@ -386,7 +386,7 @@ struct OnboardingView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "lock.shield.fill")
                                 .foregroundStyle(.green)
-                            Text("On-Device Models (e.g. Gemma 2 2B)")
+                            Text(String(localized: "On-Device Models (e.g. Gemma 2 2B)"))
                                 .font(.subheadline.bold())
                                 .foregroundStyle(Color(white: 0.2))
                         }
@@ -411,7 +411,7 @@ struct OnboardingView: View {
                             HStack(spacing: 8) {
                                 Image(systemName: "apple.intelligence")
                                     .foregroundStyle(.orange)
-                                Text("Apple Intelligence")
+                                Text(String(localized: "Apple Intelligence"))
                                     .font(.subheadline.bold())
                                     .foregroundStyle(Color(white: 0.2))
                             }
@@ -690,10 +690,12 @@ struct OnboardingView: View {
                     icon: model.engine == .appleFoundation ? "bolt.fill" : "lock.shield.fill",
                     title: model.engine == .appleFoundation ? String(localized: "Fastest start") : model.privacyLabel
                 )
-                recommendationChip(
-                    icon: model.currentDeviceFit.iconName,
-                    title: model.currentDeviceFit.title
-                )
+                if model.currentDeviceFit != .supported {
+                    recommendationChip(
+                        icon: model.currentDeviceFit.iconName,
+                        title: model.currentDeviceFit.title
+                    )
+                }
             }
         }
         .padding(16)
@@ -729,5 +731,7 @@ struct OnboardingView: View {
 
 #Preview {
     OnboardingView(isPresented: .constant(true))
+        .environment(LLMEngine())
         .environment(ModelManager())
+        .environment(MonetizationManager())
 }

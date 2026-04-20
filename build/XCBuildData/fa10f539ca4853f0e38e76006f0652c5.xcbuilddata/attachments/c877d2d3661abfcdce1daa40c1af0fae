@@ -1,4 +1,0 @@
-module JSONSchema {
-header "JSONSchema-Swift.h"
-export *
-}

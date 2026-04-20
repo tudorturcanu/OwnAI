@@ -204,10 +204,74 @@ private final class DownloadDiagnostics {
     }
 }
 
+/// Coalesces Hub snapshot progress callbacks into batched MainActor updates (yield + drain loop),
+/// avoiding a `Task { @MainActor }` per progress tick (which can schedule hundreds of tasks/sec).
+private final class MainActorProgressCoalescer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var latest: (progress: Double, speed: Double?, enqueuedAt: CFTimeInterval)?
+    private var scheduled = false
+
+    private let modelID: String
+    private weak var manager: ModelManager?
+
+    init(modelID: String, manager: ModelManager) {
+        self.modelID = modelID
+        self.manager = manager
+    }
+
+    nonisolated func enqueue(progress: Double, speed: Double?, enqueuedAt: CFTimeInterval) {
+        lock.lock()
+        latest = (progress, speed, enqueuedAt)
+        if scheduled {
+            lock.unlock()
+            return
+        }
+        scheduled = true
+        lock.unlock()
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await Task.yield()
+            while true {
+                self.lock.lock()
+                guard let snap = self.latest else {
+                    self.scheduled = false
+                    self.lock.unlock()
+                    return
+                }
+                self.latest = nil
+                self.lock.unlock()
+
+                guard let manager = self.manager else {
+                    self.lock.lock()
+                    self.scheduled = false
+                    self.lock.unlock()
+                    return
+                }
+                manager.applyCoalescedDownloadProgress(
+                    modelID: self.modelID,
+                    progress: snap.0,
+                    speed: snap.1,
+                    enqueuedAt: snap.2
+                )
+                await Task.yield()
+            }
+        }
+    }
+
+    nonisolated func cancel() {
+        lock.lock()
+        latest = nil
+        scheduled = false
+        lock.unlock()
+    }
+}
+
 enum DownloadErrorAction {
     case retry
     case freeSpace
     case repair
+    case cellularRestricted
 
     var iconName: String {
         switch self {
@@ -217,6 +281,8 @@ enum DownloadErrorAction {
             return "externaldrive.badge.exclamationmark"
         case .repair:
             return "wrench.and.screwdriver"
+        case .cellularRestricted:
+            return "wifi.slash"
         }
     }
 
@@ -228,6 +294,8 @@ enum DownloadErrorAction {
             return "Free Space"
         case .repair:
             return "Repair"
+        case .cellularRestricted:
+            return "Back"
         }
     }
 }
@@ -250,6 +318,9 @@ final class ModelManager: ObservableObject {
         "generation_config.json",
         "chat_template.json",
         "chat_template.jinja",
+        "processor_config.json",
+        "preprocessor_config.json",
+        "image_processor_config.json",
         "*.safetensors",
         "*.safetensors.index.json",
         "*.bin"
@@ -267,6 +338,7 @@ final class ModelManager: ObservableObject {
 
     private enum DownloadFailureReason: Equatable {
         case lowStorage(requiredGB: Double, availableGB: Double)
+        case cellularRestricted
         case network
         case corrupted
         case simulatorUnsupported
@@ -293,12 +365,16 @@ final class ModelManager: ObservableObject {
     }
     @ObservationIgnored @AppStorage("autoSelectBestModel") var autoSelectBestModel: Bool = true
     @ObservationIgnored @AppStorage("downloadNotifications") var downloadNotifications: Bool = true
+    private var allowCellularDownloads: Bool {
+        UserDefaults.standard.bool(forKey: "downloads.allowCellular")
+    }
     
     private var downloadTasks: [String: Task<Void, Never>] = [:]
     private var backgroundTaskIDs: [String: UIBackgroundTaskIdentifier] = [:]
     private var downloadFailures: [String: DownloadFailure] = [:]
-    @ObservationIgnored private let downloadProgressLimiter = DownloadProgressLimiter()
-    @ObservationIgnored private let downloadDiagnostics = DownloadDiagnostics()
+    /// Thread-safe helpers; only accessed from Hub callbacks / download work (off MainActor).
+    @ObservationIgnored nonisolated(unsafe) private let downloadProgressLimiter = DownloadProgressLimiter()
+    @ObservationIgnored nonisolated(unsafe) private let downloadDiagnostics = DownloadDiagnostics()
     private var thinkingPreferencesVersion = 0
     
     // MARK: - Computed Properties
@@ -338,21 +414,21 @@ final class ModelManager: ObservableObject {
     /// Returns a user-friendly hint explaining why Apple Intelligence is unavailable
     var appleIntelligenceUnavailableHint: String {
         guard let appleModel = models.first(where: { $0.engine == .appleFoundation }) else {
-            return "Apple Intelligence is not available."
+            return String(localized: "Apple Intelligence is not available.")
         }
         if case .error(let message) = appleModel.downloadState {
             switch message {
             case "Device not supported":
-                return "Apple Intelligence is not supported on this device. You can use a downloadable model instead."
+                return String(localized: "Apple Intelligence is not supported on this device. You can use a downloadable model instead.")
             case "Not enabled":
-                return "Enable Apple Intelligence in Settings > Apple Intelligence."
+                return String(localized: "Enable Apple Intelligence in Settings > Apple Intelligence.")
             case "Model not ready":
-                return "Apple Intelligence is still preparing. Please try again later."
+                return String(localized: "Apple Intelligence is still preparing. Please try again later.")
             default:
-                return "Apple Intelligence is currently unavailable."
+                return String(localized: "Apple Intelligence is currently unavailable.")
             }
         }
-        return "Apple Intelligence is currently unavailable."
+        return String(localized: "Apple Intelligence is currently unavailable.")
     }
     
     // MARK: - Initialization
@@ -382,6 +458,11 @@ final class ModelManager: ObservableObject {
     /// Select a specific model to use
     func selectModel(_ modelID: String) {
         print("[ModelManager] selectModel id=\(modelID)")
+        if let model = models.first(where: { $0.id == modelID }),
+           compatibilityMessage(for: model) != nil {
+            ensureSelection()
+            return
+        }
         selectedModelID = modelID
     }
 
@@ -409,12 +490,12 @@ final class ModelManager: ObservableObject {
         if let downloadedBest = bestDownloadedFreeModel() {
             return recommendation(
                 for: downloadedBest,
-                title: "Recommended",
-                summary: "Already ready on this device.",
+                title: String(localized: "Recommended"),
+                summary: String(localized: "Already ready on this device."),
                 detail: downloadedBest.engine == .appleFoundation
-                    ? "Apple Intelligence is available now, so you can start chatting without downloading anything."
-                    : "\(downloadedBest.name) is already available locally, so it will get you to the first reply fastest.",
-                actionTitle: "Use \(downloadedBest.name)",
+                    ? String(localized: "Apple Intelligence is available now, so you can start chatting without downloading anything.")
+                    : String(format: String(localized: "%@ is already available locally, so it will get you to the first reply fastest.", defaultValue: "%@ is already available locally, so it will get you to the first reply fastest."), downloadedBest.name),
+                actionTitle: String(format: String(localized: "Use %@", defaultValue: "Use %@"), downloadedBest.name),
                 prefersImmediateUse: true,
                 usesFallback: false
             )
@@ -423,10 +504,10 @@ final class ModelManager: ObservableObject {
         if isAppleIntelligenceAvailable {
             return recommendation(
                 for: .appleFoundation,
-                title: "Recommended",
-                summary: "Fastest start with no download.",
-                detail: "Apple Intelligence is available now, so you can begin immediately. For fully local processing, you can still download an on-device model later.",
-                actionTitle: "Use Apple Intelligence",
+                title: String(localized: "Recommended"),
+                summary: String(localized: "Fastest start with no download."),
+                detail: String(localized: "Apple Intelligence is available now, so you can begin immediately. For fully local processing, you can still download an on-device model later."),
+                actionTitle: String(localized: "Use Apple Intelligence"),
                 prefersImmediateUse: true,
                 usesFallback: false
             )
@@ -439,23 +520,43 @@ final class ModelManager: ObservableObject {
             .filter { shouldShowModelInCatalog($0) }
 
         let preferredLocalModel: ModelInfo?
+        let smallestFreeLocalModel = freeMLXModels.sorted { lhs, rhs in
+            if lhs.sizeGB != rhs.sizeGB {
+                return lhs.sizeGB < rhs.sizeGB
+            }
+            return lhs.name < rhs.name
+        }.first
+
+        func freeLocalModel(_ model: ModelInfo) -> ModelInfo? {
+            freeMLXModels.first { $0.id == model.id }
+        }
 
         if UIDevice.current.userInterfaceIdiom != .phone {
-            preferredLocalModel = freeMLXModels.first(where: { $0.id == ModelInfo.gemma2_2b_4bit.id })
+            preferredLocalModel = freeLocalModel(.gemma2_2b_4bit)
                 ?? freeMLXModels.sorted { $0.sizeGB > $1.sizeGB }.first
+        } else if availableStorage >= requiredSpaceGB(for: .qwen25_3b_instruct_4bit)
+                    && ModelInfo.qwen25_3b_instruct_4bit.currentDeviceFit != .unsupported,
+                  let qwen25_3b = freeLocalModel(.qwen25_3b_instruct_4bit) {
+            preferredLocalModel = qwen25_3b
         } else if availableStorage >= requiredSpaceGB(for: .gemma2_2b_4bit)
-                    && ModelInfo.gemma2_2b_4bit.currentDeviceFit != .unsupported {
-            preferredLocalModel = freeMLXModels.first(where: { $0.id == ModelInfo.gemma2_2b_4bit.id })
-        } else if availableStorage >= requiredSpaceGB(for: .gemma3_1b_qat_4bit) {
-            preferredLocalModel = freeMLXModels.first(where: { $0.id == ModelInfo.gemma3_1b_qat_4bit.id })
+                    && ModelInfo.gemma2_2b_4bit.currentDeviceFit != .unsupported,
+                  let gemma2 = freeLocalModel(.gemma2_2b_4bit) {
+            preferredLocalModel = gemma2
+        } else if availableStorage >= requiredSpaceGB(for: .gemma3_1b_qat_4bit),
+                  let gemma3_1b = freeLocalModel(.gemma3_1b_qat_4bit) {
+            preferredLocalModel = gemma3_1b
+        } else if availableStorage >= requiredSpaceGB(for: .gemma3_270m_qat_4bit),
+                  let gemma3_270m = freeLocalModel(.gemma3_270m_qat_4bit) {
+            preferredLocalModel = gemma3_270m
         } else {
-            preferredLocalModel = freeMLXModels.first(where: { $0.id == ModelInfo.gemma3_270m_qat_4bit.id })
-                ?? freeMLXModels.sorted { $0.sizeGB < $1.sizeGB }.first
+            preferredLocalModel = smallestFreeLocalModel
         }
 
         if let preferredLocalModel {
             let detail: String
-            if preferredLocalModel.id == ModelInfo.gemma2_2b_4bit.id {
+            if preferredLocalModel.id == ModelInfo.qwen25_3b_instruct_4bit.id {
+                detail = "This device should handle \(preferredLocalModel.name) well, and it gives you a noticeably better quality baseline while staying a reasonable download size."
+            } else if preferredLocalModel.id == ModelInfo.gemma2_2b_4bit.id {
                 detail = "This device should handle \(preferredLocalModel.name) well, and it gives a better quality baseline than the ultra-small models."
             } else if preferredLocalModel.id == ModelInfo.gemma3_1b_qat_4bit.id {
                 detail = "\(preferredLocalModel.name) keeps the download light while still fitting comfortably on this device."
@@ -465,27 +566,27 @@ final class ModelManager: ObservableObject {
 
             return recommendation(
                 for: preferredLocalModel,
-                title: "Recommended",
-                summary: "\(preferredLocalModel.sizeLabel) download, fully on-device.",
+                title: String(localized: "Recommended"),
+                summary: String(format: String(localized: "%@ download, fully on-device.", defaultValue: "%@ download, fully on-device."), preferredLocalModel.sizeLabel),
                 detail: detail,
                 actionTitle: preferredLocalModel.downloadState.isDownloaded
-                    ? "Use \(preferredLocalModel.name)"
-                    : "Download \(preferredLocalModel.name)",
+                    ? String(format: String(localized: "Use %@", defaultValue: "Use %@"), preferredLocalModel.name)
+                    : String(format: String(localized: "Download %@", defaultValue: "Download %@"), preferredLocalModel.name),
                 prefersImmediateUse: preferredLocalModel.downloadState.isDownloaded,
                 usesFallback: false
             )
         }
 
-        guard let fallback = bestAvailableModel() ?? models.first(where: { $0.engine == .appleFoundation }) else {
+        guard let fallback = bestAvailableModel() ?? smallestFreeLocalModel else {
             return nil
         }
 
         return recommendation(
             for: fallback,
-            title: "Recommended",
-            summary: "Using the best available fallback.",
-            detail: "A first-choice starter model is not available right now, so this fallback keeps onboarding moving instead of leaving you without a usable model.",
-            actionTitle: "Continue",
+            title: String(localized: "Recommended"),
+            summary: String(localized: "Using the best available fallback."),
+            detail: String(localized: "A first-choice starter model is not available right now, so this fallback keeps onboarding moving instead of leaving you without a usable model."),
+            actionTitle: String(localized: "Continue"),
             prefersImmediateUse: fallback.downloadState.isDownloaded || fallback.engine == .appleFoundation,
             usesFallback: true
         )
@@ -502,14 +603,14 @@ final class ModelManager: ObservableObject {
            let preferredModel = models.first(where: { $0.id == preferredModelID }) {
             let recommendation = recommendation(
                 for: preferredModel,
-                title: "Selected for onboarding",
+                title: String(localized: "Selected for onboarding"),
                 summary: preferredModel.downloadState.isDownloaded || preferredModel.engine == .appleFoundation
-                    ? "Using your selected model."
-                    : "\(preferredModel.sizeLabel) download selected.",
+                    ? String(localized: "Using your selected model.")
+                    : String(format: String(localized: "%@ download selected.", defaultValue: "%@ download selected."), preferredModel.sizeLabel),
                 detail: deviceFitSummary(for: preferredModel),
                 actionTitle: preferredModel.downloadState.isDownloaded || preferredModel.engine == .appleFoundation
-                    ? "Use \(preferredModel.name)"
-                    : "Download \(preferredModel.name)",
+                    ? String(format: String(localized: "Use %@", defaultValue: "Use %@"), preferredModel.name)
+                    : String(format: String(localized: "Download %@", defaultValue: "Download %@"), preferredModel.name),
                 prefersImmediateUse: preferredModel.downloadState.isDownloaded || preferredModel.engine == .appleFoundation,
                 usesFallback: false
             )
@@ -560,6 +661,8 @@ final class ModelManager: ObservableObject {
         switch failure.reason {
         case .lowStorage:
             return .freeSpace
+        case .cellularRestricted:
+            return allowCellularDownloads ? .retry : .cellularRestricted
         case .corrupted:
             return .repair
         case .network, .simulatorUnsupported, .unknown:
@@ -602,6 +705,11 @@ final class ModelManager: ObservableObject {
             applyDownloadFailure(failure, for: modelID)
             return
         }
+
+        if let failure = cellularRestrictionFailureIfNeeded(allowCellular: allowCellularDownloads) {
+            applyDownloadFailure(failure, for: modelID)
+            return
+        }
         
         print("[ModelManager] download start id=\(modelID)")
         downloadFailures.removeValue(forKey: modelID)
@@ -618,72 +726,21 @@ final class ModelManager: ObservableObject {
                 _ = await NotificationManager.shared.requestAuthorizationIfNeeded()
             }
         }
-        
-        let task = Task { [weak self] in
-            guard let self = self else { return }
-            #if targetEnvironment(simulator)
-            await MainActor.run {
-                self.applyDownloadFailure(self.simulatorUnsupportedFailure(), for: modelID)
-            }
-            #else
-            do {
-                try await self.downloadModelContainerWithRetry(modelID: modelID, model: model)
-                await MainActor.run {
-                    if let idx = self.models.firstIndex(where: { $0.id == modelID }) {
-                        self.models[idx].downloadState = .downloaded
-                    }
-                    self.downloadFailures.removeValue(forKey: modelID)
-                }
-                self.persistModelIfNeeded(modelID: modelID)
-                guard MLXStorage.hasValidModelArtifacts(for: modelID) else {
-                    throw DownloadFailureError(failure: self.corruptedFailure())
-                }
-                if self.downloadNotifications {
-                    await MainActor.run {
-                        NotificationManager.shared.postDownloadCompleted(modelName: model.name)
-                    }
-                }
-                self.downloadDiagnostics.finish(modelID: modelID, finalProgress: 1.0)
-                print("[ModelManager] download complete id=\(modelID)")
-                await MainActor.run {
-                    if selectWhenFinished || self.selectedModelID == nil {
-                        self.selectedModelID = modelID
-                    }
-                }
-            } catch is CancellationError {
-                self.downloadDiagnostics.cancel(modelID: modelID)
-                print("[ModelManager] download cancelled id=\(modelID)")
-            } catch let failureError as DownloadFailureError {
-                self.downloadDiagnostics.fail(modelID: modelID, message: failureError.failure.message)
-                await MainActor.run {
-                    self.applyDownloadFailure(failureError.failure, for: modelID)
-                }
-                if self.downloadNotifications {
-                    await MainActor.run {
-                        NotificationManager.shared.postDownloadFailed(modelName: model.name, errorMessage: failureError.failure.message)
-                    }
-                }
-                print("[ModelManager] download failed id=\(modelID) error=\(failureError.failure.message)")
-            } catch {
-                let failure = self.classifyDownloadError(error, for: model)
-                self.downloadDiagnostics.fail(modelID: modelID, message: failure.message)
-                await MainActor.run {
-                    self.applyDownloadFailure(failure, for: modelID)
-                }
-                if self.downloadNotifications {
-                    await MainActor.run {
-                        NotificationManager.shared.postDownloadFailed(modelName: model.name, errorMessage: failure.message)
-                    }
-                }
-                print("[ModelManager] download failed id=\(modelID) error=\(failure.message)")
-            }
-            #endif
-            await MainActor.run {
-                self.downloadTasks.removeValue(forKey: modelID)
-                self.downloadProgressLimiter.reset(modelID: modelID)
-                self.updateIdleTimer()
-                self.endBackgroundTask(for: modelID)
-            }
+
+        let progressCoalescer = MainActorProgressCoalescer(modelID: modelID, manager: self)
+        let notifyDownloads = downloadNotifications
+        let modelName = model.name
+
+        let task = Task.detached(priority: .utility) { [weak self] in
+            guard let self else { return }
+            await self.performDownloadWork(
+                modelID: modelID,
+                model: model,
+                modelName: modelName,
+                downloadNotifications: notifyDownloads,
+                selectWhenFinished: selectWhenFinished,
+                progressCoalescer: progressCoalescer
+            )
         }
 
         downloadTasks[modelID] = task
@@ -758,6 +815,94 @@ final class ModelManager: ObservableObject {
         let failure: DownloadFailure
     }
 
+    /// Runs Hub/URL work off the main actor; UI/state updates hop to `MainActor` explicitly.
+    nonisolated private func performDownloadWork(
+        modelID: String,
+        model: ModelInfo,
+        modelName: String,
+        downloadNotifications: Bool,
+        selectWhenFinished: Bool,
+        progressCoalescer: MainActorProgressCoalescer
+    ) async {
+        defer {
+            progressCoalescer.cancel()
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.downloadTasks.removeValue(forKey: modelID)
+                self.downloadProgressLimiter.reset(modelID: modelID)
+                self.updateIdleTimer()
+                self.endBackgroundTask(for: modelID)
+            }
+        }
+
+        #if targetEnvironment(simulator)
+        await MainActor.run { [weak self] in
+            guard let self else { return }
+            self.applyDownloadFailure(self.simulatorUnsupportedFailure(), for: modelID)
+        }
+        #else
+        do {
+            try await downloadModelContainerWithRetry(
+                modelID: modelID,
+                model: model,
+                progressCoalescer: progressCoalescer
+            )
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                if let idx = self.models.firstIndex(where: { $0.id == modelID }) {
+                    self.models[idx].downloadState = .downloaded
+                }
+                self.downloadFailures.removeValue(forKey: modelID)
+            }
+            persistModelIfNeeded(modelID: modelID)
+            guard MLXStorage.hasValidModelArtifacts(for: modelID) else {
+                throw DownloadFailureError(failure: corruptedFailure())
+            }
+            if downloadNotifications {
+                await MainActor.run {
+                    NotificationManager.shared.postDownloadCompleted(modelName: modelName)
+                }
+            }
+            downloadDiagnostics.finish(modelID: modelID, finalProgress: 1.0)
+            print("[ModelManager] download complete id=\(modelID)")
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                if selectWhenFinished || self.selectedModelID == nil {
+                    self.selectedModelID = modelID
+                }
+            }
+        } catch is CancellationError {
+            downloadDiagnostics.cancel(modelID: modelID)
+            print("[ModelManager] download cancelled id=\(modelID)")
+        } catch let failureError as DownloadFailureError {
+            downloadDiagnostics.fail(modelID: modelID, message: failureError.failure.message)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.applyDownloadFailure(failureError.failure, for: modelID)
+            }
+            if downloadNotifications {
+                await MainActor.run {
+                    NotificationManager.shared.postDownloadFailed(modelName: modelName, errorMessage: failureError.failure.message)
+                }
+            }
+            print("[ModelManager] download failed id=\(modelID) error=\(failureError.failure.message)")
+        } catch {
+            let failure = classifyDownloadError(error, for: model)
+            downloadDiagnostics.fail(modelID: modelID, message: failure.message)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.applyDownloadFailure(failure, for: modelID)
+            }
+            if downloadNotifications {
+                await MainActor.run {
+                    NotificationManager.shared.postDownloadFailed(modelName: modelName, errorMessage: failure.message)
+                }
+            }
+            print("[ModelManager] download failed id=\(modelID) error=\(failure.message)")
+        }
+        #endif
+    }
+
     private func applyDownloadFailure(_ failure: DownloadFailure, for modelID: String) {
         downloadFailures[modelID] = failure
         if let index = models.firstIndex(where: { $0.id == modelID }) {
@@ -765,11 +910,17 @@ final class ModelManager: ObservableObject {
         }
     }
 
-    private func requiredSpaceGB(for model: ModelInfo) -> Double {
+    nonisolated private func cellularRestrictionFailureIfNeeded(allowCellular: Bool) -> DownloadFailure? {
+        guard !allowCellular else { return nil }
+        guard DownloadNetworkMonitor.shared.isCellularRestricted else { return nil }
+        return cellularRestrictedFailure()
+    }
+
+    nonisolated private func requiredSpaceGB(for model: ModelInfo) -> Double {
         max(model.sizeGB * 1.15, model.sizeGB + 0.35)
     }
 
-    private func preflightFailure(for model: ModelInfo) -> DownloadFailure? {
+    nonisolated private func preflightFailure(for model: ModelInfo) -> DownloadFailure? {
         let available = DiskSpace.availableGB()
         let required = requiredSpaceGB(for: model)
         if available + 0.001 < required {
@@ -785,18 +936,25 @@ final class ModelManager: ObservableObject {
         return nil
     }
 
-    private func simulatorUnsupportedFailure() -> DownloadFailure {
+    nonisolated private func simulatorUnsupportedFailure() -> DownloadFailure {
         DownloadFailure(reason: .simulatorUnsupported, message: "Simulator not supported")
     }
 
-    private func corruptedFailure() -> DownloadFailure {
+    nonisolated private func cellularRestrictedFailure() -> DownloadFailure {
+        DownloadFailure(
+            reason: .cellularRestricted,
+            message: "Cellular Downloads is off. Connect to Wi-Fi or turn it on in Settings."
+        )
+    }
+
+    nonisolated private func corruptedFailure() -> DownloadFailure {
         DownloadFailure(
             reason: .corrupted,
             message: "Model files are incomplete or corrupted. Tap Repair to re-download."
         )
     }
 
-    private func classifyDownloadError(_ error: Error, for model: ModelInfo) -> DownloadFailure {
+    nonisolated private func classifyDownloadError(_ error: Error, for model: ModelInfo) -> DownloadFailure {
         let nsError = error as NSError
 
         if nsError.domain == NSCocoaErrorDomain && nsError.code == CocoaError.fileWriteOutOfSpace.rawValue {
@@ -830,7 +988,7 @@ final class ModelManager: ObservableObject {
         return DownloadFailure(reason: .unknown, message: fallback)
     }
 
-    private func isLikelyNetworkError(message: String) -> Bool {
+    nonisolated private func isLikelyNetworkError(message: String) -> Bool {
         let lower = message.lowercased()
         return lower.contains("network")
             || lower.contains("internet")
@@ -840,7 +998,7 @@ final class ModelManager: ObservableObject {
             || lower.contains("connection")
     }
 
-    private func isLikelyCorruptionError(message: String) -> Bool {
+    nonisolated private func isLikelyCorruptionError(message: String) -> Bool {
         let lower = message.lowercased()
         return lower.contains("checksum")
             || lower.contains("corrupt")
@@ -851,10 +1009,13 @@ final class ModelManager: ObservableObject {
     }
 
     #if !targetEnvironment(simulator)
-    private func downloadModelContainerWithRetry(modelID: String, model: ModelInfo) async throws {
+    nonisolated private func downloadModelContainerWithRetry(
+        modelID: String,
+        model: ModelInfo,
+        progressCoalescer: MainActorProgressCoalescer
+    ) async throws {
         let maxAttempts = 3
-        let hub = HubApi(downloadBase: MLXStorage.persistentBaseURL().deletingLastPathComponent())
-        var shouldTryFullRepoFallback = true
+        let hub = makeHubApi()
 
         do {
             print("[ModelManager] download filter id=\(modelID) globs=\(Self.requiredMLXDownloadGlobs.joined(separator: ","))")
@@ -863,13 +1024,14 @@ final class ModelManager: ObservableObject {
                 modelID: modelID,
                 matching: Self.requiredMLXDownloadGlobs,
                 maxAttempts: maxAttempts,
-                model: model
+                model: model,
+                progressCoalescer: progressCoalescer
             )
             return
         } catch {
             if error is CancellationError { throw error }
             let failure = classifyDownloadError(error, for: model)
-            shouldTryFullRepoFallback = failure.reason == .corrupted || failure.reason == .unknown
+            let shouldTryFullRepoFallback = failure.reason == .corrupted || failure.reason == .unknown
             if !shouldTryFullRepoFallback {
                 throw DownloadFailureError(failure: failure)
             }
@@ -882,7 +1044,8 @@ final class ModelManager: ObservableObject {
                 modelID: modelID,
                 matching: [],
                 maxAttempts: maxAttempts,
-                model: model
+                model: model,
+                progressCoalescer: progressCoalescer
             )
             return
         } catch {
@@ -892,12 +1055,17 @@ final class ModelManager: ObservableObject {
         }
     }
 
-    private func runSnapshotDownload(
+    nonisolated private func makeHubApi() -> HubApi {
+        return HubApi(downloadBase: MLXStorage.persistentBaseURL().deletingLastPathComponent())
+    }
+
+    nonisolated private func runSnapshotDownload(
         hub: HubApi,
         modelID: String,
         matching globs: [String],
         maxAttempts: Int,
-        model: ModelInfo
+        model: ModelInfo,
+        progressCoalescer: MainActorProgressCoalescer
     ) async throws {
         let filenames = try await hub.getFilenames(from: modelID, matching: globs)
         let metadata = try await hub.getFileMetadata(from: modelID, matching: globs)
@@ -934,18 +1102,11 @@ final class ModelManager: ObservableObject {
                         guard shouldEmit else {
                             return
                         }
-                        Task { @MainActor in
-                            self.downloadDiagnostics.recordMainActorUpdate(
-                                modelID: modelID,
-                                progress: aggregateProgress,
-                                enqueuedAt: callbackTime
-                            )
-                            self.setDownloadProgress(
-                                aggregateProgress,
-                                speedBytesPerSecond: speed,
-                                for: modelID
-                            )
-                        }
+                        progressCoalescer.enqueue(
+                            progress: aggregateProgress,
+                            speed: speed,
+                            enqueuedAt: callbackTime
+                        )
                     }
                     completedBytes += effectiveFileBytes
                 }
@@ -965,12 +1126,30 @@ final class ModelManager: ObservableObject {
     }
     #endif
 
+    /// Called from `MainActorProgressCoalescer` on the main actor (single entry point for coalesced UI updates).
+    fileprivate func applyCoalescedDownloadProgress(
+        modelID: String,
+        progress: Double,
+        speed: Double?,
+        enqueuedAt: CFTimeInterval
+    ) {
+        downloadDiagnostics.recordMainActorUpdate(
+            modelID: modelID,
+            progress: progress,
+            enqueuedAt: enqueuedAt
+        )
+        setDownloadProgress(progress, speedBytesPerSecond: speed, for: modelID)
+    }
+
     private func setDownloadProgress(_ progress: Double, speedBytesPerSecond: Double?, for modelID: String) {
         guard let idx = models.firstIndex(where: { $0.id == modelID }) else { return }
         let clampedProgress = max(0.0, min(progress, 0.99))
 
-        if case .downloading(let currentProgress, let currentSpeed) = models[idx].downloadState,
-           clampedProgress <= currentProgress {
+        guard case .downloading(let currentProgress, let currentSpeed) = models[idx].downloadState else {
+            return
+        }
+
+        if clampedProgress <= currentProgress {
             if speedBytesPerSecond != currentSpeed {
                 models[idx].downloadState = .downloading(
                     progress: currentProgress,
@@ -1033,7 +1212,7 @@ final class ModelManager: ObservableObject {
     }
     
     #if !targetEnvironment(simulator)
-    private func persistModelIfNeeded(modelID: String) {
+    nonisolated private func persistModelIfNeeded(modelID: String) {
         let persistentPath = MLXStorage.modelDirectory(for: modelID)
         if FileManager.default.fileExists(atPath: persistentPath.path) { return }
 
@@ -1111,7 +1290,9 @@ final class ModelManager: ObservableObject {
             // During startup, the model state can still be stale (.notDownloaded) until
             // async availability checks complete. Preserve the persisted selection when
             // valid model artifacts already exist on disk.
-            if selected.engine == .mlx && MLXStorage.hasValidModelArtifacts(for: selected.id) {
+            if selected.engine == .mlx,
+               compatibilityMessage(for: selected) == nil,
+               MLXStorage.hasValidModelArtifacts(for: selected.id) {
                 models[selectedIndex].downloadState = .downloaded
                 downloadFailures.removeValue(forKey: selected.id)
                 return
@@ -1203,6 +1384,9 @@ final class ModelManager: ObservableObject {
 
     func compatibilityMessage(for model: ModelInfo) -> String? {
         guard model.engine == .mlx else { return nil }
+        if model.requiresUnsupportedMLXQuantization {
+            return "This model uses 1-bit MLX quantization, which is not supported by the current MLX runtime."
+        }
         let idiom = UIDevice.current.userInterfaceIdiom
         if idiom == .phone && model.requiresLargeDeviceOnPhone {
             return "Requires an iPad Pro or Mac. This model exceeds the practical memory budget for iPhone."

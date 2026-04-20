@@ -26,6 +26,7 @@ struct ChatView: View {
     @State private var documentError: String?
     @State private var voiceError: String?
     @State private var usageLimitToastMessage: String?
+    @State private var extractionNoticeMessage: String?
     @State private var streamingPrefix = ""
     @State private var speechStreamingSpokenCharCount: Int = 0
     @State private var selectedImage: UIImage?
@@ -33,8 +34,13 @@ struct ChatView: View {
     @State private var activeStreamingConversationID: UUID?
     @State private var activeStreamingAssistantID: UUID?
     @State private var pendingSessionReset = false
+    @State private var selectedDocumentForSources: ConversationDocument?
     @AppStorage("systemPrompt") private var systemPrompt = "You are a helpful AI assistant."
     @AppStorage("responseCharacterLimit") private var responseCharacterLimit = 1000
+
+    @State private var editingMessage: ChatMessage?
+    @State private var editedMessageText: String = ""
+    @State private var isEditSheetPresented = false
     
     var body: some View {
         alertContent
@@ -71,7 +77,7 @@ struct ChatView: View {
         lifecycleContent
             .fileImporter(
                 isPresented: $isFileImporterPresented,
-                allowedContentTypes: [.pdf, .text, .plainText, .sourceCode, .rtf, .rtfd, .docx],
+                allowedContentTypes: [.pdf, .image, .text, .plainText, .sourceCode, .rtf, .rtfd, .docx],
                 allowsMultipleSelection: false
             ) { result in
                 handleFileImport(result: result)
@@ -82,21 +88,23 @@ struct ChatView: View {
                 matching: .images,
                 photoLibrary: .shared()
             )
-            .alert("Microphone Access Required", isPresented: Bindable(speechManager).showPermissionAlert) {
-                Button("Settings") {
+            .alert(String(localized: "Microphone Access Required"), isPresented: Bindable(speechManager).showPermissionAlert) {
+                Button(String(localized: "Settings")) {
                     if let url = URL(string: UIApplication.openSettingsURLString) {
                         UIApplication.shared.open(url)
                     }
                 }
-                Button("Cancel", role: .cancel) { }
+                Button(String(localized: "Cancel"), role: .cancel) { }
             } message: {
-                Text("Please enable microphone and speech recognition access in Settings to use voice input.")
+                Text(String(localized: "Please enable microphone and speech recognition access in Settings to use voice input."))
             }
             .sheet(isPresented: $showModelDownloadSheet) {
                 NavigationStack {
                     ModelDownloadView()
                 }
+                .environment(llmEngine)
                 .environment(modelManager)
+                .environment(monetizationManager)
                 .environmentObject(modelManager)
             }
             .sheet(isPresented: $showModelConsentSheet) {
@@ -113,27 +121,65 @@ struct ChatView: View {
                         shouldSendAfterConsent = false
                     }
                 } else {
-                    Text("No model selected.")
+                    Text(String(localized: "No model selected."))
                         .padding()
                 }
             }
             .sheet(item: $upgradeFeature) { feature in
                 UpgradeView(feature: feature)
+                    .environment(monetizationManager)
             }
-            .overlay(alignment: .bottom) {
-                if let usageLimitToastMessage {
-                    usageLimitToast(message: usageLimitToastMessage)
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 110)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+            .sheet(item: $selectedDocumentForSources) { document in
+                DocumentSourceDrawerView(document: document)
+            }
+            .sheet(isPresented: $isEditSheetPresented) {
+                NavigationStack {
+                    VStack(spacing: 12) {
+                        TextEditor(text: $editedMessageText)
+                            .font(.body)
+                            .frame(minHeight: 180)
+                            .padding(10)
+                            .background(Color(white: 0.96), in: RoundedRectangle(cornerRadius: 12))
+
+                        Spacer()
+                    }
+                    .padding(16)
+                    .navigationTitle(String(localized: "Edit Message"))
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button(String(localized: "Cancel")) { isEditSheetPresented = false }
+                        }
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button(String(localized: "Re-run")) {
+                                applyEditedMessageAndRerun()
+                            }
+                            .disabled(editedMessageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
                 }
             }
-            .confirmationDialog("Add to chat", isPresented: $showAttachmentOptions, titleVisibility: .visible) {
-                Button("Photo or Screenshot") {
+            .overlay(alignment: .bottom) {
+                VStack(spacing: 10) {
+                    if let usageLimitToastMessage {
+                        usageLimitToast(message: usageLimitToastMessage)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+
+                    if let extractionNoticeMessage {
+                        extractionNoticeToast(message: extractionNoticeMessage)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 110)
+            }
+            .confirmationDialog(String(localized: "Add to chat"), isPresented: $showAttachmentOptions, titleVisibility: .visible) {
+                Button(String(localized: "Photo or Screenshot")) {
                     isPhotoPickerPresented = true
                 }
 
-                Button("Document") {
+                Button(String(localized: "Open Document")) {
                     guard monetizationManager.canUse(.unlimitedDocuments) || currentConversationDocuments.isEmpty else {
                         upgradeFeature = .unlimitedDocuments
                         return
@@ -141,7 +187,7 @@ struct ChatView: View {
                     isFileImporterPresented = true
                 }
 
-                Button("Cancel", role: .cancel) { }
+                Button(String(localized: "Cancel"), role: .cancel) { }
             }
     }
 
@@ -255,7 +301,22 @@ struct ChatView: View {
                                 message: message,
                                 showsContinue: canContinue(message),
                                 onContinue: canContinue(message) ? { continueResponse(for: message) } : nil,
-                                recoveryAction: recoveryAction
+                                recoveryAction: recoveryAction,
+                                onEdit: { message in
+                                    startEdit(message)
+                                },
+                                onRegenerateMore: { message in
+                                    regenerate(message: message, style: .more)
+                                },
+                                onRegenerateLess: { message in
+                                    regenerate(message: message, style: .less)
+                                },
+                                onBranchFromHere: { message in
+                                    branchConversation(from: message)
+                                },
+                                onTogglePin: { message in
+                                    historyManager.togglePinned(messageID: message.id, in: historyManager.currentConversationID)
+                                }
                             )
                                 .id(message.id)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
@@ -264,7 +325,7 @@ struct ChatView: View {
                                             historyManager.deleteMessage(id: message.id)
                                         }
                                     } label: {
-                                        Label("Delete", systemImage: "trash")
+                                        Label(String(localized: "Delete"), systemImage: "trash")
                                     }
                                 }
                         }
@@ -385,7 +446,7 @@ struct ChatView: View {
                         ProgressView(value: documentManager.extractionProgress)
                             .progressViewStyle(.linear)
                             .tint(.blue)
-                        Text("Extracting…")
+                        Text(String(localized: "Extracting…"))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -413,6 +474,8 @@ struct ChatView: View {
                             .clipShape(Circle())
                     }
                     .disabled(isExtractingDocument || speechManager.isListening)
+                    .accessibilityLabel(String(localized: "Add to chat"))
+                    .accessibilityHint(String(localized: "Opens options for adding a photo, screenshot, or document."))
                     
                     // Text field
                     HStack {
@@ -546,9 +609,12 @@ struct ChatView: View {
                             .font(.caption)
                             .foregroundStyle(.blue)
 
-                        Text(document.name)
-                            .font(.caption)
-                            .lineLimit(1)
+                        Button {
+                            selectedDocumentForSources = document
+                        } label: {
+                            documentChipLabel(for: document)
+                        }
+                        .buttonStyle(.plain)
 
                         Button {
                             guard let conversationID = historyManager.currentConversationID else { return }
@@ -580,13 +646,51 @@ struct ChatView: View {
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
 
+    private func documentChipLabel(for document: ConversationDocument) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text(document.name)
+                    .font(.caption)
+                    .lineLimit(1)
+
+                if let badgeTitle = document.textOrigin.badgeTitle {
+                    Text(badgeTitle)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.12), in: Capsule())
+                        .accessibilityLabel(document.textOrigin.accessibilityLabel)
+                }
+            }
+
+            documentChipDetail(for: document)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    @ViewBuilder
+    private func documentChipDetail(for document: ConversationDocument) -> some View {
+        if document.textOrigin != .native {
+            Text(document.textOrigin.accessibilityLabel)
+                .font(.caption2)
+                .foregroundStyle(Color(white: 0.45))
+                .lineLimit(1)
+        } else if let pageInfo = document.pageInfo {
+            Text(pageInfo)
+                .font(.caption2)
+                .foregroundStyle(Color(white: 0.45))
+                .lineLimit(1)
+        }
+    }
+
     private var voiceModeBanner: some View {
         HStack(spacing: 10) {
             Image(systemName: speechManager.isListening ? "waveform.circle.fill" : "waveform.circle")
                 .foregroundStyle(speechManager.isListening ? .red : .blue)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text("Conversation Mode")
+                Text(String(localized: "Conversation Mode"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color(white: 0.15))
                 Text(speechManager.isListening ? String(localized: "Listening for your next turn") : String(localized: "Replies are spoken and listening restarts automatically"))
@@ -596,7 +700,7 @@ struct ChatView: View {
 
             Spacer()
 
-            Toggle("Conversation Mode", isOn: $voiceConversationMode)
+            Toggle(String(localized: "Conversation Mode"), isOn: $voiceConversationMode)
                 .labelsHidden()
         }
         .padding(.horizontal, 16)
@@ -622,6 +726,25 @@ struct ChatView: View {
         .shadow(color: .black.opacity(0.18), radius: 12, y: 8)
     }
 
+    private func extractionNoticeToast(message: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+
+            Text(message)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Color.white)
+                .multilineTextAlignment(.leading)
+
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .background(Color.orange.opacity(0.92))
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.18), radius: 12, y: 8)
+    }
+
     private func speakReplyButton(for message: ChatMessage) -> some View {
         Button {
             toggleSpeechPlayback(for: message)
@@ -641,7 +764,7 @@ struct ChatView: View {
         .buttonStyle(.plain)
         .padding(.top, 4)
         .padding(.bottom, 6)
-        .accessibilityHint("Reads the latest assistant reply aloud.")
+        .accessibilityHint(String(localized: "Reads the latest assistant reply aloud."))
     }
 
     private var microphoneControls: some View {
@@ -694,6 +817,9 @@ struct ChatView: View {
             do {
                 let document = try await documentManager.processFile(at: url)
                 await documentManager.addDocumentToConversation(from: document, conversationID: conversationID)
+                if let warning = document.ocrWarningText {
+                    showExtractionNotice(warning)
+                }
             } catch {
                 print("Error processing file: \(error)")
                 documentError = error.localizedDescription
@@ -778,9 +904,9 @@ struct ChatView: View {
         
         var displayText: String
         if text.isEmpty && imageToSend != nil {
-            displayText = String(localized: "What's in this image?")
+            displayText = "What's in this image?"
         } else if text.isEmpty && !currentConversationDocuments.isEmpty {
-            displayText = String(localized: "Summarize the documents in this chat.")
+            displayText = "Summarize the documents in this chat."
         } else {
             displayText = text
         }
@@ -816,7 +942,7 @@ struct ChatView: View {
             // For non-vision models with image, prepend note
             var effectivePrompt = promptContext.prompt
             if imageToSend != nil, !model.supportsVision {
-                effectivePrompt = String(localized: "[Note: The user attached an image, but the selected model does not support image analysis. Please describe the image in text or select a vision-capable model.]\n\n") + effectivePrompt
+                effectivePrompt = "[Note: The user attached an image, but the selected model does not support image analysis. Please describe the image in text or select a vision-capable model.]\n\n" + effectivePrompt
             }
             
             await runAssistantResponse(
@@ -863,6 +989,23 @@ struct ChatView: View {
                 if usageLimitToastMessage == message {
                     withAnimation(.easeOut(duration: 0.2)) {
                         usageLimitToastMessage = nil
+                    }
+                }
+            }
+        }
+    }
+
+    private func showExtractionNotice(_ message: String) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            extractionNoticeMessage = message
+        }
+
+        Task {
+            try? await Task.sleep(for: .seconds(3.0))
+            await MainActor.run {
+                if extractionNoticeMessage == message {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        extractionNoticeMessage = nil
                     }
                 }
             }
@@ -1054,7 +1197,7 @@ struct ChatView: View {
                     .foregroundStyle(Color(white: 0.5))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Remove attached image")
+            .accessibilityLabel(String(localized: "Remove attached image"))
         }
         .padding(.horizontal, 16)
         .padding(.top, 10)
@@ -1233,6 +1376,113 @@ struct ChatView: View {
                 assistantSourceTitles: message.sourceTitles
             )
         }
+    }
+
+    private func startEdit(_ message: ChatMessage) {
+        guard message.role == .user else { return }
+        guard llmEngine.state != .generating else { return }
+
+        guard let idx = historyManager.currentMessages.firstIndex(where: { $0.id == message.id }) else { return }
+
+        // Keep edits scoped to the most recent user turn so the underlying model context stays coherent.
+        let isLast = idx == historyManager.currentMessages.count - 1
+        let isSecondLast = idx == historyManager.currentMessages.count - 2
+        guard isLast || isSecondLast else { return }
+
+        editingMessage = message
+        editedMessageText = message.content
+        isEditSheetPresented = true
+    }
+
+    private func applyEditedMessageAndRerun() {
+        guard let editingMessage else { return }
+        guard llmEngine.state != .generating else { return }
+
+        if monetizationManager.hasReachedFreeDailyMessageLimit {
+            showUsageLimitToast()
+            return
+        }
+
+        guard let model = modelManager.selectedModel else { return }
+        if !hasConsent(for: model.id) {
+            shouldSendAfterConsent = false
+            showModelConsentSheet = true
+            return
+        }
+
+        let conversationID = historyManager.currentConversationID
+        let newText = editedMessageText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !newText.isEmpty else { return }
+
+        historyManager.updateMessage(
+            id: editingMessage.id,
+            in: conversationID,
+            content: newText,
+            isStreaming: false
+        )
+        historyManager.truncateConversation(after: editingMessage.id, in: conversationID)
+
+        isEditSheetPresented = false
+        self.editingMessage = nil
+
+        Task {
+            let promptContext = await buildPromptContext(
+                userText: newText,
+                conversationID: conversationID
+            )
+            await runAssistantResponse(
+                prompt: promptContext.prompt,
+                conversationID: conversationID,
+                resetSession: true,
+                assistantSourceTitles: promptContext.sourceTitles,
+                shouldChargeUsage: true
+            )
+        }
+    }
+
+    private enum RegenerateStyle {
+        case more
+        case less
+    }
+
+    private func regenerate(message: ChatMessage, style: RegenerateStyle) {
+        guard message.role == .assistant else { return }
+        guard llmEngine.state != .generating else { return }
+        guard historyManager.currentMessages.last?.id == message.id else { return }
+
+        let instruction: String
+        switch style {
+        case .more:
+            instruction = """
+            Rewrite your previous answer with more detail.
+            Keep the same intent, but add helpful structure and examples.
+            Do not mention that you are rewriting.
+            """
+        case .less:
+            instruction = """
+            Rewrite your previous answer to be shorter and more direct.
+            Keep the core points, remove fluff, and use bullets if helpful.
+            Do not mention that you are rewriting.
+            """
+        }
+
+        Task {
+            await runAssistantResponse(
+                prompt: instruction,
+                conversationID: historyManager.currentConversationID,
+                assistantID: message.id,
+                existingPrefix: "",
+                placeholderContent: "",
+                assistantSourceTitles: message.sourceTitles,
+                shouldChargeUsage: false
+            )
+        }
+    }
+
+    private func branchConversation(from message: ChatMessage) {
+        guard llmEngine.state != .generating else { return }
+        historyManager.branchConversation(from: message.id)
+        llmEngine.resetSession()
     }
 
     private func retryAction(for message: ChatMessage) -> MessageBubble.RecoveryAction? {

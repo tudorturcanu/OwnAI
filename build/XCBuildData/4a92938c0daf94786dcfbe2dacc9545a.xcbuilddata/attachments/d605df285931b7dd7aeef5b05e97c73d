@@ -1,4 +1,0 @@
-module AnyLanguageModel {
-header "AnyLanguageModel-Swift.h"
-export *
-}

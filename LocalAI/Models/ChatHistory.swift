@@ -462,6 +462,53 @@ final class ChatHistoryManager {
         conversations[convIndex].messages.removeAll { $0.id == id }
         saveConversations(immediately: true, changedConversationIDs: Set([conversations[convIndex].id]))
     }
+
+    func togglePinned(messageID: UUID, in conversationID: UUID?) {
+        guard let conversationID,
+              let convIndex = conversations.firstIndex(where: { $0.id == conversationID }),
+              let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
+
+        var message = conversations[convIndex].messages[msgIndex]
+        message.isPinned.toggle()
+        conversations[convIndex].messages[msgIndex] = message
+        saveConversations(immediately: true, changedConversationIDs: Set([conversationID]))
+    }
+
+    func truncateConversation(after messageID: UUID, in conversationID: UUID?) {
+        guard let conversationID,
+              let convIndex = conversations.firstIndex(where: { $0.id == conversationID }),
+              let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
+
+        let removed = conversations[convIndex].messages.suffix(from: msgIndex + 1)
+        removed.forEach { message in
+            if let fileName = message.imageFileName {
+                ImageAttachmentManager.shared.deleteImage(named: fileName)
+            }
+        }
+        conversations[convIndex].messages = Array(conversations[convIndex].messages.prefix(msgIndex + 1))
+        conversations[convIndex].updatedAt = Date()
+        saveConversations(immediately: true, changedConversationIDs: Set([conversationID]))
+    }
+
+    func branchConversation(from messageID: UUID) {
+        guard let baseID = currentConversationID,
+              let baseConversation = conversation(id: baseID),
+              let idx = baseConversation.messages.firstIndex(where: { $0.id == messageID }) else { return }
+
+        var branched = ChatConversation(
+            title: baseConversation.title,
+            messages: Array(baseConversation.messages.prefix(idx + 1)),
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        if branched.title == "New Chat" {
+            branched.generateTitle()
+        }
+
+        conversations.insert(branched, at: 0)
+        currentConversationID = branched.id
+        saveConversations(immediately: true, changedConversationIDs: Set([branched.id]))
+    }
     
     /// Add a message to the current conversation
     func addMessage(_ message: ChatMessage) {
@@ -516,6 +563,8 @@ final class ChatHistoryManager {
 
         let role = conversations[convIndex].messages[msgIndex].role
         let preservedSourceTitles = sourceTitles ?? conversations[convIndex].messages[msgIndex].sourceTitles
+        let preservedPinned = conversations[convIndex].messages[msgIndex].isPinned
+        let preservedImageFileName = conversations[convIndex].messages[msgIndex].imageFileName
         if role == .assistant {
             conversations[convIndex].messages[msgIndex] = assistantMessage(
                 id: id,
@@ -523,12 +572,15 @@ final class ChatHistoryManager {
                 isStreaming: isStreaming,
                 sourceTitles: preservedSourceTitles
             )
+            conversations[convIndex].messages[msgIndex].isPinned = preservedPinned
         } else {
             conversations[convIndex].messages[msgIndex] = ChatMessage(
                 id: id,
                 role: role,
                 content: content,
                 sourceTitles: preservedSourceTitles,
+                imageFileName: preservedImageFileName,
+                isPinned: preservedPinned,
                 isStreaming: isStreaming
             )
         }

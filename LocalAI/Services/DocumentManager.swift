@@ -6,8 +6,11 @@
 //
 
 import Foundation
+import CoreImage
 import PDFKit
 import UniformTypeIdentifiers
+import Vision
+import UIKit
 
 struct AttachedDocument: Identifiable, Equatable {
     let id = UUID()
@@ -18,6 +21,8 @@ struct AttachedDocument: Identifiable, Equatable {
     let totalPages: Int
     let fileSize: Int64
     let isTrimmed: Bool
+    let textOrigin: DocumentTextOrigin
+    let ocrQuality: DocumentExtractionQuality
     
     var name: String {
         url.lastPathComponent.removingPercentEncoding ?? url.lastPathComponent
@@ -39,6 +44,14 @@ struct AttachedDocument: Identifiable, Equatable {
 
     var storageNote: String? {
         isTrimmed ? "Only for this chat, trimmed locally" : "Only for this chat"
+    }
+
+    var provenanceText: String? {
+        textOrigin.badgeTitle
+    }
+
+    var ocrWarningText: String? {
+        ocrQuality.warningText
     }
     
     /// File type icon name
@@ -121,11 +134,12 @@ final class DocumentManager {
         }
         
         extractionProgress = 0.1
+        let pdfOCRMode = Self.currentPDFOCRMode()
         
         let ext = url.pathExtension.lowercased()
         let attachedDocument = try await MemoryProfiler.measure("DocumentManager.processFile(\(url.lastPathComponent))") {
             let extraction = try await Task.detached(priority: .userInitiated) {
-                try Self.extractContent(at: url, fileExtension: ext)
+                try Self.extractContent(at: url, fileExtension: ext, pdfOCRMode: pdfOCRMode)
             }.value
             
             extractionProgress = 0.9
@@ -149,7 +163,9 @@ final class DocumentManager {
                 extractedPages: extraction.extractedPages,
                 totalPages: extraction.totalPages,
                 fileSize: fileSize,
-                isTrimmed: extraction.text.count > Self.maxStoredCharacters
+                isTrimmed: extraction.text.count > Self.maxStoredCharacters,
+                textOrigin: extraction.textOrigin,
+                ocrQuality: extraction.ocrQuality
             )
         }
         
@@ -194,10 +210,10 @@ final class DocumentManager {
                 await reindexAllDocuments()
             } else {
                 await ragEngine.clear(documentID: existing.id, conversationID: conversationID)
-                await ragEngine.ingest(
-                    text: existing.content,
-                    sections: existing.sections,
-                    documentID: existing.id,
+            await ragEngine.ingest(
+                text: existing.content,
+                sections: existing.sections,
+                documentID: existing.id,
                     conversationID: conversationID
                 )
             }
@@ -268,6 +284,9 @@ final class DocumentManager {
     // MARK: - Extractors
     
     private static let maxPages = 5
+    nonisolated(unsafe) private static let ocrContext = CIContext(options: [
+        .useSoftwareRenderer: false
+    ])
 
     private func removeLegacyLibraryIfNeeded() {
         let legacyURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -385,55 +404,107 @@ final class DocumentManager {
     nonisolated
     private static func extractContent(
         at url: URL,
-        fileExtension: String
-    ) throws -> (text: String, sections: [DocumentSection], extractedPages: Int, totalPages: Int) {
+        fileExtension: String,
+        pdfOCRMode: PDFOCRMode
+    ) throws -> ExtractionResult {
         return switch fileExtension {
         case "pdf":
-            try extractTextFromPDF(at: url)
+            try extractTextFromPDF(at: url, pdfOCRMode: pdfOCRMode)
         case "rtf", "rtfd":
             genericSectionedText(try extractTextFromRTF(at: url))
         case "doc", "docx":
             genericSectionedText(try extractTextFromWord(at: url))
+        case "png", "jpg", "jpeg", "heic", "heif", "tif", "tiff", "bmp", "webp":
+            try extractTextFromImage(at: url)
         default:
             genericSectionedText(try String(contentsOf: url, encoding: .utf8))
         }
     }
     
     nonisolated
-    private static func extractTextFromPDF(at url: URL) throws -> (text: String, sections: [DocumentSection], extractedPages: Int, totalPages: Int) {
+    private static func extractTextFromPDF(at url: URL, pdfOCRMode: PDFOCRMode) throws -> ExtractionResult {
         guard let pdfDocument = PDFDocument(url: url) else {
             throw DocumentError.extractionFailed
         }
         
         let totalPages = pdfDocument.pageCount
-        let pagesToExtract = min(totalPages, Self.maxPages)
+        let pagesToExtract = min(totalPages, 5)
         var fullText = ""
         var sections: [DocumentSection] = []
+        var didUseNativeText = false
+        var didUseOCR = false
+        var ocrCharacterCount = 0
         
         for i in 0..<pagesToExtract {
-            if let page = pdfDocument.page(at: i), let pageText = page.string {
-                let normalizedPageText = pageText.trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !normalizedPageText.isEmpty else { continue }
-                let startOffset = fullText.count
-                if !fullText.isEmpty {
-                    fullText += "\n\n"
+            guard let page = pdfDocument.page(at: i) else { continue }
+
+            let nativeText = page.string?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let shouldUseOCR: Bool
+            switch pdfOCRMode {
+            case .preferNativeText:
+                shouldUseOCR = nativeText?.isEmpty ?? true
+            case .ocrScannedPages:
+                shouldUseOCR = shouldOCRScannedPage(nativeText)
+            case .ocrAllPages:
+                shouldUseOCR = true
+            }
+
+            if !shouldUseOCR, let nativeText, !nativeText.isEmpty {
+                append(pageText: nativeText, title: "Page \(i + 1)", to: &fullText, sections: &sections)
+                didUseNativeText = true
+                continue
+            }
+
+            guard let renderedPage = renderPDFPage(page),
+                  let ocrText = try? recognizeText(from: renderedPage).trimmingCharacters(in: .whitespacesAndNewlines),
+                  !ocrText.isEmpty else {
+                if let nativeText, !nativeText.isEmpty {
+                    append(pageText: nativeText, title: "Page \(i + 1)", to: &fullText, sections: &sections)
+                    didUseNativeText = true
                 }
-                let sectionStart = fullText.count
-                fullText += normalizedPageText
-                let sectionEnd = fullText.count
-                sections.append(
-                    DocumentSection(
-                        title: "Page \(i + 1)",
-                        lowerBound: sectionStart,
-                        upperBound: sectionEnd
-                    )
-                )
+                continue
+            }
+
+            if shouldUseOCR || nativeText == nil || nativeText?.isEmpty == true {
+                append(pageText: ocrText, title: "Page \(i + 1) (OCR)", to: &fullText, sections: &sections)
+                didUseOCR = true
+                ocrCharacterCount += ocrText.count
+            } else if let nativeText, !nativeText.isEmpty {
+                append(pageText: nativeText, title: "Page \(i + 1)", to: &fullText, sections: &sections)
+                didUseNativeText = true
             }
         }
 
         let normalized = fullText.trimmingCharacters(in: .whitespacesAndNewlines)
         let adjustedSections = normalizedSections(for: normalized, originalText: fullText, sections: sections)
-        return (normalized, adjustedSections, pagesToExtract, totalPages)
+        return ExtractionResult(
+            text: normalized,
+            sections: adjustedSections,
+            extractedPages: pagesToExtract,
+            totalPages: totalPages,
+            textOrigin: provenanceOrigin(didUseNativeText: didUseNativeText, didUseOCR: didUseOCR),
+            ocrQuality: ocrQuality(
+                didUseOCR: didUseOCR,
+                ocrCharacterCount: ocrCharacterCount
+            )
+        )
+    }
+    
+    nonisolated
+    private static func extractTextFromImage(at url: URL) throws -> ExtractionResult {
+        let ocrText = try recognizeText(from: url).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ocrText.isEmpty else {
+            throw DocumentError.emptyDocument
+        }
+
+        return ExtractionResult(
+            text: ocrText,
+            sections: [DocumentSection(title: "Image (OCR)", lowerBound: 0, upperBound: ocrText.count)],
+            extractedPages: 1,
+            totalPages: 1,
+            textOrigin: .ocr,
+            ocrQuality: ocrQuality(didUseOCR: true, ocrCharacterCount: ocrText.count)
+        )
     }
     
     nonisolated
@@ -480,17 +551,202 @@ final class DocumentManager {
     }
 
     nonisolated
-    private static func genericSectionedText(_ text: String) -> (text: String, sections: [DocumentSection], extractedPages: Int, totalPages: Int) {
+    private static func genericSectionedText(_ text: String) -> ExtractionResult {
         let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else {
-            return ("", [], 0, 0)
+            return ExtractionResult(text: "", sections: [], extractedPages: 0, totalPages: 0, textOrigin: .native, ocrQuality: .normal)
         }
-        return (
-            normalized,
-            [DocumentSection(title: "Document", lowerBound: 0, upperBound: normalized.count)],
-            0,
-            0
+        return ExtractionResult(
+            text: normalized,
+            sections: [DocumentSection(title: "Document", lowerBound: 0, upperBound: normalized.count)],
+            extractedPages: 0,
+            totalPages: 0,
+            textOrigin: .native,
+            ocrQuality: .normal
         )
+    }
+
+    nonisolated
+    private static func append(
+        pageText: String,
+        title: String,
+        to fullText: inout String,
+        sections: inout [DocumentSection]
+    ) {
+        if !fullText.isEmpty {
+            fullText += "\n\n"
+        }
+        let sectionStart = fullText.count
+        fullText += pageText
+        let sectionEnd = fullText.count
+        sections.append(
+            DocumentSection(
+                title: title,
+                lowerBound: sectionStart,
+                upperBound: sectionEnd
+            )
+        )
+    }
+
+    nonisolated
+    private static func renderPDFPage(_ page: PDFPage) -> UIImage? {
+        let bounds = page.bounds(for: .mediaBox)
+        guard bounds.width > 0, bounds.height > 0 else { return nil }
+
+        let maxDimension: CGFloat = 1800
+        let longestEdge = max(bounds.width, bounds.height)
+        let scale = max(1.0, min(maxDimension / longestEdge, 3.0))
+        let outputSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: outputSize, format: format)
+
+        return renderer.image { context in
+            UIColor.white.setFill()
+            context.fill(CGRect(origin: .zero, size: outputSize))
+
+            context.cgContext.translateBy(x: 0, y: outputSize.height)
+            context.cgContext.scaleBy(x: scale, y: -scale)
+            page.draw(with: .mediaBox, to: context.cgContext)
+        }
+    }
+
+    nonisolated
+    private static func recognizeText(from image: UIImage) throws -> String {
+        guard let cgImage = preprocessForOCR(from: image) else {
+            throw DocumentError.extractionFailed
+        }
+
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        request.automaticallyDetectsLanguage = true
+
+        let handler = VNImageRequestHandler(
+            cgImage: cgImage,
+            orientation: .up,
+            options: [:]
+        )
+        try handler.perform([request])
+
+        guard let observations = request.results, !observations.isEmpty else {
+            return ""
+        }
+
+        let lines = observations
+            .sorted {
+                let lhsBox = $0.boundingBox
+                let rhsBox = $1.boundingBox
+                if abs(lhsBox.midY - rhsBox.midY) > 0.03 {
+                    return lhsBox.midY > rhsBox.midY
+                }
+                return lhsBox.midX < rhsBox.midX
+            }
+            .compactMap { $0.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return lines.joined(separator: "\n")
+    }
+
+    nonisolated
+    private static func preprocessForOCR(from image: UIImage) -> CGImage? {
+        guard image.size.width > 0, image.size.height > 0 else { return nil }
+
+        let rendererFormat = UIGraphicsImageRendererFormat.default()
+        rendererFormat.scale = 1
+        let normalizedImage = UIGraphicsImageRenderer(size: image.size, format: rendererFormat).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: image.size))
+        }
+
+        guard let sourceCGImage = normalizedImage.cgImage else {
+            return nil
+        }
+
+        let source = CIImage(cgImage: sourceCGImage)
+        let cleaned = source
+            .clampedToExtent()
+            .applyingFilter("CIColorControls", parameters: [
+                kCIInputSaturationKey: 0.0,
+                kCIInputContrastKey: 1.18,
+                kCIInputBrightnessKey: 0.02
+            ])
+            .applyingFilter("CISharpenLuminance", parameters: [
+                kCIInputSharpnessKey: 0.35
+            ])
+            .cropped(to: source.extent)
+
+        return ocrContext.createCGImage(cleaned, from: cleaned.extent)
+    }
+
+    nonisolated
+    private static func recognizeText(from url: URL) throws -> String {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        request.automaticallyDetectsLanguage = true
+
+        guard let image = UIImage(contentsOfFile: url.path),
+              let cgImage = preprocessForOCR(from: image) else {
+            throw DocumentError.extractionFailed
+        }
+
+        let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
+        try handler.perform([request])
+
+        guard let observations = request.results, !observations.isEmpty else {
+            return ""
+        }
+
+        let lines = observations
+            .sorted {
+                let lhsBox = $0.boundingBox
+                let rhsBox = $1.boundingBox
+                if abs(lhsBox.midY - rhsBox.midY) > 0.03 {
+                    return lhsBox.midY > rhsBox.midY
+                }
+                return lhsBox.midX < rhsBox.midX
+            }
+            .compactMap { $0.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+
+        return lines.joined(separator: "\n")
+    }
+
+    nonisolated
+    private static func provenanceOrigin(didUseNativeText: Bool, didUseOCR: Bool) -> DocumentTextOrigin {
+        switch (didUseNativeText, didUseOCR) {
+        case (true, true):
+            return .mixed
+        case (false, true):
+            return .ocr
+        default:
+            return .native
+        }
+    }
+
+    nonisolated
+    private static func ocrQuality(didUseOCR: Bool, ocrCharacterCount: Int) -> DocumentExtractionQuality {
+        guard didUseOCR else { return .normal }
+        return ocrCharacterCount < 160 ? .weak : .normal
+    }
+
+    nonisolated
+    private static func shouldOCRScannedPage(_ nativeText: String?) -> Bool {
+        guard let nativeText, !nativeText.isEmpty else { return true }
+
+        let lineCount = nativeText.split(whereSeparator: \.isNewline).count
+        if nativeText.count < 120 {
+            return true
+        }
+
+        return lineCount <= 2 && nativeText.count < 220
+    }
+
+    nonisolated
+    private static func currentPDFOCRMode() -> PDFOCRMode {
+        PDFOCRMode(
+            rawValue: UserDefaults.standard.string(forKey: "pdfOCRMode") ?? PDFOCRMode.preferNativeText.rawValue
+        ) ?? .preferNativeText
     }
 
     nonisolated
@@ -514,6 +770,15 @@ final class DocumentManager {
             return DocumentSection(title: section.title, lowerBound: lowerBound, upperBound: upperBound)
         }
     }
+}
+
+private struct ExtractionResult {
+    let text: String
+    let sections: [DocumentSection]
+    let extractedPages: Int
+    let totalPages: Int
+    let textOrigin: DocumentTextOrigin
+    let ocrQuality: DocumentExtractionQuality
 }
 
 private struct PersistedConversationDocuments: Codable {
