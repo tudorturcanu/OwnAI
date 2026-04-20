@@ -2,9 +2,9 @@
 
 Assumption: the shipped brand is `Own Ai` today, but the App Store listing should standardize it to `Own AI` for readability and search consistency.
 
-## Recommended Metadata
+## App Metadata Recommendations
 
-### App Name
+### App Name (20/30 characters)
 `Own AI: Private Chat`
 
 Why:
@@ -12,7 +12,7 @@ Why:
 - Uses high-intent discovery terms already supported by the product.
 - Leaves room for future iteration without hitting Apple's 30-character limit.
 
-### Subtitle
+### Subtitle (26/30 characters)
 `Voice, PDFs & Local Models`
 
 Why:
@@ -20,10 +20,10 @@ Why:
 - Matches real product capabilities in the app today.
 - Balances discoverability with a readable value proposition.
 
-### Promotional Text
+### Promotional Text (141/170 characters)
 `Chat privately with on-device AI, switch to Apple Intelligence when available, ask questions about PDFs, and talk hands-free with voice mode.`
 
-### Keywords
+### Keywords (86/100 characters)
 `offline,ondevice,assistant,document,reader,summarizer,speech,appleintelligence,llm,rag`
 
 Why this set:
@@ -31,7 +31,7 @@ Why this set:
 - Avoids competitor names and irrelevant broad terms.
 - Leans into the app's strongest differentiation: privacy, local inference, and document chat.
 
-## Description
+## Description (1158/4000 characters)
 
 `Own AI is a private AI assistant for iPhone that helps you chat, speak, and ask questions about documents using on-device models or Apple Intelligence when you choose it.
 
@@ -51,6 +51,18 @@ What you can do with Own AI:
 Own AI is designed for privacy-conscious users, students, researchers, founders, and anyone who wants a more personal AI workflow without depending entirely on the cloud.
 
 Download Own AI to get a faster, more private way to chat, read documents, and work with AI on your iPhone.`
+
+## Validation Results
+
+Validated with `/Users/teo/.agents/skills/app-store-aso/scripts/validate_metadata.py`.
+
+- App Name: 20/30 characters, 10 remaining
+- Subtitle: 26/30 characters, 4 remaining
+- Promotional Text: 141/170 characters, 29 remaining
+- Keywords: 86/100 characters, 14 remaining
+- Description: 1158/4000 characters, 2842 remaining
+
+All fields pass App Store character-limit validation.
 
 ## Positioning Notes
 

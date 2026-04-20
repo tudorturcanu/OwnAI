@@ -131,20 +131,9 @@ final class MonetizationManager {
     @ObservationIgnored
     private var updatesTask: Task<Void, Never>?
 
-    #if DEBUG
-    var debugProEnabled = UserDefaults.standard.bool(forKey: "monetization.debugProEnabled") {
-        didSet {
-            UserDefaults.standard.set(debugProEnabled, forKey: "monetization.debugProEnabled")
-        }
-    }
-    #endif
+
 
     var hasPro: Bool {
-        #if DEBUG
-        if debugProEnabled {
-            return true
-        }
-        #endif
         return !purchasedProductIDs.isEmpty
     }
 

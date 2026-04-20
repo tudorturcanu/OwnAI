@@ -18,13 +18,12 @@ struct SettingsView: View {
     @AppStorage("historyRetentionDays") private var historyRetentionDays = 0
     @AppStorage("autoRead") private var autoRead = false
     @AppStorage("smartReplyStylesEnabled") private var smartReplyStylesEnabled = false
-    @AppStorage("systemPrompt") private var systemPrompt = SettingsView.defaultSystemPrompt
+    @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
     @AppStorage("downloads.allowCellular") private var allowCellularDownloads = false
     @State private var showClearHistoryConfirmation = false
     @State private var showDataPrivacySheet = false
     @State private var isUpgradeSheetPresented = false
 
-    private static let defaultSystemPrompt = "You are a helpful AI assistant."
     private let retentionOptions = [0, 7, 30, 90]
 
     private var selectedModelName: String {
@@ -75,9 +74,7 @@ struct SettingsView: View {
                     privacySection
                     aboutSection
 
-                    #if DEBUG
-                    developerSection
-                    #endif
+
 
                     footerBranding
                 }
@@ -241,7 +238,7 @@ struct SettingsView: View {
                 isOn: $smartReplyStylesEnabled
             )
             .onChange(of: smartReplyStylesEnabled) {
-                systemPrompt = Self.defaultSystemPrompt
+                systemPrompt = AIResponseDefaults.defaultSystemPrompt
             }
 
             sectionDivider
@@ -476,20 +473,7 @@ struct SettingsView: View {
         }
     }
 
-    #if DEBUG
-    private var developerSection: some View {
-        @Bindable var monetizationManager = monetizationManager
-        return settingsSection("Developer") {
-            settingsToggleRow(
-                icon: "sparkles",
-                tint: .purple,
-                title: "Enable Pro",
-                subtitle: "Unlock all premium features for testing",
-                isOn: $monetizationManager.debugProEnabled
-            )
-        }
-    }
-    #endif
+
 
     // MARK: - Footer
 

@@ -9,7 +9,7 @@ import SwiftUI
 
 struct SavedPromptsView: View {
     @Environment(MonetizationManager.self) private var monetizationManager
-    @AppStorage("systemPrompt") private var activeSystemPrompt = "You are a helpful AI assistant."
+    @AppStorage("systemPrompt") private var activeSystemPrompt = AIResponseDefaults.defaultSystemPrompt
 
     @State private var promptStore = SavedPromptStore.shared
     @State private var isAddSheetPresented = false

@@ -9,11 +9,11 @@ import SwiftUI
 
 struct AIPersonalityView: View {
     @Environment(MonetizationManager.self) private var monetizationManager
-    @AppStorage("systemPrompt") private var systemPrompt = "You are a helpful AI assistant."
+    @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
     @AppStorage("temperature") private var temperature = 0.7
     @AppStorage("topP") private var topP = 1.0
-    @AppStorage("maxTokens") private var maxTokens = 512
-    @AppStorage("responseCharacterLimit") private var responseCharacterLimit = 1000
+    @AppStorage("maxTokens") private var maxTokens = AIResponseDefaults.maxTokens
+    @AppStorage("responseCharacterLimit") private var responseCharacterLimit = AIResponseDefaults.responseCharacterLimit
     @AppStorage("customPersonalityPresetsJSON") private var customPresetsJSON = "[]"
     @State private var showUpgradeSheet = false
     @State private var isEditorPresented = false
@@ -23,11 +23,11 @@ struct AIPersonalityView: View {
     @State private var draftPreset = UserPersonalityPreset(
         name: "",
         icon: "sparkles",
-        systemPrompt: "You are a helpful AI assistant.",
+        systemPrompt: AIResponseDefaults.defaultSystemPrompt,
         temperature: 0.7,
         topP: 1.0,
-        maxTokens: 512,
-        responseCharacterLimit: 1000
+        maxTokens: AIResponseDefaults.maxTokens,
+        responseCharacterLimit: AIResponseDefaults.responseCharacterLimit
     )
     @State private var editingPresetID: String?
     @State private var sharePayload: String?
@@ -298,10 +298,10 @@ struct AIPersonalityView: View {
                             .font(.caption.weight(.medium))
                             .foregroundStyle(.orange)
 
-                            if systemPrompt != "You are a helpful AI assistant." {
+                            if systemPrompt != AIResponseDefaults.defaultSystemPrompt {
                                 Button(String(localized: "Reset Default")) {
                                     withAnimation {
-                                        systemPrompt = "You are a helpful AI assistant."
+                                        systemPrompt = AIResponseDefaults.defaultSystemPrompt
                                     }
                                 }
                                 .font(.caption.weight(.medium))
@@ -348,8 +348,8 @@ struct AIPersonalityView: View {
                             withAnimation {
                                 temperature = 0.7
                                 topP = 1.0
-                                maxTokens = 512
-                                responseCharacterLimit = 1000
+                                maxTokens = AIResponseDefaults.maxTokens
+                                responseCharacterLimit = AIResponseDefaults.responseCharacterLimit
                             }
                         }
                         .font(.caption.weight(.medium))
@@ -446,7 +446,7 @@ struct AIPersonalityView: View {
                             Slider(value: Binding(
                                 get: { Float(maxTokens) },
                                 set: { maxTokens = Int($0) }
-                            ), in: 64...2048, step: 64)
+                            ), in: 64...4096, step: 64)
                                 .tint(Gradient(colors: [.green, .teal]))
                                 
                             Text(String(localized: "Sets the maximum number of tokens the AI will generate in a single response."))
@@ -551,6 +551,7 @@ struct AIPersonalityView: View {
         temperature = preset.temperature
         topP = preset.topP
         maxTokens = preset.maxTokens
+        responseCharacterLimit = AIResponseDefaults.responseCharacterLimit
     }
 
     private func applyUserPreset(_ preset: UserPersonalityPreset) {

@@ -39,7 +39,7 @@ final class LLMEngine {
     // Settings
     @ObservationIgnored @AppStorage("temperature") var temperature: Double = 0.7
     @ObservationIgnored @AppStorage("topP") var topP: Double = 1.0
-    @ObservationIgnored @AppStorage("maxTokens") var maxTokens: Int = 512
+    @ObservationIgnored @AppStorage("maxTokens") var maxTokens: Int = AIResponseDefaults.maxTokens
     @ObservationIgnored @AppStorage("lowPowerMode") var lowPowerMode: Bool = false
     
     // Apple Foundation
@@ -193,7 +193,7 @@ final class LLMEngine {
     /// Generate a response for the given prompt with streaming and throttling
     func generate(
         prompt: String,
-        systemPrompt: String = "You are a helpful AI assistant.",
+        systemPrompt: String = AIResponseDefaults.defaultSystemPrompt,
         overrides: GenerationOverrides? = nil,
         image: UIImage? = nil
     ) async throws {
@@ -229,9 +229,7 @@ final class LLMEngine {
             !mlxModelSupportsSystemRole(modelID: model.id) ||
             (model.supportsVision && image != nil)  // VLM: always fresh context per image turn
         )
-        let effectiveSystemPrompt = systemPrompt == "You are a helpful AI assistant."
-            ? (UserDefaults.standard.string(forKey: "systemPrompt") ?? systemPrompt)
-            : systemPrompt
+        let effectiveSystemPrompt = storedSystemPrompt(fallback: systemPrompt)
         let effectiveMlxPrompt = mlxPrompt(
             from: prompt,
             systemPrompt: effectiveSystemPrompt,
@@ -242,7 +240,7 @@ final class LLMEngine {
         let currentMaxTokens = overrides?.maxTokens ?? self.maxTokens
         let effectiveTopP = lowPowerMode ? min(currentTopP, 0.9) : currentTopP
         let effectiveTemperature = lowPowerMode ? min(currentTemperature, 0.6) : currentTemperature
-        let effectiveMaxTokens = lowPowerMode ? min(currentMaxTokens, 256) : currentMaxTokens
+        let effectiveMaxTokens = lowPowerMode ? min(currentMaxTokens, 768) : currentMaxTokens
         #if !targetEnvironment(simulator)
         let mlxGenerateParameters = makeMlxGenerateParameters(
             topP: effectiveTopP,
@@ -363,7 +361,7 @@ final class LLMEngine {
 
     func generateIsolatedReply(
         prompt: String,
-        systemPrompt: String = "You are a helpful AI assistant.",
+        systemPrompt: String = AIResponseDefaults.defaultSystemPrompt,
         model: ModelInfo,
         overrides: GenerationOverrides? = nil
     ) async throws -> String {
@@ -422,9 +420,7 @@ final class LLMEngine {
             resetIdleTimer()
         }
 
-        let effectiveSystemPrompt = systemPrompt == "You are a helpful AI assistant."
-            ? (UserDefaults.standard.string(forKey: "systemPrompt") ?? systemPrompt)
-            : systemPrompt
+        let effectiveSystemPrompt = storedSystemPrompt(fallback: systemPrompt)
         let effectiveMlxPrompt = mlxPrompt(
             from: prompt,
             systemPrompt: effectiveSystemPrompt,
@@ -435,7 +431,7 @@ final class LLMEngine {
         let currentMaxTokens = overrides?.maxTokens ?? self.maxTokens
         let effectiveTopP = lowPowerMode ? min(currentTopP, 0.9) : currentTopP
         let effectiveTemperature = lowPowerMode ? min(currentTemperature, 0.6) : currentTemperature
-        let effectiveMaxTokens = lowPowerMode ? min(currentMaxTokens, 256) : currentMaxTokens
+        let effectiveMaxTokens = lowPowerMode ? min(currentMaxTokens, 768) : currentMaxTokens
         #if !targetEnvironment(simulator)
         let mlxGenerateParameters = makeMlxGenerateParameters(
             topP: effectiveTopP,
@@ -679,7 +675,7 @@ private extension LLMEngine {
         case .appleFoundation:
             let availability = appleFoundationBridge.availability
             if availability == .available {
-                let instructions = UserDefaults.standard.string(forKey: "systemPrompt") ?? "You are a helpful AI assistant."
+                let instructions = UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
                 try appleFoundationBridge.loadSession(instructions: instructions)
                 #if !targetEnvironment(simulator)
                 mlxSession = nil
@@ -768,7 +764,16 @@ private extension LLMEngine {
             return nil
         }
 
-        return UserDefaults.standard.string(forKey: "systemPrompt") ?? "You are a helpful AI assistant."
+        return UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
+    }
+
+    private func storedSystemPrompt(fallback: String) -> String {
+        let trimmedFallback = fallback.trimmingCharacters(in: .whitespacesAndNewlines)
+        let isDefaultFallback = trimmedFallback == AIResponseDefaults.defaultSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+            || trimmedFallback == "You are a helpful AI assistant."
+
+        guard isDefaultFallback else { return fallback }
+        return UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
     }
 
     func mlxPrompt(from prompt: String, systemPrompt: String, modelID: String) -> String {

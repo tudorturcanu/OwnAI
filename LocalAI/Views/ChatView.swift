@@ -35,8 +35,8 @@ struct ChatView: View {
     @State private var activeStreamingAssistantID: UUID?
     @State private var pendingSessionReset = false
     @State private var selectedDocumentForSources: ConversationDocument?
-    @AppStorage("systemPrompt") private var systemPrompt = "You are a helpful AI assistant."
-    @AppStorage("responseCharacterLimit") private var responseCharacterLimit = 1000
+    @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
+    @AppStorage("responseCharacterLimit") private var responseCharacterLimit = AIResponseDefaults.responseCharacterLimit
     @AppStorage("smartReplyStylesEnabled") private var smartReplyStylesEnabled = false
 
     @State private var editingMessage: ChatMessage?
@@ -195,6 +195,7 @@ struct ChatView: View {
     private var lifecycleContent: some View {
         baseContent
             .onAppear {
+                migrateFullResponseDefaultsIfNeeded()
                 prewarmModel()
             }
             .onDisappear {
@@ -239,6 +240,26 @@ struct ChatView: View {
                 guard llmEngine.state == .generating else { return }
                 guard voiceConversationMode else { return }
             }
+    }
+
+    private func migrateFullResponseDefaultsIfNeeded() {
+        let migrationKey = "didMigrateFullResponseDefaults"
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: migrationKey) else { return }
+
+        if defaults.object(forKey: "maxTokens") == nil || defaults.integer(forKey: "maxTokens") <= 512 {
+            defaults.set(AIResponseDefaults.maxTokens, forKey: "maxTokens")
+        }
+
+        if defaults.object(forKey: "responseCharacterLimit") == nil || defaults.integer(forKey: "responseCharacterLimit") == 1000 {
+            defaults.set(AIResponseDefaults.responseCharacterLimit, forKey: "responseCharacterLimit")
+        }
+
+        if defaults.string(forKey: "systemPrompt") == "You are a helpful AI assistant." {
+            defaults.set(AIResponseDefaults.defaultSystemPrompt, forKey: "systemPrompt")
+        }
+
+        defaults.set(true, forKey: migrationKey)
     }
 
     private var baseContent: some View {
@@ -593,8 +614,7 @@ struct ChatView: View {
     }
 
     private var currentPersonalityLabel: (name: String, icon: String)? {
-        let defaultPrompt = "You are a helpful AI assistant."
-        guard systemPrompt != defaultPrompt else { return nil }
+        guard systemPrompt != AIResponseDefaults.defaultSystemPrompt else { return nil }
         if let matched = PersonalityPreset.presets.first(where: { $0.systemPrompt == systemPrompt }) {
             return (matched.name, matched.icon)
         }
@@ -1470,11 +1490,59 @@ struct ChatView: View {
         guard historyManager.currentMessages.last?.id == message.id else { return [] }
         guard !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
 
-        var styles: [SmartReplyStyle] = [.shorter, .deeper, .simpler, .checklist]
+        let content = message.content
+        var styles: [SmartReplyStyle] = [.shorter, .deeper]
+        if shouldOfferSimplerReplyStyle(for: content) {
+            styles.append(.simpler)
+        }
+        if shouldOfferChecklistReplyStyle(for: content) {
+            styles.append(.checklist)
+        }
         if !message.sourceTitles.isEmpty {
             styles.append(.citeSources)
         }
         return styles
+    }
+
+    private func shouldOfferChecklistReplyStyle(for content: String) -> Bool {
+        let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedContent.isEmpty else { return false }
+
+        let words = trimmedContent.split(whereSeparator: \.isWhitespace)
+        let paragraphs = trimmedContent.components(separatedBy: .newlines).filter {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        let sentenceBreaks = trimmedContent.filter { ".!?".contains($0) }.count
+        let structuredLines = paragraphs.filter { line in
+            let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmedLine.hasPrefix("-")
+                || trimmedLine.hasPrefix("*")
+                || trimmedLine.hasPrefix("•")
+                || trimmedLine.range(of: #"^\d+[\.)]\s"#, options: .regularExpression) != nil
+        }
+
+        return words.count >= 90 || paragraphs.count >= 5 || sentenceBreaks >= 5 || structuredLines.count >= 4
+    }
+
+    private func shouldOfferSimplerReplyStyle(for content: String) -> Bool {
+        let trimmedContent = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedContent.isEmpty else { return false }
+
+        let lowercasedWords = Set(trimmedContent.lowercased().split { character in
+            !character.isLetter && !character.isNumber
+        })
+        let technicalTerms: Set<Substring> = [
+            "api", "async", "cache", "cli", "compile", "database", "dependency",
+            "endpoint", "framework", "json", "latency", "migration", "model",
+            "protocol", "refactor", "repository", "schema", "sdk", "server",
+            "swift", "token"
+        ]
+
+        let hasCodeFormatting = trimmedContent.contains("`") || trimmedContent.contains("```")
+        let hasTechnicalTerm = !lowercasedWords.isDisjoint(with: technicalTerms)
+        let hasSymbolHeavyText = trimmedContent.contains("->") || trimmedContent.contains("::") || trimmedContent.contains("()")
+
+        return hasCodeFormatting || hasTechnicalTerm || hasSymbolHeavyText
     }
 
     private func regenerate(message: ChatMessage, style: SmartReplyStyle) {
@@ -1706,7 +1774,7 @@ struct ChatView: View {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
 
-        let configuredMaxTokens = llmEngine.lowPowerMode ? min(llmEngine.maxTokens, 256) : llmEngine.maxTokens
+        let configuredMaxTokens = llmEngine.lowPowerMode ? min(llmEngine.maxTokens, 768) : llmEngine.maxTokens
         guard configuredMaxTokens > 0 else { return false }
 
         let wordEstimate = Double(trimmed.split { $0.isWhitespace }.count) * 1.35
@@ -1723,7 +1791,7 @@ struct ChatView: View {
 
         return """
         Keep the final visible answer under \(remainingCharacters) additional characters.
-        Prioritize a complete, direct answer over extra detail.
+        Prioritize a complete answer over extra detail.
         If needed, shorten the wording instead of trailing off.
 
         \(prompt)

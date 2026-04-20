@@ -21,10 +21,10 @@ struct PersonalityPreset: Identifiable, Equatable {
             id: "general",
             name: "General",
             icon: "sparkles",
-            systemPrompt: "You are a helpful AI assistant.",
+            systemPrompt: AIResponseDefaults.defaultSystemPrompt,
             temperature: 0.7,
             topP: 1.0,
-            maxTokens: 512
+            maxTokens: AIResponseDefaults.maxTokens
         ),
         PersonalityPreset(
             id: "tutor",
@@ -37,7 +37,7 @@ Teach step-by-step with clear structure and simple language. Start with a short 
 """,
             temperature: 0.6,
             topP: 0.95,
-            maxTokens: 768
+            maxTokens: AIResponseDefaults.maxTokens
         ),
         PersonalityPreset(
             id: "coding",
@@ -46,7 +46,7 @@ Teach step-by-step with clear structure and simple language. Start with a short 
             systemPrompt: "You are an expert software engineer. Provide clean, efficient code and technical explanations. Focus on best practices and performance.",
             temperature: 0.3,
             topP: 0.9,
-            maxTokens: 768
+            maxTokens: AIResponseDefaults.maxTokens
         ),
         PersonalityPreset(
             id: "meeting",
@@ -59,7 +59,7 @@ Turn rough notes into concise, structured outputs. Prefer bullet points and clea
 """,
             temperature: 0.4,
             topP: 0.9,
-            maxTokens: 768
+            maxTokens: AIResponseDefaults.maxTokens
         ),
         PersonalityPreset(
             id: "creative",
@@ -68,7 +68,7 @@ Turn rough notes into concise, structured outputs. Prefer bullet points and clea
             systemPrompt: "You are a creative writer. Use evocative language and storytelling techniques. Be imaginative and vivid in your descriptions.",
             temperature: 0.9,
             topP: 1.0,
-            maxTokens: 768
+            maxTokens: AIResponseDefaults.maxTokens
         ),
         PersonalityPreset(
             id: "concise",
@@ -86,7 +86,7 @@ Turn rough notes into concise, structured outputs. Prefer bullet points and clea
             systemPrompt: "You are a friendly and enthusiastic assistant. Be warm, encouraging, and use a positive tone in all your responses.",
             temperature: 0.8,
             topP: 0.95,
-            maxTokens: 512
+            maxTokens: AIResponseDefaults.maxTokens
         )
     ]
 }

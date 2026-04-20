@@ -72,7 +72,7 @@ struct PersonalityEditorSheet: View {
                                 get: { Float(draft.maxTokens) },
                                 set: { draft.maxTokens = Int($0) }
                             ),
-                            in: 64...2048,
+                            in: 64...4096,
                             step: 64
                         )
                     }
@@ -130,4 +130,3 @@ struct PersonalityEditorSheet: View {
         }
     }
 }
-
