@@ -19,7 +19,6 @@
 		8B8A3E1A2F2D00010010461E /* MLXLMCommon in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E1D2F2D00010010461E /* MLXLMCommon */; };
 		8B8A3E1B2F2D00010010461E /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E1E2F2D00010010461E /* MLXLLM */; };
 		8B8A3E1F2F2D00010010461E /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E202F2D00010010461E /* MLXVLM */; };
-		8B8A3E212F2D00010010461E /* MLXHuggingFace in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E222F2D00010010461E /* MLXHuggingFace */; };
 		8B8A3F012F2B9C000010461E /* MetalPerformanceShadersGraph.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B8A3F002F2B9C000010461E /* MetalPerformanceShadersGraph.framework */; };
 		8EFFB0F2133ABDDAC075499D /* WatchAppView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91B85A67CC4B2D94DE6FCB4D /* WatchAppView.swift */; };
 		A3092C03ADE84812355F315F /* LocalAIWatchApp.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = EAB0C704B6924ED8F744E8E9 /* LocalAIWatchApp.app */; };
@@ -125,7 +124,6 @@
 				ABE93FE02F94C202008DCDBD /* MLXNN in Frameworks */,
 				C1A1B2C3D4E5F60700112233 /* LocalAIKit in Frameworks */,
 				8B8A3E1F2F2D00010010461E /* MLXVLM in Frameworks */,
-				8B8A3E212F2D00010010461E /* MLXHuggingFace in Frameworks */,
 				8B8A3E092F2CCB980010461E /* Shimmer in Frameworks */,
 				ABE93FDC2F94C202008DCDBD /* MLXFast in Frameworks */,
 				8B8A3F012F2B9C000010461E /* MetalPerformanceShadersGraph.framework in Frameworks */,
@@ -233,7 +231,6 @@
 				8B8A3E1D2F2D00010010461E /* MLXLMCommon */,
 				8B8A3E1E2F2D00010010461E /* MLXLLM */,
 				8B8A3E202F2D00010010461E /* MLXVLM */,
-				8B8A3E222F2D00010010461E /* MLXHuggingFace */,
 				C1A1B2C3D4E5F60700112234 /* LocalAIKit */,
 				D1E000062F5000010010461E /* MLXUtilsLibrary */,
 				ABE93FCE2F94C100008DCDBD /* Hub */,
@@ -750,11 +747,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8B8A3E1C2F2D00010010461E /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
 			productName = MLXVLM;
-		};
-		8B8A3E222F2D00010010461E /* MLXHuggingFace */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 8B8A3E1C2F2D00010010461E /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
-			productName = MLXHuggingFace;
 		};
 		ABE93FCE2F94C100008DCDBD /* Hub */ = {
 			isa = XCSwiftPackageProductDependency;

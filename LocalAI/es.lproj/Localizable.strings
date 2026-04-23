@@ -7,6 +7,7 @@
 "Everything looks ready" = "Todo está listo";
 "Pick a model to start chatting locally." = "Elige un modelo para empezar a chatear localmente.";
 "%lld free messages left today." = "Quedan %lld mensajes gratis hoy.";
+"Free install limit reached." = "Se alcanzó el límite gratuito de esta instalación.";
 "Chats will be removed after %@." = "Los chats se eliminarán después de %@.";
 "Performance is tuned for lower battery impact." = "El rendimiento está ajustado para reducir el consumo de batería.";
 "Your current setup is ready for fast on-device use." = "Tu configuración actual está lista para un uso rápido en el dispositivo.";
@@ -205,6 +206,7 @@
 "[Note: The user attached an image, but the selected model does not support image analysis. Please describe the image in text or select a vision-capable model.]\n\n" = "[Nota: el usuario adjuntó una imagen, pero el modelo seleccionado no admite análisis de imágenes. Describe la imagen con texto o selecciona un modelo compatible con visión.]\n\n";
 "Free plan limit reached." = "Se alcanzó el límite del plan gratuito.";
 "3 free messages left today." = "Quedan 3 mensajes gratis hoy.";
+"3 free messages left on this install." = "Quedan 3 mensajes gratis en esta instalación.";
 "Please select or download a model first (Settings > Models)." = "Primero selecciona o descarga un modelo (Ajustes > Modelos).";
 "Image attached" = "Imagen adjunta";
 "Remove attached image" = "Quitar imagen adjunta";

@@ -88,7 +88,14 @@ enum PremiumFeature: String, CaseIterable, Identifiable {
 @MainActor
 @Observable
 final class MonetizationManager {
-    static let freeDailyMessageLimitRange = 6...10
+//    static let proEnabledByDefault = true
+    static let freeInstallMessageLimit = 5
+
+    private enum StorageKey {
+        static let freeInstallMessageCount = "monetization.freeInstallMessageCount"
+        static let didWarnAtThreeLeftOnInstall = "monetization.didWarnAtThreeLeftOnInstall"
+        static let cachedPurchasedProductIDs = "monetization.cachedPurchasedProductIDs"
+    }
 
     static let productIDs = [
         "ownai.pro.monthly.v2",
@@ -107,37 +114,30 @@ final class MonetizationManager {
     var isLoadingProducts = false
     var isProcessingPurchase = false
     var purchaseErrorMessage: String?
+    var freeInstallMessageCount = 0
+    var didWarnAtThreeLeftOnInstall = false
 
     @ObservationIgnored
-    @AppStorage("monetization.freeDailyMessageCount")
-    private var storedFreeDailyMessageCount = 0
-
-    @ObservationIgnored
-    @AppStorage("monetization.freeDailyMessageDay")
-    private var storedFreeDailyMessageDay = ""
-
-    @ObservationIgnored
-    @AppStorage("monetization.didWarnAtThreeLeftToday")
-    private var storedDidWarnAtThreeLeftToday = false
-
-    @ObservationIgnored
-    @AppStorage("monetization.freeDailyMessageLimit")
-    private var storedFreeDailyMessageLimit = 10
-
-    @ObservationIgnored
-    @AppStorage("monetization.cachedPurchasedProductIDs")
+    @AppStorage(StorageKey.cachedPurchasedProductIDs)
     private var storedPurchasedProductIDs = ""
 
     @ObservationIgnored
     private var updatesTask: Task<Void, Never>?
 
+    @ObservationIgnored
+    private let defaults = UserDefaults.standard
+
 
 
     var hasPro: Bool {
+//        Self.proEnabledByDefault || !purchasedProductIDs.isEmpty
         return !purchasedProductIDs.isEmpty
+
     }
 
     init() {
+        freeInstallMessageCount = defaults.integer(forKey: StorageKey.freeInstallMessageCount)
+        didWarnAtThreeLeftOnInstall = defaults.bool(forKey: StorageKey.didWarnAtThreeLeftOnInstall)
         purchasedProductIDs = loadCachedPurchasedProductIDs()
         updatesTask = observeTransactionUpdates()
         Task {
@@ -225,32 +225,31 @@ final class MonetizationManager {
     }
 
     var freeMessagesUsedToday: Int {
-        refreshDailyCounterIfNeeded()
-        return storedFreeDailyMessageCount
+        freeInstallMessageCount
     }
 
     var freeMessagesRemainingToday: Int {
-        max(0, freeDailyMessageLimitToday - freeMessagesUsedToday)
+        max(0, Self.freeInstallMessageLimit - freeMessagesUsedToday)
     }
 
     var hasReachedFreeDailyMessageLimit: Bool {
-        !hasPro && freeMessagesUsedToday >= freeDailyMessageLimitToday
+        !hasPro && freeMessagesUsedToday >= Self.freeInstallMessageLimit
     }
 
     var shouldShowThreeMessagesLeftWarning: Bool {
-        !hasPro && freeMessagesRemainingToday == 3 && !storedDidWarnAtThreeLeftToday
+        !hasPro && freeMessagesRemainingToday == 3 && !didWarnAtThreeLeftOnInstall
     }
 
     func registerFreeMessageIfNeeded() {
         guard !hasPro else { return }
-        refreshDailyCounterIfNeeded()
-        guard storedFreeDailyMessageCount < freeDailyMessageLimitToday else { return }
-        storedFreeDailyMessageCount += 1
+        guard freeInstallMessageCount < Self.freeInstallMessageLimit else { return }
+        freeInstallMessageCount += 1
+        defaults.set(freeInstallMessageCount, forKey: StorageKey.freeInstallMessageCount)
     }
 
     func markThreeMessagesLeftWarningShown() {
-        refreshDailyCounterIfNeeded()
-        storedDidWarnAtThreeLeftToday = true
+        didWarnAtThreeLeftOnInstall = true
+        defaults.set(true, forKey: StorageKey.didWarnAtThreeLeftOnInstall)
     }
 
     private func observeTransactionUpdates() -> Task<Void, Never> {
@@ -316,29 +315,5 @@ final class MonetizationManager {
         default:
             return 99
         }
-    }
-
-    private func refreshDailyCounterIfNeeded() {
-        let today = Self.dayKey(for: .now)
-        if storedFreeDailyMessageDay != today {
-            storedFreeDailyMessageDay = today
-            storedFreeDailyMessageCount = 0
-            storedDidWarnAtThreeLeftToday = false
-            storedFreeDailyMessageLimit = Int.random(in: Self.freeDailyMessageLimitRange)
-        }
-    }
-
-    private var freeDailyMessageLimitToday: Int {
-        refreshDailyCounterIfNeeded()
-        return storedFreeDailyMessageLimit
-    }
-
-    private static func dayKey(for date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.calendar = .autoupdatingCurrent
-        formatter.locale = .autoupdatingCurrent
-        formatter.timeZone = .autoupdatingCurrent
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
     }
 }

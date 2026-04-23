@@ -1000,7 +1000,7 @@ struct ChatView: View {
 
         guard monetizationManager.shouldShowThreeMessagesLeftWarning else { return }
         monetizationManager.markThreeMessagesLeftWarningShown()
-        showUsageToast(String(localized: "3 free messages left today."))
+        showUsageToast(String(localized: "3 free messages left on this install."))
     }
 
     private func showUsageToast(_ message: String) {

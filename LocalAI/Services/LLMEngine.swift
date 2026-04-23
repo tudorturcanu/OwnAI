@@ -10,7 +10,6 @@ import SwiftUI
 import UIKit
 #if !targetEnvironment(simulator)
 import MLXLLM
-import MLXHuggingFace
 import MLXLMCommon
 import MLXVLM
 import Tokenizers
@@ -24,6 +23,59 @@ enum LLMEngineState: Equatable {
     case generating
     case error(message: String)
 }
+
+#if !targetEnvironment(simulator)
+private struct LocalAITokenizerLoader: MLXLMCommon.TokenizerLoader {
+    func load(from directory: URL) async throws -> any MLXLMCommon.Tokenizer {
+        let upstream = try await AutoTokenizer.from(modelFolder: directory)
+        return LocalAITokenizer(upstream: upstream)
+    }
+}
+
+private struct LocalAITokenizer: MLXLMCommon.Tokenizer {
+    private let upstream: any Tokenizers.Tokenizer
+
+    init(upstream: any Tokenizers.Tokenizer) {
+        self.upstream = upstream
+    }
+
+    func encode(text: String, addSpecialTokens: Bool) -> [Int] {
+        upstream.encode(text: text, addSpecialTokens: addSpecialTokens)
+    }
+
+    func decode(tokenIds: [Int], skipSpecialTokens: Bool) -> String {
+        upstream.decode(tokens: tokenIds, skipSpecialTokens: skipSpecialTokens)
+    }
+
+    func convertTokenToId(_ token: String) -> Int? {
+        upstream.convertTokenToId(token)
+    }
+
+    func convertIdToToken(_ id: Int) -> String? {
+        upstream.convertIdToToken(id)
+    }
+
+    var bosToken: String? { upstream.bosToken }
+    var eosToken: String? { upstream.eosToken }
+    var unknownToken: String? { upstream.unknownToken }
+
+    func applyChatTemplate(
+        messages: [[String: any Sendable]],
+        tools: [[String: any Sendable]]?,
+        additionalContext: [String: any Sendable]?
+    ) throws -> [Int] {
+        do {
+            return try upstream.applyChatTemplate(
+                messages: messages,
+                tools: tools,
+                additionalContext: additionalContext
+            )
+        } catch Tokenizers.TokenizerError.missingChatTemplate {
+            throw MLXLMCommon.TokenizerError.missingChatTemplate
+        }
+    }
+}
+#endif
 
 /// Wrapper around Apple Foundation Models and MLX
 @MainActor
@@ -826,11 +878,11 @@ private extension LLMEngine {
             if ModelInfo.vlmMLXModelIDs.contains(modelID) {
                 return try await VLMModelFactory.shared.loadContainer(
                     from: persistentPath,
-                    using: #huggingFaceTokenizerLoader()
+                    using: LocalAITokenizerLoader()
                 )
             }
 
-            return try await loadModelContainer(from: persistentPath, using: #huggingFaceTokenizerLoader())
+            return try await loadModelContainer(from: persistentPath, using: LocalAITokenizerLoader())
         }
 
         // The model isn't downloaded locally — surface a clear error rather than

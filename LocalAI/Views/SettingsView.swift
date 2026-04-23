@@ -57,7 +57,7 @@ struct SettingsView: View {
 
     private var freePlanLimitMessage: String? {
         guard monetizationManager.hasReachedFreeDailyMessageLimit else { return nil }
-        return String(localized: "Free plan limit reached until tomorrow")
+        return String(localized: "Free install limit reached.")
     }
 
     // MARK: - Body
@@ -163,6 +163,10 @@ struct SettingsView: View {
                 Label(LocalizedStringKey(freePlanLimitMessage), systemImage: "exclamationmark.circle.fill")
                     .font(.footnote)
                     .foregroundStyle(.orange)
+            } else if !monetizationManager.hasPro {
+                Text("\(monetizationManager.freeMessagesRemainingToday) of \(MonetizationManager.freeInstallMessageLimit) free messages left on this install")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(.horizontal, 4)
