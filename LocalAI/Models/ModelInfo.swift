@@ -438,6 +438,7 @@ struct ModelInfo: Identifiable, Equatable {
     static let vlmMLXModelIDs: Set<String> = [
         "mlx-community/Qwen2-VL-2B-Instruct-4bit",
         "mlx-community/Qwen2.5-VL-3B-Instruct-3bit",
+        "LiquidAI/LFM2.5-VL-450M-MLX-6bit",
         "mlx-community/gemma-4-e2b-it-4bit",
         "mlx-community/gemma-4-e4b-it-4bit",
         "mlx-community/gemma-4-26b-a4b-it-4bit"
@@ -539,6 +540,22 @@ extension ModelInfo {
         shortDescription: "Tiny, fast, and the lightest general-purpose LFM 2.5 option.",
         recommendedFor: "Best when you want the smallest LFM 2.5 download for basic local chat.",
         badges: [.fastest, .smallDownload, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// LFM2.5 VL 450M MLX (6-bit)
+    static let lfm25_vl_450m_6bit = ModelInfo(
+        id: "LiquidAI/LFM2.5-VL-450M-MLX-6bit",
+        name: "LFM 2.5 VL 450M",
+        description: "Liquid AI's tiny vision-language model for fast on-device image understanding, OCR, visual grounding, and multilingual visual Q&A.",
+        family: .lfm,
+        sizeGB: 0.47,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/LiquidAI/LFM2.5-VL-450M-MLX-6bit"),
+        privacyURL: nil,
+        shortDescription: "Tiny vision-language model for fast image understanding.",
+        recommendedFor: "Best when you want the lightest image-capable local model for iPhone.",
+        badges: [.images, .vision, .smallDownload, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -670,6 +687,22 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Qwen3.5 0.8B OptiQ (4-bit MLX)
+    static let qwen35_0_8b_optiq_4bit = ModelInfo(
+        id: "mlx-community/Qwen3.5-0.8B-OptiQ-4bit",
+        name: "Qwen3.5 0.8B OptiQ",
+        description: "A compact Qwen3.5 text model with OptiQ mixed-precision MLX quantization. It is small, multilingual, and tuned for responsive local chat on iPhone.",
+        family: .qwen,
+        sizeGB: 0.60,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/Qwen3.5-0.8B-OptiQ-4bit"),
+        privacyURL: nil,
+        shortDescription: "Small Qwen3.5 model with a strong size-to-quality tradeoff.",
+        recommendedFor: "Best when you want a newer multilingual chat model with a light download.",
+        badges: [.recommended, .smallDownload, .multilingual, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// Qwen2.5 0.5B Instruct (4-bit MLX)
     static let qwen25_0_5b_instruct_4bit = ModelInfo(
         id: "mlx-community/Qwen2.5-0.5B-Instruct-4bit",
@@ -747,6 +780,22 @@ extension ModelInfo {
         shortDescription: "Strong compact model for chat, writing, and languages.",
         recommendedFor: "Great all-around local option for multilingual everyday use.",
         badges: [.recommended, .multilingual, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Qwen3.5 2B OptiQ (4-bit MLX)
+    static let qwen35_2b_optiq_4bit = ModelInfo(
+        id: "mlx-community/Qwen3.5-2B-OptiQ-4bit",
+        name: "Qwen3.5 2B OptiQ",
+        description: "A newer Qwen3.5 model using OptiQ mixed-precision MLX quantization, giving stronger instruction following and multilingual output while staying practical for modern iPhones.",
+        family: .qwen,
+        sizeGB: 1.43,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/Qwen3.5-2B-OptiQ-4bit"),
+        privacyURL: nil,
+        shortDescription: "Newer Qwen3.5 model with stronger everyday quality.",
+        recommendedFor: "Best when you want a stronger local Qwen model that still fits comfortably on newer iPhones.",
+        badges: [.higherQuality, .multilingual, .newerDevices, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -1127,6 +1176,7 @@ extension ModelInfo {
         .bonsai4b_1bit,
         .smolLM2_360m_4bit,
         .qwen3_0_6b_4bit,
+        .qwen35_0_8b_optiq_4bit,
         .qwen25_0_5b_instruct_4bit,
         // Compact (0.7–1.1 GB)
         .llama32_1b_4bit,
@@ -1137,6 +1187,7 @@ extension ModelInfo {
         .qwen3_1_7b_4bit,
         .deepseek_r1_distill_qwen_1_5b_4bit,
         // Vision  (VLM - image input capable)
+        .lfm25_vl_450m_6bit,
         .qwen2VL_2b_4bit,
         .lfm25_vl_1_6b_4bit,
         .qwen25VL_3b_3bit,
@@ -1149,6 +1200,7 @@ extension ModelInfo {
         .lfm25_1_2b_instruct_4bit,
         .lfm25_1_2b_thinking_4bit,
         .exaone35_2_4b_instruct_4bit,
+        .qwen35_2b_optiq_4bit,
         .qwen25_3b_instruct_4bit,
         .llama32_3b_4bit,
         .phi3_mini_128k_4bit,

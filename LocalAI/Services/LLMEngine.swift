@@ -87,6 +87,7 @@ final class LLMEngine {
     var state: LLMEngineState = .idle
     var currentResponse: String = ""
     var streamingMessageID = UUID()
+    var isPrewarming = false
     
     // Settings
     @ObservationIgnored @AppStorage("temperature") var temperature: Double = 0.7
@@ -109,6 +110,7 @@ final class LLMEngine {
     private var loadTask: Task<Void, Error>?
     private var loadingModelID: String?
     private var loadTaskID: UUID?
+    private var prewarmTaskID: UUID?
     private var currentModel: ModelInfo?
     private var isSceneActive = true
     var streamingTokensPerSecond: Double = 0
@@ -554,6 +556,36 @@ final class LLMEngine {
             throw error
         }
     }
+
+    func generateConversationTitle(
+        userMessage: String,
+        assistantResponse: String,
+        model: ModelInfo
+    ) async throws -> String {
+        guard model.engine == .appleFoundation else {
+            throw LLMError.modelNotAvailable("Structured titles require Apple Intelligence.")
+        }
+
+        return try await appleFoundationBridge.generateConversationTitle(
+            userMessage: userMessage,
+            assistantResponse: assistantResponse
+        )
+    }
+
+    func generateConversationInsights(
+        userMessage: String,
+        assistantResponse: String,
+        model: ModelInfo
+    ) async throws -> AppleFoundationConversationInsights {
+        guard model.engine == .appleFoundation else {
+            throw LLMError.modelNotAvailable("Structured insights require Apple Intelligence.")
+        }
+
+        return try await appleFoundationBridge.generateConversationInsights(
+            userMessage: userMessage,
+            assistantResponse: assistantResponse
+        )
+    }
     
     /// Throttled UI update
     private func updateResponseIfNeeded(_ content: String, force: Bool) async {
@@ -687,17 +719,56 @@ extension LLMEngine {
     }
 
     func prewarmIfNeeded(model: ModelInfo) async {
-        guard isSceneActive else { return }
+        print("[LLMEngine] prewarm requested id=\(model.id) engine=\(model.engine.rawValue) current=\(currentModel?.id ?? "none") state=\(state)")
+
+        if model.engine == .appleFoundation {
+            let taskID = UUID()
+            prewarmTaskID = taskID
+            isPrewarming = true
+            let startedAt = Date()
+            print("[LLMEngine] prewarm indicator on task=\(taskID) id=\(model.id)")
+
+            if currentModel?.id == model.id {
+                print("[LLMEngine] prewarm using existing Apple session id=\(model.id)")
+                appleFoundationBridge.prewarm()
+            } else {
+                print("[LLMEngine] prewarm loading Apple session id=\(model.id)")
+                try? await loadModel(model)
+            }
+
+            let minimumDisplayDuration: TimeInterval = 0.7
+            let remainingDuration = minimumDisplayDuration - Date().timeIntervalSince(startedAt)
+            if remainingDuration > 0 {
+                print("[LLMEngine] prewarm holding indicator remaining=\(String(format: "%.2f", remainingDuration))s")
+                try? await Task.sleep(nanoseconds: UInt64(remainingDuration * 1_000_000_000))
+            }
+
+            if prewarmTaskID == taskID {
+                isPrewarming = false
+                prewarmTaskID = nil
+                print("[LLMEngine] prewarm indicator off task=\(taskID) id=\(model.id)")
+            } else {
+                print("[LLMEngine] prewarm task superseded task=\(taskID) id=\(model.id)")
+            }
+            return
+        }
+
+        guard isSceneActive else {
+            print("[LLMEngine] prewarm skipped scene inactive id=\(model.id) engine=\(model.engine.rawValue)")
+            return
+        }
 
         if currentModel?.id == model.id {
             #if !targetEnvironment(simulator)
             if let session = mlxSession {
                 guard model.engine != .mlx || isSceneActive else { return }
                 _ = session
+                print("[LLMEngine] prewarm skipped MLX already has session id=\(model.id)")
                 return
             }
             #endif
         }
+        print("[LLMEngine] prewarm loading non-Apple model id=\(model.id)")
         try? await loadModel(model)
     }
 

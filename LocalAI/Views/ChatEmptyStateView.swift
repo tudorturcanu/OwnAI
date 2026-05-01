@@ -1,8 +1,11 @@
 import SwiftUI
+import Shimmer
 
 struct ChatEmptyStateView: View {
     let isInputFocused: Bool
     let selectedModelName: String?
+    let downloadingModelName: String?
+    let isWarmingUp: Bool
     let isAppleIntelligenceAvailable: Bool
     let personalityLabel: (name: String, icon: String)?
     let onDownloadModel: () -> Void
@@ -31,6 +34,19 @@ struct ChatEmptyStateView: View {
                         Text(String(format: String(localized: "Using %@"), selectedModelName))
                             .font(.caption)
                             .foregroundStyle(Color(white: 0.4))
+                    } else if let downloadingModelName {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+
+                            Text(downloadStatusText(for: downloadingModelName))
+                                .font(.caption.weight(.medium))
+                                .foregroundStyle(.blue)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.blue.opacity(0.1))
+                        .clipShape(Capsule())
                     } else if !isAppleIntelligenceAvailable {
                         Button(action: onDownloadModel) {
                             HStack {
@@ -99,12 +115,13 @@ struct ChatEmptyStateView: View {
     private var modelStatusView: some View {
         HStack(spacing: 8) {
             Circle()
-                .fill(selectedModelName == nil ? Color.orange : Color.green)
+                .fill(statusColor)
                 .frame(width: 8, height: 8)
 
-            Text(selectedModelName == nil ? String(localized: "No Model Selected") : String(localized: "Ready to Chat"))
+            Text(statusTitle)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(Color(white: 0.35))
+                .shimmering(active: isWarmingUp, bandSize: 0.22)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
@@ -113,6 +130,42 @@ struct ChatEmptyStateView: View {
         .overlay(
             Capsule()
                 .stroke(Color.white.opacity(0.4), lineWidth: 1)
+        )
+    }
+
+    private var statusColor: Color {
+        if isWarmingUp {
+            return .blue
+        }
+        if selectedModelName != nil {
+            return .green
+        }
+        if downloadingModelName != nil {
+            return .blue
+        }
+        return .orange
+    }
+
+    private var statusTitle: String {
+        if isWarmingUp {
+            return String(localized: "Warming up")
+        }
+        if selectedModelName != nil {
+            return String(localized: "Ready to Chat")
+        }
+        if downloadingModelName != nil {
+            return String(localized: "Downloading Model")
+        }
+        return String(localized: "No Model Selected")
+    }
+
+    private func downloadStatusText(for modelName: String) -> String {
+        return String(
+            format: String(
+                localized: "Downloading %@",
+                defaultValue: "Downloading %@"
+            ),
+            modelName
         )
     }
 }

@@ -18,6 +18,7 @@ struct SettingsView: View {
     @AppStorage("historyRetentionDays") private var historyRetentionDays = 0
     @AppStorage("autoRead") private var autoRead = false
     @AppStorage("smartReplyStylesEnabled") private var smartReplyStylesEnabled = false
+    @AppStorage("inChatSearchEnabled") private var inChatSearchEnabled = false
     @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
     @AppStorage("downloads.allowCellular") private var allowCellularDownloads = false
     @State private var showClearHistoryConfirmation = false
@@ -69,6 +70,9 @@ struct SettingsView: View {
                     headerSection
                     aiSection
                     preferencesSection
+                    #if DEBUG
+                    debugSection
+                    #endif
                     documentSection
 
                     privacySection
@@ -164,7 +168,7 @@ struct SettingsView: View {
                     .font(.footnote)
                     .foregroundStyle(.orange)
             } else if !monetizationManager.hasPro {
-                Text("\(monetizationManager.freeMessagesRemainingToday) of \(MonetizationManager.freeInstallMessageLimit) free messages left on this install")
+                Text("\(monetizationManager.freeMessagesRemainingToday) of \(MonetizationManager.freeInstallMessageLimit) free messages left")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -234,16 +238,14 @@ struct SettingsView: View {
 
             sectionDivider
 
+
             settingsToggleRow(
-                icon: "sparkles",
-                tint: .purple,
-                title: "Reply Styles",
-                subtitle: "Show quick options under replies",
-                isOn: $smartReplyStylesEnabled
+                icon: "magnifyingglass",
+                tint: .blue,
+                title: "Search in Conversation",
+                subtitle: "Show a search button inside active chats",
+                isOn: $inChatSearchEnabled
             )
-            .onChange(of: smartReplyStylesEnabled) {
-                systemPrompt = AIResponseDefaults.defaultSystemPrompt
-            }
 
             sectionDivider
 
@@ -254,8 +256,37 @@ struct SettingsView: View {
                 subtitle: "Lighter local behavior for lower battery impact",
                 isOn: $lowPowerMode
             )
+            sectionDivider
+
+            settingsToggleRow(
+                icon: "curlybraces",
+                tint: .indigo,
+                title: "Reply Style",
+                subtitle: "Show quick options under replies",
+                isOn: $smartReplyStylesEnabled
+            )
+            .onChange(of: smartReplyStylesEnabled) {
+                systemPrompt = AIResponseDefaults.defaultSystemPrompt
+            }
         }
     }
+
+    #if DEBUG
+    private var debugSection: some View {
+        settingsSection("Debug") {
+            settingsToggleRow(
+                icon: "crown.fill",
+                tint: .yellow,
+                title: "Enable Pro",
+                subtitle: "Overrides Pro entitlement in debug builds",
+                isOn: Binding(
+                    get: { monetizationManager.debugProEnabled },
+                    set: { monetizationManager.debugProEnabled = $0 }
+                )
+            )
+        }
+    }
+    #endif
 
     private var documentSection: some View {
         settingsSection("Documents") {

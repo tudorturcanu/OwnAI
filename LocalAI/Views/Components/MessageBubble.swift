@@ -19,11 +19,18 @@ struct MessageBubble: View {
     let onRegenerateLess: ((ChatMessage) -> Void)?
     let smartReplyStyles: [SmartReplyStyle]
     let onSmartReplyStyle: ((ChatMessage, SmartReplyStyle) -> Void)?
+    let followUpSuggestions: [String]
     let onBranchFromHere: ((ChatMessage) -> Void)?
     let onTogglePin: ((ChatMessage) -> Void)?
+    let onTranslate: ((ChatMessage) -> Void)?
+    let onSpeak: ((ChatMessage) -> Void)?
+    let onSearchWeb: ((ChatMessage) -> Void)?
+    let onFollowUp: ((ChatMessage, String) -> Void)?
+    @AppStorage("codeTheme") private var codeThemeRaw = CodeTheme.defaultTheme.rawValue
     @State private var appeared = false
     @State private var isThinkingExpanded = false
     @State private var showCopied = false
+    @State private var showStats = false
     private let userLeadingInset: CGFloat = 60
     private let assistantTrailingInset: CGFloat = 16
     private let collapsedThinkingHeight: CGFloat = 76
@@ -38,8 +45,13 @@ struct MessageBubble: View {
         onRegenerateLess: ((ChatMessage) -> Void)? = nil,
         smartReplyStyles: [SmartReplyStyle] = [],
         onSmartReplyStyle: ((ChatMessage, SmartReplyStyle) -> Void)? = nil,
+        followUpSuggestions: [String] = [],
         onBranchFromHere: ((ChatMessage) -> Void)? = nil,
-        onTogglePin: ((ChatMessage) -> Void)? = nil
+        onTogglePin: ((ChatMessage) -> Void)? = nil,
+        onTranslate: ((ChatMessage) -> Void)? = nil,
+        onSpeak: ((ChatMessage) -> Void)? = nil,
+        onSearchWeb: ((ChatMessage) -> Void)? = nil,
+        onFollowUp: ((ChatMessage, String) -> Void)? = nil
     ) {
         self.message = message
         self.showsContinue = showsContinue
@@ -50,8 +62,13 @@ struct MessageBubble: View {
         self.onRegenerateLess = onRegenerateLess
         self.smartReplyStyles = smartReplyStyles
         self.onSmartReplyStyle = onSmartReplyStyle
+        self.followUpSuggestions = followUpSuggestions
         self.onBranchFromHere = onBranchFromHere
         self.onTogglePin = onTogglePin
+        self.onTranslate = onTranslate
+        self.onSpeak = onSpeak
+        self.onSearchWeb = onSearchWeb
+        self.onFollowUp = onFollowUp
     }
     
     var body: some View {
@@ -125,11 +142,12 @@ struct MessageBubble: View {
                 }
 
                 if message.role == .assistant,
-                   !smartReplyStyles.isEmpty,
-                   let onSmartReplyStyle {
-                    smartReplyStyleChips(
+                   (!smartReplyStyles.isEmpty || !followUpSuggestions.isEmpty) {
+                    assistantActionChips(
                         styles: smartReplyStyles,
-                        action: { style in onSmartReplyStyle(message, style) }
+                        suggestions: followUpSuggestions,
+                        styleAction: { style in onSmartReplyStyle?(message, style) },
+                        followUpAction: { suggestion in onFollowUp?(message, suggestion) }
                     )
                 }
             }
@@ -158,6 +176,10 @@ struct MessageBubble: View {
             withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
                 appeared = true
             }
+            if message.role == .assistant && message.content.isEmpty && message.thinkingContent == nil {
+                let generator = UIImpactFeedbackGenerator(style: .light)
+                generator.impactOccurred()
+            }
         }
     }
 
@@ -185,30 +207,31 @@ struct MessageBubble: View {
         let action: () -> Void
     }
 
-    private func smartReplyStyleChips(
+    private func assistantActionChips(
         styles: [SmartReplyStyle],
-        action: @escaping (SmartReplyStyle) -> Void
+        suggestions: [String],
+        styleAction: @escaping (SmartReplyStyle) -> Void,
+        followUpAction: @escaping (String) -> Void
     ) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
                 ForEach(styles) { style in
                     Button {
-                        action(style)
+                        styleAction(style)
                     } label: {
-                        Label(style.title, systemImage: style.systemImage)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color(white: 0.22))
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .background(Color.white.opacity(0.9))
-                            .clipShape(Capsule())
-                            .overlay(
-                                Capsule()
-                                    .stroke(Color.black.opacity(0.06), lineWidth: 1)
-                            )
+                        actionChipLabel(title: style.title, systemImage: style.systemImage)
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint(String(localized: "Rewrites the latest reply in this style."))
+                }
+
+                ForEach(suggestions, id: \.self) { suggestion in
+                    Button {
+                        followUpAction(suggestion)
+                    } label: {
+                        actionChipLabel(title: suggestion, systemImage: "arrow.turn.down.right")
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.leading, 4)
@@ -216,6 +239,21 @@ struct MessageBubble: View {
         }
         .frame(maxWidth: 320, alignment: .leading)
         .padding(.top, 2)
+    }
+
+    private func actionChipLabel(title: String, systemImage: String) -> some View {
+        Label(title, systemImage: systemImage)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Color(white: 0.22))
+            .lineLimit(1)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(Color.white.opacity(0.9))
+            .clipShape(Capsule())
+            .overlay(
+                Capsule()
+                    .stroke(Color.black.opacity(0.06), lineWidth: 1)
+            )
     }
 
     @ViewBuilder
@@ -257,15 +295,15 @@ struct MessageBubble: View {
             message.role == .user ?
             AnyShapeStyle(
                 LinearGradient(
-                    colors: [.blue, .blue.opacity(0.9)],
-                    startPoint: .top,
-                    endPoint: .bottom
+                    colors: [Color(red: 0.2, green: 0.5, blue: 0.9), Color(red: 0.15, green: 0.45, blue: 0.85)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
                 )
             ) :
-            AnyShapeStyle(Color.white)
+            AnyShapeStyle(.ultraThinMaterial)
         )
         .clipShape(MessageShape(isUser: message.role == .user))
-        .shadow(color: .black.opacity(message.role == .user ? 0.1 : 0.04), radius: 6, y: 3)
+        .shadow(color: .black.opacity(message.role == .user ? 0.12 : 0.06), radius: message.role == .user ? 8 : 4, y: 3)
         .contentTransition(.interpolate)
         .animation(.spring(response: 0.4, dampingFraction: 0.9), value: message.content)
         .contextMenu {
@@ -301,11 +339,55 @@ struct MessageBubble: View {
                 Label("Copy as Markdown", systemImage: "doc.plaintext")
             }
 
+            // Copy Code Only — extracts fenced code blocks
+            if message.role == .assistant, let codeOnly = extractCodeBlocks(from: message.content), !codeOnly.isEmpty {
+                Button {
+                    UIPasteboard.general.string = codeOnly
+                    let generator = UIImpactFeedbackGenerator(style: .light)
+                    generator.impactOccurred()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        showCopied = true
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                        withAnimation(.easeOut(duration: 0.3)) {
+                            showCopied = false
+                        }
+                    }
+                } label: {
+                    Label("Copy Code Only", systemImage: "curlybraces")
+                }
+            }
+
+            Divider()
+
             if let onTogglePin {
                 Button {
                     onTogglePin(message)
                 } label: {
                     Label(message.isPinned ? "Unpin" : "Pin", systemImage: message.isPinned ? "pin.slash" : "pin")
+                }
+            }
+
+            // Message Info / Stats
+            Button {
+                showStats = true
+            } label: {
+                Label("Message Info", systemImage: "info.circle")
+            }
+
+            if let onSpeak {
+                Button {
+                    onSpeak(message)
+                } label: {
+                    Label("Read Aloud", systemImage: "speaker.wave.2")
+                }
+            }
+
+            if let onSearchWeb {
+                Button {
+                    onSearchWeb(message)
+                } label: {
+                    Label("Search on Web", systemImage: "magnifyingglass")
                 }
             }
 
@@ -332,6 +414,16 @@ struct MessageBubble: View {
                         Label("Regenerate (Less)", systemImage: "minus.magnifyingglass")
                     }
                 }
+
+                // Translate Reply
+                if let onTranslate {
+                    Divider()
+                    Button {
+                        onTranslate(message)
+                    } label: {
+                        Label("Translate Reply", systemImage: "globe")
+                    }
+                }
             }
 
             if let onBranchFromHere {
@@ -342,13 +434,25 @@ struct MessageBubble: View {
                 }
             }
 
+            // Share
+            ShareLink(item: message.content) {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+
             if message.role == .assistant {
+                Divider()
                 Button(role: .destructive) {
                     reportContent(message.content)
                 } label: {
                     Label("Report Inappropriate Content", systemImage: "flag")
                 }
             }
+        }
+        .alert("Message Info", isPresented: $showStats) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            let stats = messageStats(for: message.content)
+            Text("\(stats.words) words · \(stats.characters) characters\n~\(stats.readingTime) min read")
         }
     }
 
@@ -386,6 +490,7 @@ struct MessageBubble: View {
                     .foregroundStyle(.white)
             }
         } else {
+            let theme = CodeTheme(rawValue: codeThemeRaw) ?? .defaultTheme
             Markdown(message.content)
                 .font(.body)
                 .foregroundStyle(Color(white: 0.15))
@@ -394,7 +499,7 @@ struct MessageBubble: View {
                         HStack {
                             Text(configuration.language?.lowercased() ?? "code")
                                 .font(.caption.bold())
-                                .foregroundStyle(Color(white: 0.4))
+                                .foregroundStyle(theme.foreground.opacity(0.8))
                             Spacer()
                             Button {
                                 UIPasteboard.general.string = configuration.content
@@ -407,30 +512,30 @@ struct MessageBubble: View {
                                     Text("Copy")
                                         .font(.caption.bold())
                                 }
-                                .foregroundStyle(Color.black.opacity(0.7))
+                                .foregroundStyle(theme.foreground)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
-                                .background(Color.white)
+                                .background(theme.background)
                                 .clipShape(Capsule())
-                                .shadow(color: .black.opacity(0.05), radius: 2, y: 1)
+                                .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
                             }
                             .buttonStyle(.plain)
                         }
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(Color(white: 0.95))
+                        .background(theme.headerBackground)
 
                         ScrollView(.horizontal, showsIndicators: true) {
-                            Text(SyntaxHighlighter.highlight(configuration.content, language: configuration.language))
+                            Text(SyntaxHighlighter.highlight(configuration.content, language: configuration.language, theme: theme))
                                 .padding(12)
                                 .frame(minWidth: 100, alignment: .leading)
                         }
-                        .background(Color(white: 0.98))
+                        .background(theme.background)
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                     .overlay(
                         RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color(white: 0.85), lineWidth: 1)
+                            .stroke(theme.borderColor, lineWidth: 1)
                     )
                     .padding(.vertical, 8)
                 }
@@ -489,15 +594,26 @@ struct MessageBubble: View {
         VStack(alignment: .leading, spacing: 12) {
             Button {
                 debugLogThinking("toggle tapped", thinkingText: thinkingText)
+                let generator = UIImpactFeedbackGenerator(style: .light)
+                generator.impactOccurred()
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
                     isThinkingExpanded.toggle()
                 }
             } label: {
                 HStack {
-                    Text(message.isStreaming ? "Thinking…" : "Thoughts")
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(message.isStreaming ? Color.black.opacity(0.8) : Color.black)
-                        .shimmering(active: message.isStreaming, bandSize: 0.18)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(message.isStreaming ? "Thinking…" : "Thoughts")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(message.isStreaming ? Color.black.opacity(0.8) : Color.black)
+                            .shimmering(active: message.isStreaming, bandSize: 0.18)
+
+                        if !message.isStreaming, !thinkingText.isEmpty {
+                            let wordCount = thinkingText.split { $0.isWhitespace }.count
+                            Text("\(wordCount) words")
+                                .font(.caption2)
+                                .foregroundStyle(Color(white: 0.55))
+                        }
+                    }
 
                     Spacer()
 
@@ -572,12 +688,14 @@ struct MessageBubble: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 16)
-        .background(Color.white.opacity(0.96))
+        .padding(.vertical, 16)
+        .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 28))
         .overlay(
             RoundedRectangle(cornerRadius: 28)
-                .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                .stroke(Color.white.opacity(0.4), lineWidth: 0.5)
         )
+        .shadow(color: .black.opacity(0.04), radius: 10, y: 5)
         .padding(.trailing, 4)
     }
 
@@ -607,6 +725,35 @@ struct MessageBubble: View {
         if let url = URL(string: mailto) {
             UIApplication.shared.open(url)
         }
+    }
+
+    // MARK: - Code Extraction
+
+    /// Extracts fenced code blocks (```...```) from markdown text.
+    private func extractCodeBlocks(from content: String) -> String? {
+        let pattern = "```(?:\\w+)?\n([\\s\\S]*?)```"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
+        let range = NSRange(content.startIndex..., in: content)
+        let matches = regex.matches(in: content, options: [], range: range)
+        guard !matches.isEmpty else { return nil }
+
+        let blocks = matches.compactMap { match -> String? in
+            guard match.numberOfRanges > 1,
+                  let captureRange = Range(match.range(at: 1), in: content) else { return nil }
+            return String(content[captureRange]).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return blocks.joined(separator: "\n\n")
+    }
+
+    // MARK: - Message Stats
+
+    private func messageStats(for content: String) -> (words: Int, characters: Int, readingTime: Int) {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let words = trimmed.split { $0.isWhitespace }.count
+        let characters = trimmed.count
+        let readingTime = max(1, Int(ceil(Double(words) / 200.0)))
+        return (words, characters, readingTime)
     }
 }
 

@@ -183,9 +183,12 @@ struct ChatConversation: Identifiable, Equatable, Codable {
     /// Generate a title from the first user message
     mutating func generateTitle() {
         if let firstUserMessage = messages.first(where: { $0.role == .user }) {
-            let content = firstUserMessage.content
-            title = String(content.prefix(30)) + (content.count > 30 ? "..." : "")
+            title = Self.fallbackTitle(for: firstUserMessage.content)
         }
+    }
+
+    static func fallbackTitle(for content: String) -> String {
+        String(content.prefix(30)) + (content.count > 30 ? "..." : "")
     }
 }
 
@@ -592,6 +595,20 @@ final class ChatHistoryManager {
         } else {
             saveConversations(immediately: true, changedConversationIDs: Set([conversations[convIndex].id]))
         }
+    }
+
+    func updateTitle(_ title: String, for conversationID: UUID?) {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedTitle.isEmpty,
+              let conversationID,
+              let convIndex = conversations.firstIndex(where: { $0.id == conversationID }),
+              conversations[convIndex].title != trimmedTitle else {
+            return
+        }
+
+        conversations[convIndex].title = trimmedTitle
+        conversations[convIndex].updatedAt = Date()
+        saveConversations(immediately: true, changedConversationIDs: Set([conversationID]))
     }
     
     /// Get messages for current conversation

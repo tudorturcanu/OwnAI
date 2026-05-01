@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import PhotosUI
+import Shimmer
 
 struct ChatView: View {
     @Environment(LLMEngine.self) private var llmEngine
@@ -34,14 +35,26 @@ struct ChatView: View {
     @State private var activeStreamingConversationID: UUID?
     @State private var activeStreamingAssistantID: UUID?
     @State private var pendingSessionReset = false
+    @State private var activeGenerationSessionScope: GenerationSessionScope?
     @State private var selectedDocumentForSources: ConversationDocument?
+    @State private var generatedFollowUpSuggestions: [UUID: [String]] = [:]
     @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
     @AppStorage("responseCharacterLimit") private var responseCharacterLimit = AIResponseDefaults.responseCharacterLimit
     @AppStorage("smartReplyStylesEnabled") private var smartReplyStylesEnabled = false
+    @AppStorage("inChatSearchEnabled") private var inChatSearchEnabled = false
 
     @State private var editingMessage: ChatMessage?
     @State private var editedMessageText: String = ""
     @State private var isEditSheetPresented = false
+    @State private var inChatSearchText: String = ""
+    @State private var isInChatSearchActive = false
+    @State private var translateTargetLanguage: String = ""
+
+    private struct GenerationSessionScope: Equatable {
+        let modelID: String
+        let conversationID: UUID?
+        let documentSignature: String
+    }
     
     var body: some View {
         alertContent
@@ -202,10 +215,17 @@ struct ChatView: View {
                 speechManager.stopSpeaking()
             }
             .onChange(of: modelManager.selectedModelID) {
+                invalidateGenerationSessionScope()
+                if llmEngine.state == .generating {
+                    pendingSessionReset = true
+                } else {
+                    llmEngine.resetSession()
+                }
                 prewarmModel()
             }
             .onChange(of: historyManager.currentConversationID) {
                 speechManager.stopSpeaking()
+                invalidateGenerationSessionScope()
                 if llmEngine.state == .generating {
                     pendingSessionReset = true
                 } else {
@@ -269,13 +289,125 @@ struct ChatView: View {
                 .ignoresSafeArea()
             
             VStack(spacing: 0) {
+                // In-chat search bar
+                if isInChatSearchActive {
+                    inChatSearchBar
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+
                 // Messages area
                 messagesView
                 
                 // Input area
                 inputView
             }
+
+            if llmEngine.isPrewarming && !historyManager.currentMessages.isEmpty {
+                VStack {
+                    warmingUpIndicator
+                        .padding(.top, 12)
+                    Spacer()
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
         }
+        .toolbar {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                if inChatSearchEnabled && !historyManager.currentMessages.isEmpty {
+                    Button {
+                        withAnimation(.spring(response: 0.3)) {
+                            isInChatSearchActive.toggle()
+                            if !isInChatSearchActive {
+                                inChatSearchText = ""
+                            }
+                        }
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.body.weight(.medium))
+                            .foregroundStyle(isInChatSearchActive ? Color.blue : Color(white: 0.3))
+                            .frame(width: 32, height: 32)
+                            .background(Color(white: 0.95))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut("f", modifiers: [.command])
+                }
+            }
+        }
+        .onChange(of: inChatSearchEnabled) {
+            guard !inChatSearchEnabled else { return }
+            inChatSearchText = ""
+            isInChatSearchActive = false
+        }
+    }
+
+    private var warmingUpIndicator: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "sparkles")
+                .font(.caption.weight(.semibold))
+
+            Text(String(localized: "Warming up"))
+                .font(.caption.weight(.semibold))
+                .shimmering(active: true, bandSize: 0.22)
+        }
+        .foregroundStyle(.blue)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .overlay(
+            Capsule()
+                .stroke(Color.white.opacity(0.45), lineWidth: 1)
+        )
+        .accessibilityLabel(String(localized: "Warming up"))
+    }
+
+    // MARK: - In-Chat Search
+
+    private var inChatSearchBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.body.weight(.medium))
+                .foregroundStyle(Color(white: 0.45))
+
+            TextField(String(localized: "Search in conversation…"), text: $inChatSearchText)
+                .textFieldStyle(.plain)
+                .font(.body)
+
+            if !inChatSearchText.isEmpty {
+                Text(String(format: String(localized: "%lld matches", defaultValue: "%lld matches"), Int64(inChatSearchMatchCount)))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(white: 0.5))
+                    .fixedSize()
+            }
+
+            Button {
+                withAnimation(.spring(response: 0.3)) {
+                    inChatSearchText = ""
+                    isInChatSearchActive = false
+                }
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.body)
+                    .foregroundStyle(Color(white: 0.5))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial)
+    }
+
+    private var inChatSearchMatchCount: Int {
+        guard !inChatSearchText.isEmpty else { return 0 }
+        return historyManager.currentMessages.filter {
+            $0.content.localizedCaseInsensitiveContains(inChatSearchText)
+        }.count
+    }
+
+    private func messageMatchesSearch(_ message: ChatMessage) -> Bool {
+        guard isInChatSearchActive, !inChatSearchText.isEmpty else { return true }
+        return message.content.localizedCaseInsensitiveContains(inChatSearchText)
     }
 
     private var documentErrorBinding: Binding<Bool> {
@@ -337,14 +469,32 @@ struct ChatView: View {
                                 onSmartReplyStyle: { message, style in
                                     regenerate(message: message, style: style)
                                 },
+                                followUpSuggestions: followUpSuggestions(for: message),
                                 onBranchFromHere: { message in
                                     branchConversation(from: message)
                                 },
                                 onTogglePin: { message in
                                     historyManager.togglePinned(messageID: message.id, in: historyManager.currentConversationID)
+                                },
+                                onTranslate: { message in
+                                    translateReply(message)
+                                },
+                                onSpeak: { message in
+                                    speechManager.speak(message.content)
+                                },
+                                onSearchWeb: { message in
+                                    if let url = URL(string: "https://duckduckgo.com/?q=\(message.content.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
+                                        UIApplication.shared.open(url)
+                                    }
+                                },
+                                onFollowUp: { _, followUpText in
+                                    messageText = followUpText
+                                    sendMessage()
                                 }
                             )
                                 .id(message.id)
+                                .opacity(messageMatchesSearch(message) ? 1.0 : 0.25)
+                                .animation(.easeInOut(duration: 0.2), value: inChatSearchText)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                     Button(role: .destructive) {
                                         withAnimation(.spring(response: 0.3)) {
@@ -352,6 +502,20 @@ struct ChatView: View {
                                         }
                                     } label: {
                                         Label(String(localized: "Delete"), systemImage: "trash")
+                                    }
+                                }
+                                .swipeActions(edge: .leading, allowsFullSwipe: false) {
+                                    if message.role == .assistant,
+                                       historyManager.currentMessages.last?.id == message.id,
+                                       llmEngine.state != .generating {
+                                        Button {
+                                            let generator = UIImpactFeedbackGenerator(style: .medium)
+                                            generator.impactOccurred()
+                                            regenerate(message: message, style: .more)
+                                        } label: {
+                                            Label(String(localized: "Regenerate"), systemImage: "arrow.clockwise")
+                                        }
+                                        .tint(.blue)
                                     }
                                 }
                         }
@@ -380,6 +544,7 @@ struct ChatView: View {
                     if pendingSessionReset {
                         pendingSessionReset = false
                         llmEngine.resetSession()
+                        invalidateGenerationSessionScope()
                     }
                 }
                 scrollToBottom(proxy: proxy)
@@ -441,6 +606,8 @@ struct ChatView: View {
         ChatEmptyStateView(
             isInputFocused: isInputFocused,
             selectedModelName: modelManager.selectedModel?.name,
+            downloadingModelName: activeDownloadingModel?.name,
+            isWarmingUp: llmEngine.isPrewarming,
             isAppleIntelligenceAvailable: modelManager.isAppleIntelligenceAvailable,
             personalityLabel: currentPersonalityLabel,
             onDownloadModel: {
@@ -451,6 +618,20 @@ struct ChatView: View {
                 sendMessage()
             }
         )
+    }
+
+    private var pendingSelectedModel: ModelInfo? {
+        modelManager.selectedModelID.flatMap { id in
+            modelManager.models.first(where: { $0.id == id })
+        }
+    }
+
+    private var activeDownloadingModel: (name: String, progress: Double?)? {
+        guard let pendingSelectedModel else { return nil }
+        if case .downloading(let progress, _) = pendingSelectedModel.downloadState {
+            return (pendingSelectedModel.name, progress)
+        }
+        return nil
     }
 
     // MARK: - Input View
@@ -512,11 +693,11 @@ struct ChatView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
-                    .background(Color.white.opacity(0.6))
+                    .background(.ultraThinMaterial)
                     .clipShape(RoundedRectangle(cornerRadius: 24))
                     .overlay(
                         RoundedRectangle(cornerRadius: 24)
-                            .stroke(Color.black.opacity(speechManager.isListening ? 0.2 : 0.05), lineWidth: 1)
+                            .stroke(Color.white.opacity(0.5), lineWidth: 0.5)
                     )
                     
                     if llmEngine.state == .generating {
@@ -562,15 +743,34 @@ struct ChatView: View {
                                 .frame(width: 36, height: 36)
                                 .background(sendButtonGradient)
                                 .clipShape(Circle())
+                                .shadow(color: canSend ? .blue.opacity(0.3) : .clear, radius: 8, y: 4)
                         }
                         .disabled(!canSend)
+                        .scaleEffect(canSend ? 1.0 : 0.9)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: canSend)
                     }
                 }
                 .padding(.horizontal, 16)
-                .padding(.bottom, 12)
+                .padding(.bottom, 4)
                 .padding(.top, currentConversationDocuments.isEmpty ? 12 : 4)
                 .onChange(of: selectedPhotoItem) {
                     handlePhotoSelection()
+                }
+
+                // Character count indicator
+                if messageText.count > 100 {
+                    HStack {
+                        Spacer()
+                        Text("\(messageText.count) characters")
+                            .font(.caption2.weight(.medium))
+                            .foregroundStyle(Color(white: 0.5))
+                            .padding(.trailing, 20)
+                            .padding(.bottom, 8)
+                    }
+                    .transition(.opacity)
+                } else {
+                    Spacer()
+                        .frame(height: 8)
                 }
             }
             .background(Color.clear)
@@ -792,6 +992,66 @@ struct ChatView: View {
         .accessibilityHint(String(localized: "Reads the latest assistant reply aloud."))
     }
 
+    private func followUpSuggestions(for message: ChatMessage) -> [String] {
+        guard message.role == .assistant else { return [] }
+        guard !message.isStreaming else { return [] }
+        guard llmEngine.state != .generating else { return [] }
+        guard historyManager.currentMessages.last?.id == message.id else { return [] }
+        guard !isInChatSearchActive else { return [] }
+        guard smartReplyStylesEnabled else { return [] }
+
+        if let generated = generatedFollowUpSuggestions[message.id], !generated.isEmpty {
+            return generated
+        }
+
+        let content = message.content
+        let lower = content.lowercased()
+        guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
+
+        var suggestions: [String] = []
+
+        // Code-related reply → offer to explain or run it
+        if content.contains("```") {
+            suggestions.append("Explain this code step by step")
+            suggestions.append("Show me an example of how to use this")
+        }
+
+        // List-heavy reply → offer checklist or summary
+        let bulletLines = content.components(separatedBy: .newlines).filter {
+            let t = $0.trimmingCharacters(in: .whitespaces)
+            return t.hasPrefix("-") || t.hasPrefix("•") || t.hasPrefix("*") ||
+                   t.range(of: #"^\d+[\.)]\s"#, options: .regularExpression) != nil
+        }
+        if bulletLines.count >= 3 {
+            suggestions.append("Summarize this in one sentence")
+            if !suggestions.contains("Show me an example of how to use this") {
+                suggestions.append("Give me a real-world example")
+            }
+        }
+
+        // Question in the reply → offer to elaborate
+        if lower.contains("?") || lower.contains("would you like") || lower.contains("shall i") {
+            suggestions.append("Yes, please continue")
+        }
+
+        // Long reply → offer simplified version
+        let wordCount = content.split { $0.isWhitespace }.count
+        if wordCount > 120, !suggestions.contains("Summarize this in one sentence") {
+            suggestions.append("Give me a shorter summary")
+        }
+
+        // Generic always-useful fallback chips
+        if suggestions.isEmpty || suggestions.count < 2 {
+            let fallbacks = ["Tell me more", "Give me an example", "Explain it differently"]
+            for f in fallbacks {
+                if !suggestions.contains(f) { suggestions.append(f) }
+                if suggestions.count >= 3 { break }
+            }
+        }
+
+        return Array(suggestions.prefix(3))
+    }
+
     private var microphoneControls: some View {
         HStack(spacing: 8) {
             if voiceConversationMode {
@@ -957,13 +1217,13 @@ struct ChatView: View {
         
         // Generate response
         Task {
+            guard let model = modelManager.selectedModel else { return }
             let promptContext = await buildPromptContext(
                 userText: text.isEmpty && imageToSend != nil ? displayText : text,
-                conversationID: conversationID
+                conversationID: conversationID,
+                model: model
             )
-            
-            guard let model = modelManager.selectedModel else { return }
-            
+
             // For non-vision models with image, prepend note
             var effectivePrompt = promptContext.prompt
             if imageToSend != nil, !model.supportsVision {
@@ -1000,7 +1260,7 @@ struct ChatView: View {
 
         guard monetizationManager.shouldShowThreeMessagesLeftWarning else { return }
         monetizationManager.markThreeMessagesLeftWarningShown()
-        showUsageToast(String(localized: "3 free messages left on this install."))
+        showUsageToast(String(localized: "3 free messages left."))
     }
 
     private func showUsageToast(_ message: String) {
@@ -1085,7 +1345,12 @@ struct ChatView: View {
 
             try await llmEngine.loadModel(model)
 
-            if resetSession {
+            let nextSessionScope = generationSessionScope(for: model, conversationID: conversationID)
+            let shouldResetSession = resetSession ||
+                activeGenerationSessionScope != nextSessionScope ||
+                !llmEngine.hasConversationContext(for: model)
+
+            if shouldResetSession {
                 llmEngine.resetSession()
             }
 
@@ -1094,8 +1359,19 @@ struct ChatView: View {
                 showUsageToastIfNeededAfterSend()
             }
 
+            let continuityPrompt = shouldResetSession
+                ? promptIncludingRecentTranscript(
+                    prompt,
+                    conversationID: conversationID,
+                    assistantID: assistantID
+                )
+                : prompt
+
             try await llmEngine.generate(
-                prompt: promptWithResponseLimit(prompt, existingPrefix: existingPrefix),
+                prompt: budgetedGenerationPrompt(
+                    promptWithResponseLimit(continuityPrompt, existingPrefix: existingPrefix),
+                    model: model
+                ),
                 image: image
             )
 
@@ -1116,6 +1392,7 @@ struct ChatView: View {
                 )
                 llmEngine.currentResponse = ""
                 streamingPrefix = ""
+                invalidateGenerationSessionScope()
                 return
             }
 
@@ -1150,6 +1427,13 @@ struct ChatView: View {
                 content: finalizedContent,
                 isStreaming: false,
                 sourceTitles: assistantSourceTitles
+            )
+            activeGenerationSessionScope = nextSessionScope
+
+            await refineConversationInsightsIfNeeded(
+                conversationID: conversationID,
+                model: model,
+                assistantID: assistantID
             )
 
             llmEngine.currentResponse = ""
@@ -1187,9 +1471,72 @@ struct ChatView: View {
             }
             llmEngine.currentResponse = ""
             streamingPrefix = ""
+            invalidateGenerationSessionScope()
             if voiceConversationMode {
                 speechManager.speak(errorText)
             }
+        }
+    }
+
+    private func refineConversationInsightsIfNeeded(
+        conversationID: UUID?,
+        model: ModelInfo,
+        assistantID: UUID
+    ) async {
+        guard model.engine == .appleFoundation,
+              let conversation = historyManager.conversation(id: conversationID),
+              let userMessage = conversation.messages.first(where: { $0.role == .user }),
+              let assistantMessage = historyManager.message(id: assistantID, in: conversationID),
+              assistantMessage.role == .assistant,
+              !assistantMessage.isStreaming else {
+            return
+        }
+
+        let assistantResponse = AssistantOutputSanitizer
+            .sanitize(assistantMessage.content)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !assistantResponse.isEmpty else { return }
+
+        do {
+            let shouldGenerateFollowUps = smartReplyStylesEnabled
+            let generatedTitle: String
+            let generatedSummary: String
+            let generatedFollowUps: [String]
+
+            if shouldGenerateFollowUps {
+                let insights = try await llmEngine.generateConversationInsights(
+                    userMessage: userMessage.content,
+                    assistantResponse: assistantResponse,
+                    model: model
+                )
+                generatedTitle = insights.title
+                generatedSummary = insights.summary
+                generatedFollowUps = insights.suggestedFollowUps
+            } else {
+                generatedTitle = try await llmEngine.generateConversationTitle(
+                    userMessage: userMessage.content,
+                    assistantResponse: assistantResponse,
+                    model: model
+                )
+                generatedSummary = ""
+                generatedFollowUps = []
+            }
+
+            let fallbackTitle = ChatConversation.fallbackTitle(for: userMessage.content)
+            if conversation.messages.count == 2,
+               conversation.title == fallbackTitle || conversation.title == "New Chat" {
+                historyManager.updateTitle(generatedTitle, for: conversationID)
+            }
+
+            if !generatedSummary.isEmpty {
+                print("[ChatView] Apple insights summary assistantID=\(assistantID): \(generatedSummary)")
+            }
+            if shouldGenerateFollowUps, !generatedFollowUps.isEmpty {
+                generatedFollowUpSuggestions[assistantID] = generatedFollowUps
+                print("[ChatView] Apple insights followUps assistantID=\(assistantID): \(generatedFollowUps)")
+            }
+        } catch {
+            print("[ChatView] Apple insights unavailable assistantID=\(assistantID): \(error.localizedDescription)")
         }
     }
 
@@ -1453,7 +1800,8 @@ struct ChatView: View {
         Task {
             let promptContext = await buildPromptContext(
                 userText: newText,
-                conversationID: conversationID
+                conversationID: conversationID,
+                model: model
             )
             await runAssistantResponse(
                 prompt: promptContext.prompt,
@@ -1550,6 +1898,9 @@ struct ChatView: View {
         guard llmEngine.state != .generating else { return }
         guard historyManager.currentMessages.last?.id == message.id else { return }
 
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+
         Task {
             await runAssistantResponse(
                 prompt: style.instruction(previousAnswer: message.content),
@@ -1557,6 +1908,27 @@ struct ChatView: View {
                 assistantID: message.id,
                 existingPrefix: "",
                 placeholderContent: "",
+                assistantSourceTitles: message.sourceTitles,
+                shouldChargeUsage: false
+            )
+        }
+    }
+
+    private func translateReply(_ message: ChatMessage) {
+        guard message.role == .assistant else { return }
+        guard llmEngine.state != .generating else { return }
+        guard historyManager.currentMessages.last?.id == message.id else { return }
+
+        // Use the system locale as the default target language, or "English" if unknown
+        let targetLanguage = Locale.current.localizedString(forLanguageCode: Locale.current.language.languageCode?.identifier ?? "en") ?? "English"
+
+        Task {
+            await runAssistantResponse(
+                prompt: "Please translate your previous response into \(targetLanguage). Provide ONLY the translation without any introduction or commentary.",
+                conversationID: historyManager.currentConversationID,
+                assistantID: message.id, // This will edit the existing assistant message
+                existingPrefix: "",
+                placeholderContent: "Translating to \(targetLanguage)…",
                 assistantSourceTitles: message.sourceTitles,
                 shouldChargeUsage: false
             )
@@ -1586,7 +1958,8 @@ struct ChatView: View {
         Task {
             let promptContext = await buildPromptContext(
                 userText: promptSeed,
-                conversationID: historyManager.currentConversationID
+                conversationID: historyManager.currentConversationID,
+                model: modelManager.selectedModel
             )
             await runAssistantResponse(
                 prompt: promptContext.prompt,
@@ -1864,13 +2237,79 @@ struct ChatView: View {
         UserDefaults.standard.set(true, forKey: "modelConsent.\(modelID)")
     }
 
-    private func buildPromptContext(userText: String, conversationID: UUID?) async -> (prompt: String, sourceTitles: [String]) {
+    private func invalidateGenerationSessionScope() {
+        activeGenerationSessionScope = nil
+    }
+
+    private func generationSessionScope(
+        for model: ModelInfo,
+        conversationID: UUID?
+    ) -> GenerationSessionScope {
+        GenerationSessionScope(
+            modelID: model.id,
+            conversationID: conversationID,
+            documentSignature: documentSignature(for: conversationID)
+        )
+    }
+
+    private func documentSignature(for conversationID: UUID?) -> String {
+        documentManager.documents(for: conversationID)
+            .map { document in
+                "\(document.id.uuidString):\(document.content.count)"
+            }
+            .joined(separator: "|")
+    }
+
+    private func promptIncludingRecentTranscript(
+        _ prompt: String,
+        conversationID: UUID?,
+        assistantID: UUID
+    ) -> String {
+        var priorMessages = historyManager.messages(in: conversationID)
+            .filter { message in
+                message.id != assistantID && !message.isStreaming
+            }
+
+        if priorMessages.last?.role == .user {
+            priorMessages.removeLast()
+        }
+
+        let transcript = priorMessages
+            .suffix(8)
+            .compactMap { message -> String? in
+                let role = message.role == .user ? "User" : "Assistant"
+                let content = AssistantOutputSanitizer
+                    .sanitize(message.content)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !content.isEmpty else { return nil }
+                return "\(role): \(content)"
+            }
+            .joined(separator: "\n\n")
+
+        guard !transcript.isEmpty else { return prompt }
+
+        return """
+        Recent conversation context, for continuity only:
+        \(transcript)
+
+        Current turn:
+        \(prompt)
+        """
+    }
+
+    private func buildPromptContext(
+        userText: String,
+        conversationID: UUID?,
+        model: ModelInfo?
+    ) async -> (prompt: String, sourceTitles: [String]) {
         let trimmedText = userText.trimmingCharacters(in: .whitespacesAndNewlines)
         let effectiveRequest = trimmedText.isEmpty ? String(localized: "Summarize the documents in this chat.") : trimmedText
 
         guard let conversationID, documentManager.hasDocuments(in: conversationID) else {
-            return (trimmedText, [])
+            return (budgetedGenerationPrompt(trimmedText, model: model), [])
         }
+
+        let configuration = promptBudgetConfiguration(for: model)
 
         let snippets = await documentManager.retrieveRelevantSnippets(
             for: effectiveRequest,
@@ -1879,61 +2318,88 @@ struct ChatView: View {
         )
 
         if !snippets.isEmpty {
-            var seenTitles = Set<String>()
-            let sourceTitles = snippets.map { item in
-                if let location = item.chunk.sourceLocationLabel {
-                    return "\(item.document.name) · \(location)"
-                }
-                return item.document.name
+            let documentSnippets = snippets.map { item in
+                PromptBudgeter.DocumentSnippet(
+                    title: item.document.name,
+                    location: item.chunk.sourceLocationLabel,
+                    content: item.chunk.content
+                )
             }
-            .filter { seenTitles.insert($0).inserted }
-            let context = snippets.enumerated().map { index, item in
-                let locationLine = item.chunk.sourceLocationLabel.map { "Location: \($0)\n" } ?? ""
-                return """
-                [Source \(index + 1): \(item.document.name)]
-                \(locationLine)\(item.chunk.content)
-                """
-            }
-            .joined(separator: "\n\n")
+            let instructions = """
+            You have access to documents that belong only to this chat.
+            Use the retrieved passages when they are relevant to the user's request.
+            If the snippets are insufficient, say that briefly instead of guessing.
+            Cite sources inline as [Source n] when you rely on them.
+            """
+            let reservedTokens = PromptBudgeter.estimatedTokenCount(instructions + "\n\nUser request: \(effectiveRequest)")
+            let package = PromptBudgeter.documentPackage(
+                snippets: documentSnippets,
+                configuration: configuration,
+                reservedTokens: reservedTokens
+            )
 
             return (
-                """
-                You have access to documents that belong only to this chat.
-                Use the retrieved passages when they are relevant to the user's request.
-                If the snippets are insufficient, say that briefly instead of guessing.
-                Cite sources inline as [Source n] when you rely on them.
-
-                Chat documents:
-                \(context)
-
-                User request: \(effectiveRequest)
-                """,
-                sourceTitles
+                PromptBudgeter.budgetedPrompt(
+                    instructions: instructions,
+                    context: contextWithOmissionNote(package.context, omittedCount: package.omittedCount),
+                    userRequest: effectiveRequest,
+                    configuration: configuration
+                ),
+                package.sourceTitles
             )
         }
 
         let fallbackDocuments = documentManager.documents(for: conversationID).prefix(2)
-        let fallbackSourceTitles = fallbackDocuments.map(\.name)
-        let fallbackContext = fallbackDocuments.map { document in
-            """
-            [Document: \(document.name)]
-            \(String(document.content.prefix(2_000)))
-            """
+        let documentSnippets = fallbackDocuments.map { document in
+            PromptBudgeter.DocumentSnippet(
+                title: document.name,
+                location: nil,
+                content: document.content
+            )
         }
-        .joined(separator: "\n\n")
+        let instructions = """
+        You have access to documents that belong only to this chat.
+        Use them when they help answer the request, and say briefly if the available text is limited.
+        """
+        let reservedTokens = PromptBudgeter.estimatedTokenCount(instructions + "\n\nUser request: \(effectiveRequest)")
+        let package = PromptBudgeter.documentPackage(
+            snippets: Array(documentSnippets),
+            configuration: configuration,
+            reservedTokens: reservedTokens
+        )
 
         return (
-            """
-            You have access to documents that belong only to this chat.
-            Use them when they help answer the request, and say briefly if the available text is limited.
-
-            Chat documents:
-            \(fallbackContext)
-
-            User request: \(effectiveRequest)
-            """,
-            fallbackSourceTitles
+            PromptBudgeter.budgetedPrompt(
+                instructions: instructions,
+                context: contextWithOmissionNote(package.context, omittedCount: package.omittedCount),
+                userRequest: effectiveRequest,
+                configuration: configuration
+            ),
+            package.sourceTitles
         )
+    }
+
+    private func budgetedGenerationPrompt(_ prompt: String, model: ModelInfo?) -> String {
+        PromptBudgeter.finalPromptGuard(
+            prompt,
+            configuration: promptBudgetConfiguration(for: model)
+        )
+    }
+
+    private func promptBudgetConfiguration(for model: ModelInfo?) -> PromptBudgeter.Configuration {
+        let selected = model ?? modelManager.selectedModel ?? ModelInfo.appleFoundation
+        return PromptBudgeter.Configuration(
+            model: selected,
+            maxOutputTokens: llmEngine.maxTokens,
+            lowPowerMode: llmEngine.lowPowerMode
+        )
+    }
+
+    private func contextWithOmissionNote(_ context: String, omittedCount: Int) -> String {
+        guard omittedCount > 0 else { return context }
+        let note = "[\(omittedCount) additional source passage\(omittedCount == 1 ? "" : "s") omitted to fit the model context.]"
+        guard !context.isEmpty else { return note }
+        return context + "\n\n" + note
     }
 
     private func documentIconName(for document: ConversationDocument) -> String {

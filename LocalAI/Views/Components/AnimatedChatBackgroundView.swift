@@ -2,38 +2,62 @@ import SwiftUI
 
 struct AnimatedChatBackgroundView: View {
     let isEmpty: Bool
+    @State private var startAnimation = false
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { timeline in
-            let t = timeline.date.timeIntervalSinceReferenceDate
-            let phase = t.truncatingRemainder(dividingBy: 12.0) / 12.0
-            let angle = phase * Double.pi * 2.0
-
-            LinearGradient(
-                stops: [
-                    .init(color: Color(
-                        red: 0.9 + 0.05 * sin(angle),
-                        green: 0.85 + 0.05 * cos(angle),
-                        blue: 1.0
-                    ), location: 0),
-                    .init(color: Color(
-                        red: 1.0,
-                        green: 0.95 + 0.03 * sin(angle + 1),
-                        blue: 0.9 + 0.04 * cos(angle + 1)
-                    ), location: 0.5),
-                    .init(color: .white, location: 1.0)
-                ],
-                startPoint: UnitPoint(
-                    x: 0.0 + 0.15 * sin(angle),
-                    y: 0.0 + 0.1 * cos(angle)
-                ),
-                endPoint: UnitPoint(
-                    x: 1.0 - 0.1 * cos(angle),
-                    y: 1.0 - 0.15 * sin(angle)
-                )
-            )
+        ZStack {
+            // Base background
+            Color.white.ignoresSafeArea()
+            
+            // Aurora Blobs
+            TimelineView(.animation) { timeline in
+                Canvas { context, size in
+                    let t = timeline.date.timeIntervalSinceReferenceDate
+                    
+                    // Helper to draw a blurred blob
+                    func drawBlob(at center: CGPoint, color: Color, radius: CGFloat, offset: CGFloat) {
+                        let x = center.x + cos(t * 0.4 + offset) * 60
+                        let y = center.y + sin(t * 0.6 + offset) * 60
+                        
+                        let rect = CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)
+                        context.fill(Circle().path(in: rect), with: .color(color))
+                    }
+                    
+                    context.addFilter(.blur(radius: 100))
+                    
+                    let baseOpacity = isEmpty ? 0.18 : 0.05
+                    
+                    drawBlob(
+                        at: CGPoint(x: size.width * 0.2, y: size.height * 0.2),
+                        color: Color.blue.opacity(baseOpacity),
+                        radius: size.width * 0.5,
+                        offset: 0
+                    )
+                    
+                    drawBlob(
+                        at: CGPoint(x: size.width * 0.8, y: size.height * 0.3),
+                        color: Color.purple.opacity(baseOpacity),
+                        radius: size.width * 0.6,
+                        offset: 2
+                    )
+                    
+                    drawBlob(
+                        at: CGPoint(x: size.width * 0.4, y: size.height * 0.7),
+                        color: Color.teal.opacity(baseOpacity * 0.7),
+                        radius: size.width * 0.5,
+                        offset: 4
+                    )
+                    
+                    drawBlob(
+                        at: CGPoint(x: size.width * 0.7, y: size.height * 0.8),
+                        color: Color.pink.opacity(baseOpacity * 0.5),
+                        radius: size.width * 0.4,
+                        offset: 5
+                    )
+                }
+            }
         }
-        .opacity(isEmpty ? 1 : 0.3)
-        .animation(.default, value: isEmpty)
+        .animation(.easeInOut(duration: 1.5), value: isEmpty)
+        .ignoresSafeArea()
     }
 }

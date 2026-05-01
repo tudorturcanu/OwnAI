@@ -297,21 +297,34 @@ struct OnboardingView: View {
                     Button {
                         applyRecommendedModel()
                     } label: {
-                        Text(String(localized: "Continue"))
-                            .font(.headline.weight(.bold))
-                            .foregroundStyle(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 56)
-                            .background(
-                                LinearGradient(
-                                    colors: [.orange, .pink],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
+                        HStack(spacing: 10) {
+                            if isApplyingRecommendation {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .tint(.white)
+                            }
+
+                            Text(LocalizedStringKey(primaryActionTitle))
+                                .font(.headline.weight(.bold))
+                                .lineLimit(2)
+                                .multilineTextAlignment(.center)
+                        }
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 56)
+                        .padding(.horizontal, 16)
+                        .background(
+                            LinearGradient(
+                                colors: [.orange, .pink],
+                                startPoint: .leading,
+                                endPoint: .trailing
                             )
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .shadow(color: .pink.opacity(0.25), radius: 10, y: 5)
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .shadow(color: .pink.opacity(0.25), radius: 10, y: 5)
                     }
+                    .disabled(isApplyingRecommendation)
+                    .opacity(isApplyingRecommendation ? 0.85 : 1)
 
                     Button {
                         isPresented = false

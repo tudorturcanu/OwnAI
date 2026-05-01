@@ -205,7 +205,7 @@
 "[Note: The user attached an image, but the selected model does not support image analysis. Please describe the image in text or select a vision-capable model.]\n\n" = "[Remarque : l’utilisateur a joint une image, mais le modèle sélectionné ne prend pas en charge l’analyse d’image. Décrivez l’image en texte ou choisissez un modèle compatible avec la vision.]\n\n";
 "Free plan limit reached." = "Limite du forfait gratuit atteinte.";
 "3 free messages left today." = "Il vous reste 3 messages gratuits aujourd’hui.";
-"3 free messages left on this install." = "Il vous reste 3 messages gratuits sur cette installation.";
+"3 free messages left." = "Il vous reste 3 messages gratuits sur cette installation.";
 "Please select or download a model first (Settings > Models)." = "Veuillez d’abord sélectionner ou télécharger un modèle (Réglages > Modèles).";
 "Image attached" = "Image jointe";
 "Remove attached image" = "Supprimer l’image jointe";

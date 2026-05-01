@@ -95,6 +95,9 @@ final class MonetizationManager {
         static let freeInstallMessageCount = "monetization.freeInstallMessageCount"
         static let didWarnAtThreeLeftOnInstall = "monetization.didWarnAtThreeLeftOnInstall"
         static let cachedPurchasedProductIDs = "monetization.cachedPurchasedProductIDs"
+        #if DEBUG
+        static let debugProEnabled = "monetization.debugProEnabled"
+        #endif
     }
 
     static let productIDs = [
@@ -116,6 +119,13 @@ final class MonetizationManager {
     var purchaseErrorMessage: String?
     var freeInstallMessageCount = 0
     var didWarnAtThreeLeftOnInstall = false
+    #if DEBUG
+    var debugProEnabled = false {
+        didSet {
+            defaults.set(debugProEnabled, forKey: StorageKey.debugProEnabled)
+        }
+    }
+    #endif
 
     @ObservationIgnored
     @AppStorage(StorageKey.cachedPurchasedProductIDs)
@@ -130,8 +140,11 @@ final class MonetizationManager {
 
 
     var hasPro: Bool {
-//        Self.proEnabledByDefault || !purchasedProductIDs.isEmpty
+        #if DEBUG
+        return debugProEnabled || !purchasedProductIDs.isEmpty
+        #else
         return !purchasedProductIDs.isEmpty
+        #endif
 
     }
 
@@ -139,6 +152,9 @@ final class MonetizationManager {
         freeInstallMessageCount = defaults.integer(forKey: StorageKey.freeInstallMessageCount)
         didWarnAtThreeLeftOnInstall = defaults.bool(forKey: StorageKey.didWarnAtThreeLeftOnInstall)
         purchasedProductIDs = loadCachedPurchasedProductIDs()
+        #if DEBUG
+        debugProEnabled = defaults.bool(forKey: StorageKey.debugProEnabled)
+        #endif
         updatesTask = observeTransactionUpdates()
         Task {
             await refreshProducts()

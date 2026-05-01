@@ -321,6 +321,7 @@ final class ModelManager: ObservableObject {
         "processor_config.json",
         "preprocessor_config.json",
         "image_processor_config.json",
+        "optiq_metadata.json",
         "*.safetensors",
         "*.safetensors.index.json",
         "*.bin"
