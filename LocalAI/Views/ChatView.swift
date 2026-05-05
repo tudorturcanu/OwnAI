@@ -1189,7 +1189,9 @@ struct ChatView: View {
         
         var displayText: String
         if text.isEmpty && imageToSend != nil {
-            displayText = "What's in this image?"
+            displayText = selectedModel?.isTranslateGemma == true
+                ? "Translate the text in this image."
+                : "What's in this image?"
         } else if text.isEmpty && !currentConversationDocuments.isEmpty {
             displayText = "Summarize the documents in this chat."
         } else {
@@ -1228,6 +1230,8 @@ struct ChatView: View {
             var effectivePrompt = promptContext.prompt
             if imageToSend != nil, !model.supportsVision {
                 effectivePrompt = "[Note: The user attached an image, but the selected model does not support image analysis. Please describe the image in text or select a vision-capable model.]\n\n" + effectivePrompt
+            } else if imageToSend != nil, model.isTranslateGemma {
+                effectivePrompt = "[Note: The user attached an image. If it contains visible text, translate it into the user's language unless they specified a different target language. If the image has no readable text, say so briefly.]\n\n" + effectivePrompt
             }
             
             await runAssistantResponse(

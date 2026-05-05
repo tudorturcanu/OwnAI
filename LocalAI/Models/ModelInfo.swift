@@ -23,6 +23,7 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
     case llama
     case phi
     case smolLM
+    case smolVLM
 
     var id: String { rawValue }
 
@@ -54,6 +55,8 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return String(localized: "Phi")
         case .smolLM:
             return String(localized: "SmolLM")
+        case .smolVLM:
+            return String(localized: "SmolVLM")
         }
     }
 
@@ -85,6 +88,8 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return String(localized: "Microsoft's efficient reasoning models")
         case .smolLM:
             return String(localized: "HuggingFace's ultra-compact models")
+        case .smolVLM:
+            return String(localized: "Hugging Face's compact vision-language models")
         }
     }
 
@@ -116,6 +121,8 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "function"
         case .smolLM:
             return "smallcircle.filled.circle"
+        case .smolVLM:
+            return "photo.on.rectangle.angled"
         }
     }
 }
@@ -441,7 +448,11 @@ struct ModelInfo: Identifiable, Equatable {
         "LiquidAI/LFM2.5-VL-450M-MLX-6bit",
         "mlx-community/gemma-4-e2b-it-4bit",
         "mlx-community/gemma-4-e4b-it-4bit",
-        "mlx-community/gemma-4-26b-a4b-it-4bit"
+        "mlx-community/gemma-4-26b-a4b-it-4bit",
+        "mlx-community/translategemma-4b-it-4bit",
+        "mlx-community/SmolVLM2-256M-Video-Instruct-mlx",
+        "mlx-community/SmolVLM2-500M-Video-Instruct-mlx",
+        "mlx-community/SmolVLM2-2.2B-Instruct-mlx"
     ]
 
     var supportsVision: Bool {
@@ -451,6 +462,10 @@ struct ModelInfo: Identifiable, Equatable {
     /// Whether this model is experimental and should only be shown on macOS.
     var isMacExperimental: Bool {
         id == "mlx-community/GLM-5.1-4bit"
+    }
+
+    var isTranslateGemma: Bool {
+        id == "mlx-community/translategemma-4b-it-4bit"
     }
 
     var sizeLabel: String {
@@ -863,6 +878,54 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Gemma 4 E4B Instruct (4-bit MLX)
+    static let gemma4_e4b_it_4bit = ModelInfo(
+        id: "mlx-community/gemma-4-e4b-it-4bit",
+        name: "Gemma 4 (E4B)",
+        description: "Google's larger multimodal Gemma 4 model supports text and image input, with stronger reasoning for newer iPads and high-headroom iPhones.",
+        family: .gemma,
+        sizeGB: 5.22,
+        engine: .mlx,
+        termsURL: URL(string: "https://ai.google.dev/gemma/terms"),
+        privacyURL: nil,
+        shortDescription: "Higher-capacity Gemma 4 for richer multimodal reasoning.",
+        recommendedFor: "Best when you want the stronger Gemma 4 model and have enough device headroom.",
+        badges: [.images, .reasoning, .higherQuality, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// TranslateGemma 4B Instruct (4-bit MLX)
+    static let translategemma4b_it_4bit = ModelInfo(
+        id: "mlx-community/translategemma-4b-it-4bit",
+        name: "TranslateGemma 4B",
+        description: "Google's compact translation model built on Gemma 3, tuned for multilingual translation and image text translation on device.",
+        family: .gemma,
+        sizeGB: 2.18,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/translategemma-4b-it-4bit"),
+        privacyURL: nil,
+        shortDescription: "Compact translation model with image text support.",
+        recommendedFor: "Best when translation quality matters more than general chat.",
+        badges: [.images, .multilingual, .higherQuality, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// FunctionGemma 270M Instruct (4-bit MLX)
+    static let functiongemma270m_it_4bit = ModelInfo(
+        id: "mlx-community/functiongemma-270m-it-4bit",
+        name: "FunctionGemma",
+        description: "Google's tiny function-calling Gemma variant, tuned for lightweight structured tool use and fast local responses.",
+        family: .gemma,
+        sizeGB: 0.15,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/functiongemma-270m-it-4bit"),
+        privacyURL: nil,
+        shortDescription: "Tiny Gemma variant for function calling and tools.",
+        recommendedFor: "Best when you want a very small tool-calling model.",
+        badges: [.chat, .smallDownload, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// Qwen2.5 3B Instruct (4-bit MLX)
     static let qwen25_3b_instruct_4bit = ModelInfo(
         id: "mlx-community/Qwen2.5-3B-Instruct-4bit",
@@ -1119,6 +1182,54 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// SmolVLM2 256M Video Instruct (MLX)
+    static let smolVLM2_256m_4bit = ModelInfo(
+        id: "mlx-community/SmolVLM2-256M-Video-Instruct-mlx",
+        name: "SmolVLM2 256M",
+        description: "Hugging Face's tiniest SmolVLM2 vision-language model for very light image and video understanding on device.",
+        family: .smolVLM,
+        sizeGB: 0.52,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/SmolVLM2-256M-Video-Instruct-mlx"),
+        privacyURL: nil,
+        shortDescription: "Ultra-small vision model for image and video tasks.",
+        recommendedFor: "Best when you want the smallest possible vision-language model.",
+        badges: [.images, .vision, .smallDownload, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// SmolVLM2 500M Video Instruct (MLX)
+    static let smolVLM2_500m_4bit = ModelInfo(
+        id: "mlx-community/SmolVLM2-500M-Video-Instruct-mlx",
+        name: "SmolVLM2 500M",
+        description: "A compact SmolVLM2 model for fast image and video understanding, with a light enough footprint for iPhone-friendly local use.",
+        family: .smolVLM,
+        sizeGB: 1.02,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/SmolVLM2-500M-Video-Instruct-mlx"),
+        privacyURL: nil,
+        shortDescription: "Light vision-language model with strong efficiency.",
+        recommendedFor: "Best when you want a small but more capable media model.",
+        badges: [.images, .vision, .smallDownload, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// SmolVLM2 2.2B Instruct (MLX)
+    static let smolVLM2_2_2b_4bit = ModelInfo(
+        id: "mlx-community/SmolVLM2-2.2B-Instruct-mlx",
+        name: "SmolVLM2 2.2B",
+        description: "The strongest SmolVLM2 option here, tuned for better image, multi-image, and video understanding on newer iPhones and iPads.",
+        family: .smolVLM,
+        sizeGB: 4.49,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/SmolVLM2-2.2B-Instruct-mlx"),
+        privacyURL: nil,
+        shortDescription: "Higher-quality vision and video model for newer devices.",
+        recommendedFor: "Best when you want the strongest SmolVLM2 experience on a newer device.",
+        badges: [.images, .vision, .higherQuality, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// GLM 5.1 (4-bit MLX)
     static let glm51_4bit = ModelInfo(
         id: "mlx-community/GLM-5.1-4bit",
@@ -1175,6 +1286,7 @@ extension ModelInfo {
         .lfm25_350m_4bit,
         .bonsai4b_1bit,
         .smolLM2_360m_4bit,
+        .functiongemma270m_it_4bit,
         .qwen3_0_6b_4bit,
         .qwen35_0_8b_optiq_4bit,
         .qwen25_0_5b_instruct_4bit,
@@ -1188,6 +1300,9 @@ extension ModelInfo {
         .deepseek_r1_distill_qwen_1_5b_4bit,
         // Vision  (VLM - image input capable)
         .lfm25_vl_450m_6bit,
+        .smolVLM2_256m_4bit,
+        .smolVLM2_500m_4bit,
+        .smolVLM2_2_2b_4bit,
         .qwen2VL_2b_4bit,
         .lfm25_vl_1_6b_4bit,
         .qwen25VL_3b_3bit,
@@ -1209,12 +1324,14 @@ extension ModelInfo {
         .phi35_mini_4bit,
         .gemma3_4b_qat_4bit,
         .gemma4_e2b_it_4bit,
+        .translategemma4b_it_4bit,
         .qwen3_4b_4bit,
         // Large (4+ GB) — iPad Pro / Mac
         .deepseek_r1_distill_qwen_7b_4bit,
         .glm51_4bit,
         .qwen25_7b_instruct_4bit,
         .llama31_8b_4bit,
-        .qwen3_8b_4bit
+        .qwen3_8b_4bit,
+        .gemma4_e4b_it_4bit
     ]
 }
