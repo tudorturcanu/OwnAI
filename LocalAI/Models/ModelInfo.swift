@@ -36,7 +36,7 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
         case .qwen:
             return String(localized: "Qwen")
         case .granite:
-            return String(localized: "Granite 4.0")
+            return String(localized: "Granite")
         case .lfm:
             return String(localized: "LFM 2.5")
         case .bonsai:
@@ -622,6 +622,22 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Granite 4.1 3B (4-bit MLX)
+    static let granite4_1_3b_4bit = ModelInfo(
+        id: "mlx-community/granite-4.1-3b-4bit",
+        name: "Granite 4.1 3B",
+        description: "IBM's newer Granite 4.1 model with efficient instruction following and balanced local quality for modern iPhones and iPads.",
+        family: .granite,
+        sizeGB: 2.13,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/ibm-granite/granite-4.1-3b"),
+        privacyURL: nil,
+        shortDescription: "Newer Granite model with balanced local quality.",
+        recommendedFor: "Best when you want a current Granite option that stays practical on newer iPhones.",
+        badges: [.higherQuality, .everydayChat, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// LFM2.5 1.2B Instruct MLX (4-bit)
     static let lfm25_1_2b_instruct_4bit = ModelInfo(
         id: "LiquidAI/LFM2.5-1.2B-Instruct-MLX-4bit",
@@ -811,6 +827,22 @@ extension ModelInfo {
         shortDescription: "Newer Qwen3.5 model with stronger everyday quality.",
         recommendedFor: "Best when you want a stronger local Qwen model that still fits comfortably on newer iPhones.",
         badges: [.higherQuality, .multilingual, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Qwen3.5 4B OptiQ (4-bit MLX)
+    static let qwen35_4b_optiq_4bit = ModelInfo(
+        id: "mlx-community/Qwen3.5-4B-OptiQ-4bit",
+        name: "Qwen3.5 4B OptiQ",
+        description: "A stronger Qwen3.5 text model with OptiQ mixed-precision MLX quantization, tuned for high-quality multilingual chat, coding, and reasoning on newer Apple devices.",
+        family: .qwen,
+        sizeGB: 3.27,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/Qwen3.5-4B-OptiQ-4bit"),
+        privacyURL: nil,
+        shortDescription: "Stronger Qwen3.5 model with high quality for its size.",
+        recommendedFor: "Best when you want a richer Qwen3.5 assistant and have newer-device headroom.",
+        badges: [.higherQuality, .bestForCoding, .multilingual, .reasoning, .newerDevices, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -1150,6 +1182,22 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Qwen3.5 9B OptiQ (4-bit MLX)
+    static let qwen35_9b_optiq_4bit = ModelInfo(
+        id: "mlx-community/Qwen3.5-9B-OptiQ-4bit",
+        name: "Qwen3.5 9B OptiQ",
+        description: "A high-end Qwen3.5 text model with OptiQ mixed-precision MLX quantization for stronger reasoning, coding, and multilingual responses on iPad Pro and Mac-class devices.",
+        family: .qwen,
+        sizeGB: 6.04,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/Qwen3.5-9B-OptiQ-4bit"),
+        privacyURL: nil,
+        shortDescription: "High-end Qwen3.5 model for demanding local tasks.",
+        recommendedFor: "Best for stronger local coding, reasoning, and multilingual work on high-memory Apple devices.",
+        badges: [.higherQuality, .bestForCoding, .multilingual, .reasoning, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// DeepSeek R1 Distill Qwen 7B (4-bit MLX)
     static let deepseek_r1_distill_qwen_7b_4bit = ModelInfo(
         id: "mlx-community/DeepSeek-R1-Distill-Qwen-7B-4bit",
@@ -1310,12 +1358,14 @@ extension ModelInfo {
         .gemma3n_e2b_it_lm_4bit,
         .gemma2_2b_4bit,
         .granite4_0_h_micro_4bit,
+        .granite4_1_3b_4bit,
         .granite4_0_h_tiny_4bit,
         .smolLM3_3b_4bit,
         .lfm25_1_2b_instruct_4bit,
         .lfm25_1_2b_thinking_4bit,
         .exaone35_2_4b_instruct_4bit,
         .qwen35_2b_optiq_4bit,
+        .qwen35_4b_optiq_4bit,
         .qwen25_3b_instruct_4bit,
         .llama32_3b_4bit,
         .phi3_mini_128k_4bit,
@@ -1332,6 +1382,7 @@ extension ModelInfo {
         .qwen25_7b_instruct_4bit,
         .llama31_8b_4bit,
         .qwen3_8b_4bit,
+        .qwen35_9b_optiq_4bit,
         .gemma4_e4b_it_4bit
     ]
 }

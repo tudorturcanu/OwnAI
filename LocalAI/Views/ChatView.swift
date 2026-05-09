@@ -148,16 +148,32 @@ struct ChatView: View {
             }
             .sheet(isPresented: $isEditSheetPresented) {
                 NavigationStack {
-                    VStack(spacing: 12) {
-                        TextEditor(text: $editedMessageText)
-                            .font(.body)
-                            .frame(minHeight: 180)
-                            .padding(10)
-                            .background(Color(white: 0.96), in: RoundedRectangle(cornerRadius: 12))
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 16) {
+                            editSheetHeader
 
-                        Spacer()
+                            if let editingMessage {
+                                originalMessageCard(message: editingMessage)
+                            }
+
+                            editComposerCard
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
+                        .padding(.bottom, 24)
                     }
-                    .padding(16)
+                    .background(
+                        LinearGradient(
+                            colors: [
+                                Color(white: 0.98),
+                                Color(white: 0.95),
+                                Color(white: 0.98)
+                            ],
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .ignoresSafeArea()
+                    )
                     .navigationTitle(String(localized: "Edit Message"))
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
@@ -172,6 +188,9 @@ struct ChatView: View {
                         }
                     }
                 }
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.thinMaterial)
             }
             .overlay(alignment: .bottom) {
                 VStack(spacing: 10) {
@@ -1768,6 +1787,114 @@ struct ChatView: View {
         editingMessage = message
         editedMessageText = message.content
         isEditSheetPresented = true
+    }
+
+    private var editSheetHeader: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(String(localized: "Refine the prompt"))
+                .font(.title2.bold())
+                .foregroundStyle(Color(white: 0.12))
+
+            Text(String(localized: "Update the last user message and rerun the answer from that point."))
+                .font(.subheadline)
+                .foregroundStyle(Color(white: 0.45))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func originalMessageCard(message: ChatMessage) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "quote.bubble")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.blue)
+
+                Text(String(localized: "Original message"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(white: 0.45))
+
+                Spacer()
+            }
+
+            Text(message.content)
+                .font(.callout)
+                .foregroundStyle(Color(white: 0.2))
+                .lineLimit(4)
+                .multilineTextAlignment(.leading)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.black.opacity(0.05), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.04), radius: 10, y: 4)
+    }
+
+    private var editComposerCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(String(localized: "Your revision"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(white: 0.45))
+
+                Spacer()
+
+                Text(String(format: String(localized: "%lld characters", defaultValue: "%lld characters"), Int64(editedMessageText.count)))
+                    .font(.caption2.weight(.medium))
+                    .foregroundStyle(Color(white: 0.5))
+            }
+
+            ZStack(alignment: .topLeading) {
+                if editedMessageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(String(localized: "Rewrite the message here..."))
+                        .font(.callout)
+                        .foregroundStyle(Color(white: 0.55))
+                        .padding(.top, 8)
+                        .padding(.leading, 4)
+                }
+
+                TextEditor(text: $editedMessageText)
+                    .font(.body)
+                    .scrollContentBackground(.hidden)
+                    .frame(minHeight: 220)
+                    .padding(12)
+            }
+            .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
+            .background(Color(white: 0.985), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.black.opacity(0.06), lineWidth: 1)
+            )
+
+            HStack(spacing: 10) {
+                Button {
+                    if let editingMessage {
+                        editedMessageText = editingMessage.content
+                    }
+                } label: {
+                    Label(String(localized: "Reset"), systemImage: "arrow.uturn.backward")
+                        .font(.caption.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Color(white: 0.4))
+                .disabled(editedMessageText == (editingMessage?.content ?? ""))
+
+                Spacer()
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(.white)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(Color.black.opacity(0.05), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.04), radius: 10, y: 4)
     }
 
     private func applyEditedMessageAndRerun() {

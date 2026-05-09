@@ -16,7 +16,6 @@ struct SettingsView: View {
     @AppStorage(PDFOCRMode.storageKey) private var pdfOCRModeRaw = PDFOCRMode.preferNativeText.rawValue
     @AppStorage("lowPowerMode") private var lowPowerMode = false
     @AppStorage("historyRetentionDays") private var historyRetentionDays = 0
-    @AppStorage("autoRead") private var autoRead = false
     @AppStorage("smartReplyStylesEnabled") private var smartReplyStylesEnabled = false
     @AppStorage("inChatSearchEnabled") private var inChatSearchEnabled = false
     @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
@@ -73,12 +72,9 @@ struct SettingsView: View {
                     #if DEBUG
                     debugSection
                     #endif
-                    documentSection
 
                     privacySection
                     aboutSection
-
-
 
                     footerBranding
                 }
@@ -228,46 +224,17 @@ struct SettingsView: View {
 
             sectionDivider
 
-            settingsToggleRow(
-                icon: "speaker.wave.2.fill",
-                tint: .orange,
-                title: "Read Replies Aloud",
-                subtitle: "Speak control on responses for hands-free playback",
-                isOn: $autoRead
-            )
-
-            sectionDivider
-
-
-            settingsToggleRow(
-                icon: "magnifyingglass",
-                tint: .blue,
-                title: "Search in Conversation",
-                subtitle: "Show a search button inside active chats",
-                isOn: $inChatSearchEnabled
-            )
-
-            sectionDivider
-
-            settingsToggleRow(
-                icon: "battery.25percent",
-                tint: .green,
-                title: "Low Power Mode",
-                subtitle: "Lighter local behavior for lower battery impact",
-                isOn: $lowPowerMode
-            )
-            sectionDivider
-
-            settingsToggleRow(
-                icon: "curlybraces",
-                tint: .indigo,
-                title: "Reply Style",
-                subtitle: "Show quick options under replies",
-                isOn: $smartReplyStylesEnabled
-            )
-            .onChange(of: smartReplyStylesEnabled) {
-                systemPrompt = AIResponseDefaults.defaultSystemPrompt
+            NavigationLink {
+                AdvancedSettingsView()
+            } label: {
+                settingsRow(
+                    icon: "slider.horizontal.3",
+                    tint: .gray,
+                    title: "Advanced",
+                    subtitle: "PDF OCR, low power mode, and more"
+                )
             }
+            .buttonStyle(.plain)
         }
     }
 
@@ -288,65 +255,7 @@ struct SettingsView: View {
     }
     #endif
 
-    private var documentSection: some View {
-        settingsSection("Documents") {
-            HStack(spacing: 14) {
-                rowIcon(systemImage: "doc.text.viewfinder", tint: .teal)
 
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("PDF OCR Mode")
-                            .font(.body)
-                            .fontWeight(.medium)
-                            .foregroundStyle(.primary)
-
-                        Spacer()
-                    }
-
-                    Menu {
-                        ForEach(PDFOCRMode.allCases) { mode in
-                            Button {
-                                pdfOCRModeRaw = mode.rawValue
-                            } label: {
-                                if mode == pdfOCRMode {
-                                    Label(mode.title, systemImage: "checkmark")
-                                } else {
-                                    Text(mode.title)
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Text(pdfOCRMode.title)
-                                .font(.subheadline)
-                                .multilineTextAlignment(.leading)
-                                .fixedSize(horizontal: false, vertical: true)
-
-                            Spacer(minLength: 8)
-
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .accessibilityHidden(true)
-                        }
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 12)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .background(Color.teal.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
-                    }
-                    .accessibilityLabel("PDF OCR Mode")
-                    .accessibilityValue(pdfOCRMode.title)
-
-                    Text(pdfOCRMode.subtitle)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-        }
-    }
 
     // MARK: - Privacy Section
 
