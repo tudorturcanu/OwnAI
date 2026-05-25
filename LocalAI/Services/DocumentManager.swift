@@ -86,7 +86,6 @@ enum DocumentError: LocalizedError {
 @Observable
 final class DocumentManager {
     static let shared = DocumentManager()
-    static let maxStoredCharacters = 20_000
     private static let maxPersistedCorpusBytes: Int64 = 1_073_741_824
     private static let reclaimBytesOnOverflow: Int64 = 734_003_200
 
@@ -135,11 +134,17 @@ final class DocumentManager {
         
         extractionProgress = 0.1
         let pdfOCRMode = Self.currentPDFOCRMode()
+        let documentProcessingMode = Self.currentDocumentProcessingMode()
         
         let ext = url.pathExtension.lowercased()
         let attachedDocument = try await MemoryProfiler.measure("DocumentManager.processFile(\(url.lastPathComponent))") {
             let extraction = try await Task.detached(priority: .userInitiated) {
-                try Self.extractContent(at: url, fileExtension: ext, pdfOCRMode: pdfOCRMode)
+                try Self.extractContent(
+                    at: url,
+                    fileExtension: ext,
+                    pdfOCRMode: pdfOCRMode,
+                    documentProcessingMode: documentProcessingMode
+                )
             }.value
             
             extractionProgress = 0.9
@@ -163,7 +168,7 @@ final class DocumentManager {
                 extractedPages: extraction.extractedPages,
                 totalPages: extraction.totalPages,
                 fileSize: fileSize,
-                isTrimmed: extraction.text.count > Self.maxStoredCharacters,
+                isTrimmed: extraction.text.count > documentProcessingMode.maxStoredCharacters,
                 textOrigin: extraction.textOrigin,
                 ocrQuality: extraction.ocrQuality
             )
@@ -194,7 +199,8 @@ final class DocumentManager {
     }
 
     func addDocumentToConversation(from attachedDocument: AttachedDocument, conversationID: UUID) async {
-        let document = ConversationDocument(from: attachedDocument, maxCharacters: Self.maxStoredCharacters)
+        let maxStoredCharacters = Self.currentDocumentProcessingMode().maxStoredCharacters
+        let document = ConversationDocument(from: attachedDocument, maxCharacters: maxStoredCharacters)
         guard !document.content.isEmpty else { return }
 
         var documents = documentsByConversationID[conversationID] ?? []
@@ -283,11 +289,6 @@ final class DocumentManager {
     
     // MARK: - Extractors
     
-    private static let maxPages = 5
-    nonisolated(unsafe) private static let ocrContext = CIContext(options: [
-        .useSoftwareRenderer: false
-    ])
-
     private func removeLegacyLibraryIfNeeded() {
         let legacyURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("saved_documents.json")
@@ -405,30 +406,51 @@ final class DocumentManager {
     private static func extractContent(
         at url: URL,
         fileExtension: String,
-        pdfOCRMode: PDFOCRMode
+        pdfOCRMode: PDFOCRMode,
+        documentProcessingMode: DocumentProcessingMode
     ) throws -> ExtractionResult {
         return switch fileExtension {
         case "pdf":
-            try extractTextFromPDF(at: url, pdfOCRMode: pdfOCRMode)
+            try extractTextFromPDF(
+                at: url,
+                pdfOCRMode: pdfOCRMode,
+                maxPages: documentProcessingMode.maxPDFPages
+            )
         case "rtf", "rtfd":
             genericSectionedText(try extractTextFromRTF(at: url))
         case "doc", "docx":
             genericSectionedText(try extractTextFromWord(at: url))
         case "png", "jpg", "jpeg", "heic", "heif", "tif", "tiff", "bmp", "webp":
             try extractTextFromImage(at: url)
+        case "txt", "text":
+            sectionedText(try extractTextFile(at: url), style: .lineRanges)
+        case "md", "markdown":
+            sectionedText(try extractTextFile(at: url), style: .markdown)
+        case "csv", "tsv":
+            sectionedText(try extractTextFile(at: url), style: .tabular)
+        case "json", "jsonl":
+            sectionedText(try extractTextFile(at: url), style: .json)
+        case "log":
+            sectionedText(try extractTextFile(at: url), style: .log)
+        case "swift", "py", "js", "ts", "tsx", "jsx", "java", "kt", "go", "rs", "c", "cc", "cpp", "h", "hpp", "m", "mm", "cs", "rb", "php", "sh", "zsh", "yml", "yaml", "toml", "xml", "html", "css", "sql":
+            sectionedText(try extractTextFile(at: url), style: .sourceCode)
         default:
-            genericSectionedText(try String(contentsOf: url, encoding: .utf8))
+            sectionedText(try extractTextFile(at: url), style: .lineRanges)
         }
     }
     
     nonisolated
-    private static func extractTextFromPDF(at url: URL, pdfOCRMode: PDFOCRMode) throws -> ExtractionResult {
+    private static func extractTextFromPDF(
+        at url: URL,
+        pdfOCRMode: PDFOCRMode,
+        maxPages: Int
+    ) throws -> ExtractionResult {
         guard let pdfDocument = PDFDocument(url: url) else {
             throw DocumentError.extractionFailed
         }
         
         let totalPages = pdfDocument.pageCount
-        let pagesToExtract = min(totalPages, 5)
+        let pagesToExtract = min(totalPages, max(1, maxPages))
         var fullText = ""
         var sections: [DocumentSection] = []
         var didUseNativeText = false
@@ -552,18 +574,212 @@ final class DocumentManager {
 
     nonisolated
     private static func genericSectionedText(_ text: String) -> ExtractionResult {
+        sectionedText(text, style: .document)
+    }
+
+    private enum TextSectioningStyle {
+        case document
+        case lineRanges
+        case markdown
+        case tabular
+        case json
+        case log
+        case sourceCode
+    }
+
+    private struct TextLine {
+        let number: Int
+        let text: String
+        let lowerBound: Int
+        let upperBound: Int
+    }
+
+    nonisolated
+    private static func extractTextFile(at url: URL) throws -> String {
+        let data = try Data(contentsOf: url)
+        let encodings: [String.Encoding] = [
+            .utf8,
+            .utf16,
+            .utf16LittleEndian,
+            .utf16BigEndian,
+            .unicode,
+            .isoLatin1,
+            .ascii,
+            .macOSRoman
+        ]
+
+        for encoding in encodings {
+            if let text = String(data: data, encoding: encoding),
+               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return text
+            }
+        }
+
+        throw DocumentError.extractionFailed
+    }
+
+    nonisolated
+    private static func sectionedText(_ text: String, style: TextSectioningStyle) -> ExtractionResult {
         let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else {
             return ExtractionResult(text: "", sections: [], extractedPages: 0, totalPages: 0, textOrigin: .native, ocrQuality: .normal)
         }
+
+        let rawSections: [DocumentSection]
+        switch style {
+        case .document:
+            rawSections = [DocumentSection(title: "Document", lowerBound: 0, upperBound: text.count)]
+        case .lineRanges:
+            rawSections = lineRangeSections(in: text, linesPerSection: 80, titlePrefix: "Lines")
+        case .markdown:
+            rawSections = markdownSections(in: text)
+        case .tabular:
+            rawSections = lineRangeSections(in: text, linesPerSection: 60, titlePrefix: "Rows")
+        case .json:
+            rawSections = lineRangeSections(in: text, linesPerSection: 80, titlePrefix: "JSON lines")
+        case .log:
+            rawSections = lineRangeSections(in: text, linesPerSection: 120, titlePrefix: "Log lines")
+        case .sourceCode:
+            rawSections = sourceCodeSections(in: text)
+        }
+
+        let adjustedSections = normalizedSections(for: normalized, originalText: text, sections: rawSections)
         return ExtractionResult(
             text: normalized,
-            sections: [DocumentSection(title: "Document", lowerBound: 0, upperBound: normalized.count)],
+            sections: adjustedSections.isEmpty
+                ? [DocumentSection(title: "Document", lowerBound: 0, upperBound: normalized.count)]
+                : adjustedSections,
             extractedPages: 0,
             totalPages: 0,
             textOrigin: .native,
             ocrQuality: .normal
         )
+    }
+
+    nonisolated
+    private static func lineRangeSections(
+        in text: String,
+        linesPerSection: Int,
+        titlePrefix: String
+    ) -> [DocumentSection] {
+        let lines = textLines(in: text)
+        guard !lines.isEmpty else { return [] }
+
+        var sections: [DocumentSection] = []
+        var index = 0
+        while index < lines.count {
+            let endIndex = min(index + linesPerSection, lines.count)
+            let group = lines[index..<endIndex]
+            guard let first = group.first, let last = group.last else { break }
+            sections.append(
+                DocumentSection(
+                    title: "\(titlePrefix) \(first.number)-\(last.number)",
+                    lowerBound: first.lowerBound,
+                    upperBound: last.upperBound
+                )
+            )
+            index = endIndex
+        }
+        return sections
+    }
+
+    nonisolated
+    private static func markdownSections(in text: String) -> [DocumentSection] {
+        let lines = textLines(in: text)
+        guard !lines.isEmpty else { return [] }
+
+        var headingStarts: [(title: String, lineIndex: Int)] = []
+        for (index, line) in lines.enumerated() {
+            let trimmed = line.text.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("#") else { continue }
+            let title = trimmed
+                .trimmingCharacters(in: CharacterSet(charactersIn: "# "))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { continue }
+            headingStarts.append((title, index))
+        }
+
+        guard !headingStarts.isEmpty else {
+            return lineRangeSections(in: text, linesPerSection: 80, titlePrefix: "Lines")
+        }
+
+        return headingStarts.enumerated().compactMap { offset, heading in
+            let startLine = lines[heading.lineIndex]
+            let nextLineIndex = offset + 1 < headingStarts.count ? headingStarts[offset + 1].lineIndex : lines.count
+            let endLine = lines[max(heading.lineIndex, nextLineIndex - 1)]
+            guard endLine.upperBound > startLine.lowerBound else { return nil }
+            return DocumentSection(
+                title: heading.title,
+                lowerBound: startLine.lowerBound,
+                upperBound: endLine.upperBound
+            )
+        }
+    }
+
+    nonisolated
+    private static func sourceCodeSections(in text: String) -> [DocumentSection] {
+        let lines = textLines(in: text)
+        guard !lines.isEmpty else { return [] }
+
+        let declarationPrefixes = [
+            "class ", "struct ", "enum ", "protocol ", "actor ", "func ",
+            "def ", "function ", "interface ", "type ", "extension "
+        ]
+        var starts: [(title: String, lineIndex: Int)] = []
+
+        for (index, line) in lines.enumerated() {
+            let trimmed = line.text.trimmingCharacters(in: .whitespaces)
+            guard declarationPrefixes.contains(where: { trimmed.hasPrefix($0) }) else { continue }
+            let title = trimmed.prefix(80).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { continue }
+            starts.append((String(title), index))
+        }
+
+        guard !starts.isEmpty else {
+            return lineRangeSections(in: text, linesPerSection: 100, titlePrefix: "Lines")
+        }
+
+        return starts.enumerated().compactMap { offset, declaration in
+            let startLine = lines[declaration.lineIndex]
+            let nextLineIndex = offset + 1 < starts.count ? starts[offset + 1].lineIndex : lines.count
+            let endLine = lines[max(declaration.lineIndex, nextLineIndex - 1)]
+            guard endLine.upperBound > startLine.lowerBound else { return nil }
+            return DocumentSection(
+                title: declaration.title,
+                lowerBound: startLine.lowerBound,
+                upperBound: endLine.upperBound
+            )
+        }
+    }
+
+    nonisolated
+    private static func textLines(in text: String) -> [TextLine] {
+        var lines: [TextLine] = []
+        var lineStart = text.startIndex
+        var lineNumber = 1
+
+        while lineStart < text.endIndex {
+            let newlineIndex = text[lineStart...].firstIndex(of: "\n") ?? text.endIndex
+            let lineText = String(text[lineStart..<newlineIndex])
+            lines.append(
+                TextLine(
+                    number: lineNumber,
+                    text: lineText,
+                    lowerBound: text.distance(from: text.startIndex, to: lineStart),
+                    upperBound: text.distance(from: text.startIndex, to: newlineIndex)
+                )
+            )
+
+            guard newlineIndex < text.endIndex else { break }
+            lineStart = text.index(after: newlineIndex)
+            lineNumber += 1
+        }
+
+        if lines.isEmpty, !text.isEmpty {
+            lines.append(TextLine(number: 1, text: text, lowerBound: 0, upperBound: text.count))
+        }
+
+        return lines
     }
 
     nonisolated
@@ -675,7 +891,8 @@ final class DocumentManager {
             ])
             .cropped(to: source.extent)
 
-        return ocrContext.createCGImage(cleaned, from: cleaned.extent)
+        return CIContext(options: [.useSoftwareRenderer: false])
+            .createCGImage(cleaned, from: cleaned.extent)
     }
 
     nonisolated
@@ -747,6 +964,13 @@ final class DocumentManager {
         PDFOCRMode(
             rawValue: UserDefaults.standard.string(forKey: "pdfOCRMode") ?? PDFOCRMode.preferNativeText.rawValue
         ) ?? .preferNativeText
+    }
+
+    nonisolated
+    private static func currentDocumentProcessingMode() -> DocumentProcessingMode {
+        DocumentProcessingMode(
+            rawValue: UserDefaults.standard.string(forKey: DocumentProcessingMode.storageKey) ?? DocumentProcessingMode.fast.rawValue
+        ) ?? .fast
     }
 
     nonisolated

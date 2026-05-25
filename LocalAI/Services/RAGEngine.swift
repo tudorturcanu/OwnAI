@@ -70,6 +70,17 @@ actor RAGEngine {
         let documentID: UUID
     }
 
+    private struct RetrievalCandidate {
+        let chunk: TextChunk
+        let semanticScore: Double
+        let lexicalScore: Double
+        let phraseScore: Double
+
+        var score: Double {
+            semanticScore * 0.68 + lexicalScore * 0.27 + phraseScore * 0.05
+        }
+    }
+
     struct IndexedDocumentSnapshot: Sendable {
         let conversationID: UUID
         let documentID: UUID
@@ -202,34 +213,42 @@ actor RAGEngine {
 
     func retrieveDetailed(query: String, limit: Int = 3, conversationID: UUID) -> [RetrievedChunk] {
         let queryLanguage = dominantLanguage(for: query)
-        guard let queryVector = embedding(for: query, language: queryLanguage) else { return [] }
+        let queryVector = embedding(for: query, language: queryLanguage)
+        let normalizedQuery = normalizedSearchText(query)
+        let queryTerms = searchTerms(in: query)
+
+        guard queryVector != nil || !queryTerms.isEmpty else { return [] }
 
         let ranked = chunks
             .filter { $0.conversationID == conversationID }
-            .filter { chunk in
-                guard let queryLanguage else { return true }
-                guard let chunkLanguage = chunk.language else { return true }
-                return chunkLanguage == queryLanguage
-            }
             .map { chunk in
-                let score = cosineSimilarity(queryVector, chunk.embedding)
-                return (chunk: chunk, score: score)
+                let semanticScore = queryVector.map { max(0, cosineSimilarity($0, chunk.embedding)) } ?? 0
+                let lexicalScore = lexicalSimilarity(queryTerms: queryTerms, candidateText: chunk.content)
+                let phraseScore = phraseMatchScore(normalizedQuery: normalizedQuery, candidateText: chunk.content)
+                let languageMultiplier = languageCompatibilityMultiplier(queryLanguage: queryLanguage, chunkLanguage: chunk.language)
+                let candidate = RetrievalCandidate(
+                    chunk: chunk,
+                    semanticScore: semanticScore * languageMultiplier,
+                    lexicalScore: lexicalScore,
+                    phraseScore: phraseScore
+                )
+                return (chunk: chunk, score: candidate.score, lexicalScore: lexicalScore)
             }
             .sorted { $0.score > $1.score }
 
         guard let topScore = ranked.first?.score else { return [] }
 
-        let minimumScore = max(0.18, topScore * 0.62)
+        let minimumScore = max(0.16, topScore * 0.55)
         var perDocumentCount: [UUID: Int] = [:]
         var selectedCandidates: [(chunk: TextChunk, score: Double)] = []
 
         for candidate in ranked {
-            guard candidate.score >= minimumScore || selectedCandidates.isEmpty else { break }
+            guard candidate.score >= minimumScore || candidate.lexicalScore >= 0.45 || selectedCandidates.isEmpty else { break }
 
             let currentDocumentHits = perDocumentCount[candidate.chunk.documentID, default: 0]
             guard currentDocumentHits < 3 else { continue }
 
-            selectedCandidates.append(candidate)
+            selectedCandidates.append((chunk: candidate.chunk, score: candidate.score))
             perDocumentCount[candidate.chunk.documentID, default: 0] += 1
 
             if selectedCandidates.count == max(limit * 2, limit) {
@@ -335,6 +354,97 @@ actor RAGEngine {
             .vector(for: normalized)?
             .map(Float.init)
     }
+
+    private func languageCompatibilityMultiplier(queryLanguage: NLLanguage?, chunkLanguage: NLLanguage?) -> Double {
+        guard let queryLanguage, let chunkLanguage else { return 1.0 }
+        guard queryLanguage != chunkLanguage else { return 1.0 }
+
+        // Language detection is noisy for short questions, acronyms, code, and OCR text.
+        // Penalize cross-language semantic matches instead of discarding potentially exact lexical hits.
+        return 0.82
+    }
+
+    private func lexicalSimilarity(queryTerms: [String], candidateText: String) -> Double {
+        guard !queryTerms.isEmpty else { return 0 }
+
+        let candidateTerms = searchTerms(in: candidateText)
+        guard !candidateTerms.isEmpty else { return 0 }
+
+        let candidateCounts = candidateTerms.reduce(into: [String: Int]()) { counts, term in
+            counts[term, default: 0] += 1
+        }
+        let uniqueQueryTerms = Array(Set(queryTerms))
+        let matchedTerms = uniqueQueryTerms.filter { candidateCounts[$0, default: 0] > 0 }
+        guard !matchedTerms.isEmpty else { return 0 }
+
+        let coverage = Double(matchedTerms.count) / Double(uniqueQueryTerms.count)
+        let frequency = matchedTerms.reduce(0.0) { partialResult, term in
+            partialResult + min(1.0, Double(candidateCounts[term, default: 0]) / 3.0)
+        } / Double(uniqueQueryTerms.count)
+
+        return min(1.0, coverage * 0.75 + frequency * 0.25)
+    }
+
+    private func phraseMatchScore(normalizedQuery: String, candidateText: String) -> Double {
+        guard normalizedQuery.count >= 12 else { return 0 }
+        let normalizedCandidate = normalizedSearchText(candidateText)
+        if normalizedCandidate.contains(normalizedQuery) {
+            return 1.0
+        }
+
+        let queryWords = normalizedQuery.split(separator: " ")
+        guard queryWords.count >= 4 else { return 0 }
+
+        let phraseLength = min(6, queryWords.count)
+        for startIndex in 0...(queryWords.count - phraseLength) {
+            let phrase = queryWords[startIndex..<(startIndex + phraseLength)].joined(separator: " ")
+            if normalizedCandidate.contains(phrase) {
+                return 0.65
+            }
+        }
+
+        return 0
+    }
+
+    private func searchTerms(in text: String) -> [String] {
+        normalizedSearchText(text)
+            .split(separator: " ")
+            .map(String.init)
+            .filter { term in
+                guard term.count >= 2 else { return false }
+                return !Self.stopWords.contains(term)
+            }
+    }
+
+    private func normalizedSearchText(_ text: String) -> String {
+        let folded = text
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+
+        var result = ""
+        result.reserveCapacity(folded.count)
+
+        for scalar in folded.unicodeScalars {
+            if CharacterSet.alphanumerics.contains(scalar) {
+                result.unicodeScalars.append(scalar)
+            } else {
+                result.append(" ")
+            }
+        }
+
+        return result
+            .split(separator: " ")
+            .joined(separator: " ")
+    }
+
+    private static let stopWords: Set<String> = [
+        "a", "an", "and", "are", "as", "at", "be", "by", "can", "could",
+        "de", "der", "die", "das", "des", "du", "el", "en", "et", "for",
+        "from", "how", "i", "if", "in", "is", "it", "la", "le", "les",
+        "me", "mit", "of", "on", "or", "que", "show", "summarize", "tell",
+        "that", "the", "their", "this", "to", "und", "was", "what", "when",
+        "where", "which", "who", "why", "with", "you", "your"
+    ]
 
     private func mergeAdjacentCandidates(
         _ candidates: [(chunk: TextChunk, score: Double)]

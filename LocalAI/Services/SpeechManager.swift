@@ -36,6 +36,7 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     var lastFinalTranscription = ""
     var finalTranscriptionVersion = 0
     var isSpeaking = false
+    var currentlySpeakingMessageID: UUID?
     var speechCompletionVersion = 0
     var showPermissionAlert = false
     var errorMessage: String?
@@ -268,10 +269,11 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
             lowercased.contains("didn't detect")
     }
 
-    func speak(_ text: String) {
+    func speak(_ text: String, messageID: UUID? = nil) {
         let cleanedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleanedText.isEmpty else { return }
         stopSpeaking()
+        currentlySpeakingMessageID = messageID
         speakWithSystemVoice(cleanedText)
     }
 
@@ -299,6 +301,7 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         let wasSpeaking = isSpeaking || synthesizer.isSpeaking
         synthesizer.stopSpeaking(at: .immediate)
         isSpeaking = false
+        currentlySpeakingMessageID = nil
         if wasSpeaking {
             speechCompletionVersion += 1
         }
@@ -367,10 +370,10 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     }
 }
 
-@MainActor
-extension SpeechManager: AVSpeechSynthesizerDelegate {
+extension SpeechManager: @preconcurrency AVSpeechSynthesizerDelegate {
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         isSpeaking = false
+        currentlySpeakingMessageID = nil
         speechCompletionVersion += 1
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
         try? AVAudioSession.sharedInstance().setActive(false)
@@ -382,6 +385,7 @@ extension SpeechManager: AVSpeechSynthesizerDelegate {
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
         isSpeaking = false
+        currentlySpeakingMessageID = nil
         speechCompletionVersion += 1
     }
 }

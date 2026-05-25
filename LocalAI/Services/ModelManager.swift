@@ -17,7 +17,7 @@ import Combine
 import MLXLMCommon
 #endif
 
-private final class DownloadProgressLimiter {
+private final class DownloadProgressLimiter: @unchecked Sendable {
     private struct State {
         var progress: Double
         var timestamp: CFTimeInterval
@@ -60,7 +60,7 @@ private final class DownloadProgressLimiter {
     }
 }
 
-private final class DownloadDiagnostics {
+private final class DownloadDiagnostics: @unchecked Sendable {
     private struct State {
         let modelName: String
         let expectedBytes: Double
@@ -310,7 +310,9 @@ final class ModelManager: ObservableObject {
         "params.json",
         "tokenizer.json",
         "tokenizer_config.json",
+        "added_tokens.json",
         "tokenizer.model",
+        "tekken.json",
         "sentencepiece.bpe.model",
         "vocab.json",
         "merges.txt",
@@ -374,8 +376,8 @@ final class ModelManager: ObservableObject {
     private var backgroundTaskIDs: [String: UIBackgroundTaskIdentifier] = [:]
     private var downloadFailures: [String: DownloadFailure] = [:]
     /// Thread-safe helpers; only accessed from Hub callbacks / download work (off MainActor).
-    @ObservationIgnored nonisolated(unsafe) private let downloadProgressLimiter = DownloadProgressLimiter()
-    @ObservationIgnored nonisolated(unsafe) private let downloadDiagnostics = DownloadDiagnostics()
+    @ObservationIgnored private let downloadProgressLimiter = DownloadProgressLimiter()
+    @ObservationIgnored private let downloadDiagnostics = DownloadDiagnostics()
     private var thinkingPreferencesVersion = 0
     
     // MARK: - Computed Properties

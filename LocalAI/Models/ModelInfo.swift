@@ -461,7 +461,7 @@ struct ModelInfo: Identifiable, Equatable {
 
     /// Whether this model is experimental and should only be shown on macOS.
     var isMacExperimental: Bool {
-        id == "mlx-community/GLM-5.1-4bit"
+        id == "catalystsec/GLM-5.1-4bit"
     }
 
     var isTranslateGemma: Bool {
@@ -768,7 +768,7 @@ extension ModelInfo {
 
     /// SmolLM2 360M Instruct (4-bit MLX)
     static let smolLM2_360m_4bit = ModelInfo(
-        id: "mlx-community/SmolLM2-360M-Instruct-4bit",
+        id: "Irfanuruchi/SmolLM2-360M-Instruct-MLX-4bit",
         name: "SmolLM2 360M",
         description: "Hugging Face's tiny instruction model, tuned for very fast local replies and an extremely small download on iPhone.",
         family: .smolLM,
@@ -1136,7 +1136,7 @@ extension ModelInfo {
 
     /// SmolLM2 1.7B Instruct (4-bit MLX)
     static let smolLM2_1_7b_4bit = ModelInfo(
-        id: "mlx-community/SmolLM2-1.7B-Instruct-4bit",
+        id: "Irfanuruchi/SmolLM2-1.7B-Instruct-MLX-4bit",
         name: "SmolLM2 1.7B",
         description: "HuggingFace's compact SmolLM2, designed for fast on-device chat with surprisingly strong performance for its tiny footprint.",
         family: .smolLM,
@@ -1280,7 +1280,7 @@ extension ModelInfo {
 
     /// GLM 5.1 (4-bit MLX)
     static let glm51_4bit = ModelInfo(
-        id: "mlx-community/GLM-5.1-4bit",
+        id: "catalystsec/GLM-5.1-4bit",
         name: "GLM 5.1",
         description: "Z.ai's flagship agentic engineering model converted to MLX. This is an experimental, extremely large local model intended for very high-memory Apple Silicon systems.",
         family: .glm,
@@ -1326,6 +1326,22 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Qwen3-Coder-Next (4-bit MLX)
+    static let qwen3_coder_next_4bit = ModelInfo(
+        id: "mlx-community/Qwen3-Coder-Next-4bit",
+        name: "Qwen3 Coder Next",
+        description: "Alibaba's specialized Mixture-of-Experts coding model. Runs fast while delivering high-quality programming assistance and technical logic.",
+        family: .qwen,
+        sizeGB: 2.30,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen3-Coder-Next"),
+        privacyURL: nil,
+        shortDescription: "Dedicated high-performance coding assistant.",
+        recommendedFor: "Best for developers wanting a very smart on-device copilot.",
+        badges: [.bestForCoding, .fastest, .higherQuality, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     static let allModels: [ModelInfo] = [
         .appleFoundation,  // Default - first in list
         // Small / ultra-light
@@ -1367,6 +1383,7 @@ extension ModelInfo {
         .qwen35_2b_optiq_4bit,
         .qwen35_4b_optiq_4bit,
         .qwen25_3b_instruct_4bit,
+        .qwen3_coder_next_4bit,
         .llama32_3b_4bit,
         .phi3_mini_128k_4bit,
         .phi3_mini_4k_4bit,

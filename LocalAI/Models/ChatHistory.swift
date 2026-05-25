@@ -197,7 +197,9 @@ struct ChatConversation: Identifiable, Equatable, Codable {
 @Observable
 final class ChatHistoryManager {
     
-    var conversations: [ChatConversation] = []
+    var conversations: [ChatConversation] = [] {
+        didSet { rebuildConversationIndex() }
+    }
     var currentConversationID: UUID?
     @ObservationIgnored private let store: ChatHistoryStore
     @ObservationIgnored private var pendingSaveWorkItem: DispatchWorkItem?
@@ -206,6 +208,19 @@ final class ChatHistoryManager {
         qos: .utility
     )
     @ObservationIgnored @AppStorage("historyRetentionDays") private var historyRetentionDays: Int = 0
+    @ObservationIgnored private var lastStreamingSaveByConversationID: [UUID: Date] = [:]
+    @ObservationIgnored private let streamingSaveInterval: TimeInterval = 1.5
+
+    // MARK: - O(1) Lookup Index
+    /// Maps conversation UUID → index in `conversations` array.
+    /// Rebuilt on every mutation of `conversations`.
+    @ObservationIgnored private var conversationIndexMap: [UUID: Int] = [:]
+
+    private func rebuildConversationIndex() {
+        conversationIndexMap = Dictionary(
+            uniqueKeysWithValues: conversations.enumerated().map { ($1.id, $0) }
+        )
+    }
     
     var currentConversation: ChatConversation? {
         get {
@@ -221,7 +236,8 @@ final class ChatHistoryManager {
 
     func conversation(id: UUID?) -> ChatConversation? {
         guard let id else { return nil }
-        return conversations.first { $0.id == id }
+        guard let index = conversationIndexMap[id], index < conversations.count else { return nil }
+        return conversations[index]
     }
 
     func messages(in conversationID: UUID?) -> [ChatMessage] {
@@ -229,15 +245,21 @@ final class ChatHistoryManager {
     }
 
     func containsMessage(_ messageID: UUID, in conversationID: UUID?) -> Bool {
-        messages(in: conversationID).contains { $0.id == messageID }
+        guard let conversationID,
+              let convIndex = conversationIndexMap[conversationID],
+              convIndex < conversations.count else { return false }
+        return conversations[convIndex].messages.contains { $0.id == messageID }
     }
 
     func message(id messageID: UUID, in conversationID: UUID?) -> ChatMessage? {
-        messages(in: conversationID).first { $0.id == messageID }
+        guard let conversationID,
+              let convIndex = conversationIndexMap[conversationID],
+              convIndex < conversations.count else { return nil }
+        return conversations[convIndex].messages.first { $0.id == messageID }
     }
     
-    init(store: ChatHistoryStore = ChatHistoryStore()) {
-        self.store = store
+    init(store: ChatHistoryStore? = nil) {
+        self.store = store ?? ChatHistoryStore()
         loadConversations()
         let removedDuplicateDrafts = deduplicateEmptyConversations()
         applyRetentionPolicy()
@@ -299,7 +321,7 @@ final class ChatHistoryManager {
             
             // Sanitize: Fix stuck streaming state
             self.conversations = decoded.map { conversation in
-                var updatedMessages = conversation.messages.compactMap { message -> ChatMessage? in
+                let updatedMessages = conversation.messages.compactMap { message -> ChatMessage? in
                     if message.isStreaming {
                         // If it was streaming but has content, keep it but stop streaming
                         if message.role == .assistant {
@@ -457,7 +479,9 @@ final class ChatHistoryManager {
 
     /// Delete a single message from the current conversation
     func deleteMessage(id: UUID) {
-        guard let convIndex = conversations.firstIndex(where: { $0.id == currentConversationID }) else { return }
+        guard let currentConversationID,
+              let convIndex = conversationIndexMap[currentConversationID],
+              convIndex < conversations.count else { return }
         if let message = conversations[convIndex].messages.first(where: { $0.id == id }),
            let fileName = message.imageFileName {
             ImageAttachmentManager.shared.deleteImage(named: fileName)
@@ -468,7 +492,8 @@ final class ChatHistoryManager {
 
     func togglePinned(messageID: UUID, in conversationID: UUID?) {
         guard let conversationID,
-              let convIndex = conversations.firstIndex(where: { $0.id == conversationID }),
+              let convIndex = conversationIndexMap[conversationID],
+              convIndex < conversations.count,
               let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
 
         var message = conversations[convIndex].messages[msgIndex]
@@ -479,7 +504,8 @@ final class ChatHistoryManager {
 
     func truncateConversation(after messageID: UUID, in conversationID: UUID?) {
         guard let conversationID,
-              let convIndex = conversations.firstIndex(where: { $0.id == conversationID }),
+              let convIndex = conversationIndexMap[conversationID],
+              convIndex < conversations.count,
               let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == messageID }) else { return }
 
         let removed = conversations[convIndex].messages.suffix(from: msgIndex + 1)
@@ -520,7 +546,8 @@ final class ChatHistoryManager {
 
     func addMessage(_ message: ChatMessage, to conversationID: UUID?) {
         guard let conversationID,
-              let index = conversations.firstIndex(where: { $0.id == conversationID }) else { return }
+              let index = conversationIndexMap[conversationID],
+              index < conversations.count else { return }
 
         let sanitizedMessage = sanitizedAssistantMessage(message)
         
@@ -561,7 +588,8 @@ final class ChatHistoryManager {
         sourceTitles: [String]? = nil
     ) {
         guard let conversationID,
-              let convIndex = conversations.firstIndex(where: { $0.id == conversationID }) else { return }
+              let convIndex = conversationIndexMap[conversationID],
+              convIndex < conversations.count else { return }
         guard let msgIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == id }) else { return }
 
         let role = conversations[convIndex].messages[msgIndex].role
@@ -589,19 +617,32 @@ final class ChatHistoryManager {
         }
         
         // Persist partial assistant output as it streams so app refreshes don't
-        // discard the in-progress response. Streaming saves stay debounced.
+        // discard the in-progress response. Streaming saves stay throttled to
+        // avoid disk churn during fast token updates.
         if isStreaming {
-            saveConversations(changedConversationIDs: Set([conversations[convIndex].id]))
+            saveStreamingUpdateIfNeeded(for: conversationID)
         } else {
+            lastStreamingSaveByConversationID.removeValue(forKey: conversationID)
             saveConversations(immediately: true, changedConversationIDs: Set([conversations[convIndex].id]))
         }
+    }
+
+    private func saveStreamingUpdateIfNeeded(for conversationID: UUID) {
+        let now = Date()
+        guard now.timeIntervalSince(lastStreamingSaveByConversationID[conversationID] ?? .distantPast) >= streamingSaveInterval else {
+            return
+        }
+
+        lastStreamingSaveByConversationID[conversationID] = now
+        saveConversations(changedConversationIDs: Set([conversationID]))
     }
 
     func updateTitle(_ title: String, for conversationID: UUID?) {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedTitle.isEmpty,
               let conversationID,
-              let convIndex = conversations.firstIndex(where: { $0.id == conversationID }),
+              let convIndex = conversationIndexMap[conversationID],
+              convIndex < conversations.count,
               conversations[convIndex].title != trimmedTitle else {
             return
         }
@@ -629,6 +670,18 @@ final class ChatHistoryManager {
     }
 
     private func assistantMessage(id: UUID, content: String, isStreaming: Bool, sourceTitles: [String] = []) -> ChatMessage {
+        // Skip heavy sanitization logic while streaming to avoid O(N^2) overhead
+        if isStreaming {
+            return ChatMessage(
+                id: id,
+                role: .assistant,
+                content: content,
+                thinkingContent: nil,
+                sourceTitles: sourceTitles,
+                isStreaming: true
+            )
+        }
+        
         let parts = AssistantOutputSanitizer.parts(from: content)
         return ChatMessage(
             id: id,
@@ -636,7 +689,7 @@ final class ChatHistoryManager {
             content: parts.content,
             thinkingContent: parts.thinkingContent,
             sourceTitles: sourceTitles,
-            isStreaming: isStreaming
+            isStreaming: false
         )
     }
 

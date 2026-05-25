@@ -9,6 +9,7 @@ import Foundation
 import SwiftUI
 import UIKit
 #if !targetEnvironment(simulator)
+import MLX
 import MLXLLM
 import MLXLMCommon
 import MLXVLM
@@ -121,8 +122,11 @@ final class LLMEngine {
     
     // Throttling
     private var lastUpdate: Date = .distantPast
+    private var adaptiveThrottleInterval: TimeInterval = 0.08
+    private var estimatedTokenCount: Int = 0
+    private var lastTokenCountTextLength: Int = 0
     private var throttleInterval: TimeInterval {
-        lowPowerMode ? 0.16 : 0.08
+        max(lowPowerMode ? 0.16 : 0.08, adaptiveThrottleInterval)
     } // Balance smooth streaming with UI responsiveness
 
     struct GenerationOverrides {
@@ -239,6 +243,8 @@ final class LLMEngine {
         guard isSceneActive else { return }
         // Recreate MLX session with same model to clear conversation history
         if let container = mlxModelContainer, let modelID = mlxModelID {
+            mlxSession = nil
+            MLX.GPU.clearCache()
             mlxSession = ChatSession(container, instructions: mlxSessionInstructions(for: modelID))
         }
         #endif
@@ -275,6 +281,9 @@ final class LLMEngine {
         currentResponse = ""
         streamingMessageID = UUID() // New unique ID for this generation session
         lastUpdate = .distantPast
+        adaptiveThrottleInterval = lowPowerMode ? 0.16 : 0.08
+        estimatedTokenCount = 0
+        lastTokenCountTextLength = 0
         streamingStartTime = Date()
         streamingTokensPerSecond = 0
         print("[LLMEngine] generate start id=\(model.id) engine=\(model.engine.rawValue)")
@@ -283,7 +292,10 @@ final class LLMEngine {
             !mlxModelSupportsSystemRole(modelID: model.id) ||
             (model.supportsVision && image != nil)  // VLM: always fresh context per image turn
         )
-        let effectiveSystemPrompt = storedSystemPrompt(fallback: systemPrompt)
+        var effectiveSystemPrompt = storedSystemPrompt(fallback: systemPrompt)
+        if image != nil {
+            effectiveSystemPrompt += "\n\nImportant: You are analyzing an image. Keep your answer very short and concise."
+        }
         let effectiveMlxPrompt = mlxPrompt(
             from: prompt,
             systemPrompt: effectiveSystemPrompt,
@@ -386,6 +398,11 @@ final class LLMEngine {
                     self.streamingStartTime = nil
                     self.streamingTokensPerSecond = 0
                 }
+                #if !targetEnvironment(simulator)
+                if model.engine == .mlx {
+                    MLX.GPU.clearCache()
+                }
+                #endif
             } catch is CancellationError {
                 await MainActor.run {
                     self.state = .ready
@@ -394,6 +411,11 @@ final class LLMEngine {
                     self.streamingStartTime = nil
                     self.streamingTokensPerSecond = 0
                 }
+                #if !targetEnvironment(simulator)
+                if model.engine == .mlx {
+                    MLX.GPU.clearCache()
+                }
+                #endif
             } catch {
                 print("[LLMEngine] generate failed id=\(model.id) error=\(error.localizedDescription)")
                 await MainActor.run {
@@ -403,6 +425,11 @@ final class LLMEngine {
                     self.streamingStartTime = nil
                     self.streamingTokensPerSecond = 0
                 }
+                #if !targetEnvironment(simulator)
+                if model.engine == .mlx {
+                    MLX.GPU.clearCache()
+                }
+                #endif
             }
         }
         
@@ -459,6 +486,9 @@ final class LLMEngine {
         state = .generating
         IdleTimerCoordinator.shared.setReason("llmGenerating", enabled: true)
         currentResponse = ""
+        adaptiveThrottleInterval = lowPowerMode ? 0.16 : 0.08
+        estimatedTokenCount = 0
+        lastTokenCountTextLength = 0
         streamingStartTime = nil
         streamingTokensPerSecond = 0
 
@@ -471,6 +501,9 @@ final class LLMEngine {
             }
             IdleTimerCoordinator.shared.setReason("llmGenerating", enabled: false)
             isolatedGenerationTask = nil
+            #if !targetEnvironment(simulator)
+            MLX.GPU.clearCache()
+            #endif
             resetIdleTimer()
         }
 
@@ -591,14 +624,28 @@ final class LLMEngine {
     private func updateResponseIfNeeded(_ content: String, force: Bool) async {
         let now = Date()
         if force || now.timeIntervalSince(lastUpdate) >= throttleInterval {
-            await MainActor.run {
-                self.currentResponse = content
-                self.lastUpdate = now
-                if let start = self.streamingStartTime {
-                    let elapsed = max(0.001, now.timeIntervalSince(start))
-                    let tokens = Double(self.approximateTokenCount(AssistantOutputSanitizer.sanitize(content)))
-                    self.streamingTokensPerSecond = tokens / elapsed
+            let uiStart = Date()
+            self.currentResponse = content
+            self.lastUpdate = now
+            if let start = self.streamingStartTime {
+                let elapsed = max(0.001, now.timeIntervalSince(start))
+                let newTextLength = content.count
+                if newTextLength > self.lastTokenCountTextLength {
+                    let newText = String(content.suffix(newTextLength - self.lastTokenCountTextLength))
+                    self.estimatedTokenCount += newText.split { $0.isWhitespace || $0.isNewline }.count
+                    self.lastTokenCountTextLength = newTextLength
+                } else if newTextLength < self.lastTokenCountTextLength {
+                    self.estimatedTokenCount = content.split { $0.isWhitespace || $0.isNewline }.count
+                    self.lastTokenCountTextLength = newTextLength
                 }
+                self.streamingTokensPerSecond = Double(self.estimatedTokenCount) / elapsed
+            }
+            
+            let uiDuration = Date().timeIntervalSince(uiStart)
+            if uiDuration > 0.03 {
+                self.adaptiveThrottleInterval = min(0.5, self.adaptiveThrottleInterval + 0.05)
+            } else if self.adaptiveThrottleInterval > (lowPowerMode ? 0.16 : 0.08) {
+                self.adaptiveThrottleInterval = max(lowPowerMode ? 0.16 : 0.08, self.adaptiveThrottleInterval - 0.02)
             }
         }
     }
@@ -611,11 +658,17 @@ final class LLMEngine {
         isolatedGenerationTask = nil
         state = .ready
         IdleTimerCoordinator.shared.setReason("llmGenerating", enabled: false)
+        adaptiveThrottleInterval = lowPowerMode ? 0.16 : 0.08
+        estimatedTokenCount = 0
+        lastTokenCountTextLength = 0
         streamingStartTime = nil
         streamingTokensPerSecond = 0
         // Note: The UI layer (ChatView) will handle cleaning up the history message 
         // when currentResponse is cleared or via its own observation.
         currentResponse = "" 
+        #if !targetEnvironment(simulator)
+        MLX.GPU.clearCache()
+        #endif
         resetIdleTimer()
     }
 
@@ -779,6 +832,12 @@ extension LLMEngine {
     }
 }
 
+extension LLMEngine {
+    func mlxModelSupportsSystemRole(modelID: String) -> Bool {
+        true
+    }
+}
+
 // MARK: - Private Load
 
 private extension LLMEngine {
@@ -918,10 +977,7 @@ private extension LLMEngine {
         """
     }
 
-    func mlxModelSupportsSystemRole(modelID: String) -> Bool {
-        true
-    }
-
+#if !targetEnvironment(simulator)
     private func makeFreshMlxSession(
         modelID: String,
         systemPrompt: String,
@@ -977,6 +1033,7 @@ private extension LLMEngine {
             prefillStepSize: isVisionModel ? 128 : 512
         )
     }
+#endif
 
     private nonisolated static func shouldStopStreaming(content: String) -> Bool {
         if AssistantOutputSanitizer.containsControlMarker(content) {
@@ -1059,23 +1116,24 @@ private extension LLMEngine {
 
 #if !targetEnvironment(simulator)
 private extension LLMEngine {
-    nonisolated static let mlxVisionImageMaxDimension: CGFloat = 512
-
     nonisolated static func makeMlxInputImage(from image: UIImage) throws -> UserInput.Image {
-        let preparedImage = downsampleMlxVisionImageIfNeeded(image)
+        let preparedImage = downsampleMlxVisionImageIfNeeded(image, mode: ImageProcessingMode.current)
         guard let ciImage = CIImage(image: preparedImage) else {
             throw LLMError.generationFailed("Unable to prepare image for MLX.")
         }
         return .ciImage(ciImage)
     }
 
-    nonisolated static func downsampleMlxVisionImageIfNeeded(_ image: UIImage) -> UIImage {
+    nonisolated static func downsampleMlxVisionImageIfNeeded(
+        _ image: UIImage,
+        mode: ImageProcessingMode
+    ) -> UIImage {
         let pixelWidth = image.size.width * image.scale
         let pixelHeight = image.size.height * image.scale
         let longestEdge = max(pixelWidth, pixelHeight)
-        guard longestEdge > mlxVisionImageMaxDimension else { return image }
+        guard longestEdge > mode.visionMaxDimension else { return image }
 
-        let scale = mlxVisionImageMaxDimension / longestEdge
+        let scale = mode.visionMaxDimension / longestEdge
         let targetSize = CGSize(
             width: max(1, floor(pixelWidth * scale)),
             height: max(1, floor(pixelHeight * scale))

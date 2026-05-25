@@ -8,7 +8,6 @@
 import Foundation
 import FoundationModels
 import UIKit
-import Vision
 
 enum AppleFoundationModelAvailability: Equatable {
     case available
@@ -400,7 +399,10 @@ final class AppleFoundationModelBridge {
         // Build prompt: prepend image description if an image is attached
         var enrichedPrompt = prompt
         if let image {
-            let description = await analyzeImage(image)
+            let description = await ImageAnalysisContextBuilder.context(
+                for: image,
+                mode: ImageProcessingMode.current
+            ) ?? "[Image context unavailable]"
             enrichedPrompt = "[Image context]\n\(description)\n\n[User message]\n" + prompt
         }
 
@@ -420,51 +422,6 @@ final class AppleFoundationModelBridge {
             sessionStorage = session
             sessionLock.unlock()
         }
-    }
-
-    /// Uses Vision framework to extract text (OCR) and scene labels from an image.
-    nonisolated private func analyzeImage(_ image: UIImage) async -> String {
-        guard let cgImage = image.cgImage else { return "[Image could not be analyzed]" }
-
-        var parts: [String] = []
-
-        // 1. OCR – extract any visible text
-        let ocrRequest = VNRecognizeTextRequest()
-        ocrRequest.recognitionLevel = .accurate
-        ocrRequest.usesLanguageCorrection = true
-        ocrRequest.automaticallyDetectsLanguage = true
-
-        // 2. Classification – identify scene/object labels
-        let classifyRequest = VNClassifyImageRequest()
-
-        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        try? handler.perform([ocrRequest, classifyRequest])
-
-        // Collect recognized text
-        if let textObservations = ocrRequest.results, !textObservations.isEmpty {
-            let lines = textObservations.compactMap { $0.topCandidates(1).first?.string }
-            if !lines.isEmpty {
-                parts.append("Visible text: " + lines.joined(separator: " | "))
-            }
-        }
-
-        // Collect top classification labels (confidence >= 0.3)
-        if let classifications = classifyRequest.results {
-            let confident = classifications
-                .filter { $0.confidence >= 0.3 }
-                .prefix(8)
-                .map { "\($0.identifier) (\(Int($0.confidence * 100))%)" }
-            if !confident.isEmpty {
-                parts.append("Scene/objects: " + confident.joined(separator: ", "))
-            }
-        }
-
-        // Image metadata
-        let width = Int(image.size.width * image.scale)
-        let height = Int(image.size.height * image.scale)
-        parts.append("Dimensions: \(width)×\(height)px")
-
-        return parts.isEmpty ? "[No description generated]" : parts.joined(separator: "\n")
     }
 
     @available(iOS 26.0, *)

@@ -9,6 +9,48 @@ import SwiftUI
 import MarkdownUI
 import Shimmer
 
+struct AsyncCodeBlockView: View {
+    let content: String
+    let language: String?
+    let theme: CodeTheme
+    let isStreaming: Bool
+    let textScale: Double
+    
+    @State private var highlightedText: AttributedString?
+    
+    var body: some View {
+        Text(displayText)
+            .task(id: highlightTaskID) {
+                guard !isStreaming else { return }
+                do {
+                    try await Task.sleep(nanoseconds: 150_000_000)
+                    
+                    let result = SyntaxHighlighter.highlight(content, language: language, theme: theme, textScale: textScale)
+                    
+                    guard !Task.isCancelled else { return }
+                    highlightedText = result
+                } catch { }
+            }
+            .padding(12)
+            .frame(minWidth: 100, alignment: .leading)
+    }
+
+    private var displayText: AttributedString {
+        if isStreaming {
+            var plainText = AttributedString(content)
+            plainText.font = .monospacedSystemFont(ofSize: CGFloat(13 * textScale), weight: .regular)
+            plainText.foregroundColor = theme.foreground
+            return plainText
+        }
+
+        return highlightedText ?? SyntaxHighlighter.plainText(content, theme: theme, textScale: textScale)
+    }
+
+    private var highlightTaskID: String {
+        isStreaming ? "streaming|\(language ?? "")|\(theme.rawValue)" : "\(content.hashValue)|\(language ?? "")|\(theme.rawValue)"
+    }
+}
+
 struct MessageBubble: View {
     let message: ChatMessage
     let showsContinue: Bool
@@ -26,7 +68,10 @@ struct MessageBubble: View {
     let onSpeak: ((ChatMessage) -> Void)?
     let onSearchWeb: ((ChatMessage) -> Void)?
     let onFollowUp: ((ChatMessage, String) -> Void)?
+    let showsQuickActions: Bool
     @AppStorage("codeTheme") private var codeThemeRaw = CodeTheme.defaultTheme.rawValue
+    @AppStorage("messageTextScale") private var messageTextScale: Double = 1.0
+    @Environment(SpeechManager.self) private var speechManager
     @State private var appeared = false
     @State private var isThinkingExpanded = false
     @State private var showCopied = false
@@ -34,6 +79,7 @@ struct MessageBubble: View {
     private let userLeadingInset: CGFloat = 60
     private let assistantTrailingInset: CGFloat = 16
     private let collapsedThinkingHeight: CGFloat = 76
+    private static let lightHaptic = UIImpactFeedbackGenerator(style: .light)
 
     init(
         message: ChatMessage,
@@ -51,7 +97,8 @@ struct MessageBubble: View {
         onTranslate: ((ChatMessage) -> Void)? = nil,
         onSpeak: ((ChatMessage) -> Void)? = nil,
         onSearchWeb: ((ChatMessage) -> Void)? = nil,
-        onFollowUp: ((ChatMessage, String) -> Void)? = nil
+        onFollowUp: ((ChatMessage, String) -> Void)? = nil,
+        showsQuickActions: Bool = false
     ) {
         self.message = message
         self.showsContinue = showsContinue
@@ -69,6 +116,7 @@ struct MessageBubble: View {
         self.onSpeak = onSpeak
         self.onSearchWeb = onSearchWeb
         self.onFollowUp = onFollowUp
+        self.showsQuickActions = showsQuickActions
     }
     
     var body: some View {
@@ -150,6 +198,11 @@ struct MessageBubble: View {
                         followUpAction: { suggestion in onFollowUp?(message, suggestion) }
                     )
                 }
+
+                // Quick Actions Bar for last assistant message
+                if showsQuickActions && message.role == .assistant && !message.isStreaming {
+                    quickActionsBar
+                }
             }
             
             if message.role == .assistant {
@@ -177,8 +230,7 @@ struct MessageBubble: View {
                 appeared = true
             }
             if message.role == .assistant && message.content.isEmpty && message.thinkingContent == nil {
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                generator.impactOccurred()
+                Self.lightHaptic.impactOccurred()
             }
         }
     }
@@ -256,6 +308,66 @@ struct MessageBubble: View {
             )
     }
 
+    // MARK: - Quick Actions Bar
+
+    private var quickActionsBar: some View {
+        HStack(spacing: 2) {
+            quickActionButton(icon: "doc.on.doc", label: String(localized: "Copy")) {
+                copyAndShowToast(message.content)
+            }
+
+            if onSpeak != nil {
+                let isSpeakingThisMessage = speechManager.isSpeaking && speechManager.currentlySpeakingMessageID == message.id
+                quickActionButton(
+                    icon: isSpeakingThisMessage ? "speaker.slash.fill" : "speaker.wave.2",
+                    label: isSpeakingThisMessage ? String(localized: "Stop") : String(localized: "Speak")
+                ) {
+                    onSpeak?(message)
+                }
+            }
+
+            quickActionButton(
+                icon: message.isPinned ? "pin.slash.fill" : "pin",
+                label: message.isPinned ? String(localized: "Unpin") : String(localized: "Pin")
+            ) {
+                onTogglePin?(message)
+            }
+
+            quickActionButton(icon: "square.and.arrow.up", label: String(localized: "Share")) {
+                let activityVC = UIActivityViewController(
+                    activityItems: [message.content],
+                    applicationActivities: nil
+                )
+                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                   let rootVC = windowScene.windows.first?.rootViewController {
+                    rootVC.present(activityVC, animated: true)
+                }
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 4)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .overlay(
+            Capsule()
+                .stroke(Color.white.opacity(0.45), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
+        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+    }
+
+    private func quickActionButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color(white: 0.35))
+                .frame(width: 34, height: 30)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
     @ViewBuilder
     private func thinkingMarkdown(_ thinkingText: String) -> some View {
         Markdown(thinkingText)
@@ -291,50 +403,30 @@ struct MessageBubble: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(
-            message.role == .user ?
-            AnyShapeStyle(
+        .background {
+            if message.role == .user {
                 LinearGradient(
                     colors: [Color(red: 0.2, green: 0.5, blue: 0.9), Color(red: 0.15, green: 0.45, blue: 0.85)],
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
-            ) :
-            AnyShapeStyle(.ultraThinMaterial)
-        )
+            } else {
+                Rectangle().fill(.ultraThinMaterial)
+            }
+        }
         .clipShape(MessageShape(isUser: message.role == .user))
         .shadow(color: .black.opacity(message.role == .user ? 0.12 : 0.06), radius: message.role == .user ? 8 : 4, y: 3)
         .contentTransition(.interpolate)
-        .animation(.spring(response: 0.4, dampingFraction: 0.9), value: message.content)
+        .animation(message.isStreaming ? nil : .spring(response: 0.4, dampingFraction: 0.9), value: message.content)
         .contextMenu {
             Button {
-                UIPasteboard.general.string = message.content
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                generator.impactOccurred()
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    showCopied = true
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        showCopied = false
-                    }
-                }
+                copyAndShowToast(message.content)
             } label: {
                 Label("Copy", systemImage: "doc.on.doc")
             }
 
             Button {
-                UIPasteboard.general.string = markdownRepresentation
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                generator.impactOccurred()
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                    showCopied = true
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                    withAnimation(.easeOut(duration: 0.3)) {
-                        showCopied = false
-                    }
-                }
+                copyAndShowToast(markdownRepresentation)
             } label: {
                 Label("Copy as Markdown", systemImage: "doc.plaintext")
             }
@@ -342,17 +434,7 @@ struct MessageBubble: View {
             // Copy Code Only — extracts fenced code blocks
             if message.role == .assistant, let codeOnly = extractCodeBlocks(from: message.content), !codeOnly.isEmpty {
                 Button {
-                    UIPasteboard.general.string = codeOnly
-                    let generator = UIImpactFeedbackGenerator(style: .light)
-                    generator.impactOccurred()
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        showCopied = true
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                        withAnimation(.easeOut(duration: 0.3)) {
-                            showCopied = false
-                        }
-                    }
+                    copyAndShowToast(codeOnly)
                 } label: {
                     Label("Copy Code Only", systemImage: "curlybraces")
                 }
@@ -376,10 +458,14 @@ struct MessageBubble: View {
             }
 
             if let onSpeak {
+                let isSpeakingThisMessage = speechManager.isSpeaking && speechManager.currentlySpeakingMessageID == message.id
                 Button {
                     onSpeak(message)
                 } label: {
-                    Label("Read Aloud", systemImage: "speaker.wave.2")
+                    Label(
+                        isSpeakingThisMessage ? "Stop Speaking" : "Read Aloud",
+                        systemImage: isSpeakingThisMessage ? "speaker.slash" : "speaker.wave.2"
+                    )
                 }
             }
 
@@ -486,13 +572,15 @@ struct MessageBubble: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 Text(message.content)
-                    .font(.body)
+                    .font(.system(size: 17 * messageTextScale))
                     .foregroundStyle(.white)
             }
         } else {
             let theme = CodeTheme(rawValue: codeThemeRaw) ?? .defaultTheme
             Markdown(message.content)
-                .font(.body)
+                .markdownTextStyle {
+                    FontSize(CGFloat(17 * messageTextScale))
+                }
                 .foregroundStyle(Color(white: 0.15))
                 .markdownBlockStyle(\.codeBlock) { configuration in
                     VStack(spacing: 0) {
@@ -503,8 +591,7 @@ struct MessageBubble: View {
                             Spacer()
                             Button {
                                 UIPasteboard.general.string = configuration.content
-                                let generator = UIImpactFeedbackGenerator(style: .light)
-                                generator.impactOccurred()
+                                Self.lightHaptic.impactOccurred()
                             } label: {
                                 HStack(spacing: 4) {
                                     Image(systemName: "doc.on.doc")
@@ -526,9 +613,13 @@ struct MessageBubble: View {
                         .background(theme.headerBackground)
 
                         ScrollView(.horizontal, showsIndicators: true) {
-                            Text(SyntaxHighlighter.highlight(configuration.content, language: configuration.language, theme: theme))
-                                .padding(12)
-                                .frame(minWidth: 100, alignment: .leading)
+                            AsyncCodeBlockView(
+                                content: configuration.content,
+                                language: configuration.language,
+                                theme: theme,
+                                isStreaming: message.isStreaming,
+                                textScale: messageTextScale
+                            )
                         }
                         .background(theme.background)
                     }
@@ -594,8 +685,7 @@ struct MessageBubble: View {
         VStack(alignment: .leading, spacing: 12) {
             Button {
                 debugLogThinking("toggle tapped", thinkingText: thinkingText)
-                let generator = UIImpactFeedbackGenerator(style: .light)
-                generator.impactOccurred()
+                Self.lightHaptic.impactOccurred()
                 withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
                     isThinkingExpanded.toggle()
                 }
@@ -688,7 +778,6 @@ struct MessageBubble: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 16)
-        .padding(.vertical, 16)
         .background(.ultraThinMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 28))
         .overlay(
@@ -700,7 +789,7 @@ struct MessageBubble: View {
     }
 
     private func scrollThinkingToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
-        DispatchQueue.main.async {
+        Task { @MainActor in
             if animated {
                 withAnimation(.easeOut(duration: 0.18)) {
                     proxy.scrollTo("thinking-bottom", anchor: .bottom)
@@ -730,9 +819,12 @@ struct MessageBubble: View {
     // MARK: - Code Extraction
 
     /// Extracts fenced code blocks (```...```) from markdown text.
+    private static let codeBlockRegex: NSRegularExpression? = {
+        try? NSRegularExpression(pattern: "```(?:\\w+)?\n(.*?)```", options: [.dotMatchesLineSeparators])
+    }()
+
     private func extractCodeBlocks(from content: String) -> String? {
-        let pattern = "```(?:\\w+)?\n([\\s\\S]*?)```"
-        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
+        guard let regex = Self.codeBlockRegex else { return nil }
         let range = NSRange(content.startIndex..., in: content)
         let matches = regex.matches(in: content, options: [], range: range)
         guard !matches.isEmpty else { return nil }
@@ -754,6 +846,22 @@ struct MessageBubble: View {
         let characters = trimmed.count
         let readingTime = max(1, Int(ceil(Double(words) / 200.0)))
         return (words, characters, readingTime)
+    }
+
+    // MARK: - Clipboard Helper
+
+    private func copyAndShowToast(_ text: String) {
+        UIPasteboard.general.string = text
+        Self.lightHaptic.impactOccurred()
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+            showCopied = true
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            withAnimation(.easeOut(duration: 0.3)) {
+                showCopied = false
+            }
+        }
     }
 }
 
@@ -853,4 +961,5 @@ struct MessageShape: Shape {
     }
     .padding()
     .background(Color(white: 0.98))
+    .environment(SpeechManager())
 }

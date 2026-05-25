@@ -231,7 +231,7 @@ struct SettingsView: View {
                     icon: "slider.horizontal.3",
                     tint: .gray,
                     title: "Advanced",
-                    subtitle: "PDF OCR, low power mode, and more"
+                    subtitle: "Document and image quality, PDF OCR, low power mode, and more"
                 )
             }
             .buttonStyle(.plain)

@@ -36,6 +36,7 @@ struct ChatView: View {
     @State private var activeStreamingAssistantID: UUID?
     @State private var pendingSessionReset = false
     @State private var activeGenerationSessionScope: GenerationSessionScope?
+    @State private var lastGenerationWasEphemeral: Bool = false
     @State private var selectedDocumentForSources: ConversationDocument?
     @State private var generatedFollowUpSuggestions: [UUID: [String]] = [:]
     @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
@@ -49,6 +50,10 @@ struct ChatView: View {
     @State private var inChatSearchText: String = ""
     @State private var isInChatSearchActive = false
     @State private var translateTargetLanguage: String = ""
+
+    // MARK: - Shared Haptic Generators (avoid per-tap allocation)
+    private static let lightHaptic = UIImpactFeedbackGenerator(style: .light)
+    private static let mediumHaptic = UIImpactFeedbackGenerator(style: .medium)
 
     private struct GenerationSessionScope: Equatable {
         let modelID: String
@@ -91,7 +96,7 @@ struct ChatView: View {
         lifecycleContent
             .fileImporter(
                 isPresented: $isFileImporterPresented,
-                allowedContentTypes: [.pdf, .image, .text, .plainText, .sourceCode, .rtf, .rtfd, .docx],
+                allowedContentTypes: [.pdf, .image, .text, .plainText, .sourceCode, .rtf, .rtfd, .docx, .markdown, .jsonDocument, .commaSeparatedText, .logText],
                 allowsMultipleSelection: false
             ) { result in
                 handleFileImport(result: result)
@@ -207,21 +212,6 @@ struct ChatView: View {
                 .padding(.horizontal, 20)
                 .padding(.bottom, 110)
             }
-            .confirmationDialog(String(localized: "Add to chat"), isPresented: $showAttachmentOptions, titleVisibility: .visible) {
-                Button(String(localized: "Photo or Screenshot")) {
-                    isPhotoPickerPresented = true
-                }
-
-                Button(String(localized: "Open Document")) {
-                    guard monetizationManager.canUse(.unlimitedDocuments) || currentConversationDocuments.isEmpty else {
-                        upgradeFeature = .unlimitedDocuments
-                        return
-                    }
-                    isFileImporterPresented = true
-                }
-
-                Button(String(localized: "Cancel"), role: .cancel) { }
-            }
     }
 
     private var lifecycleContent: some View {
@@ -328,6 +318,55 @@ struct ChatView: View {
                     Spacer()
                 }
                 .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
+            if showAttachmentOptions {
+                // Dimmed background backdrop
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+                    .onTapGesture {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            showAttachmentOptions = false
+                        }
+                    }
+                
+                // Attachment popup container
+                VStack {
+                    Spacer()
+                    
+                    AttachmentOptionsPopup(
+                        onPhotoPicker: {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                showAttachmentOptions = false
+                            }
+                            isPhotoPickerPresented = true
+                        },
+                        onDocumentImport: {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                showAttachmentOptions = false
+                            }
+                            guard monetizationManager.canUse(.unlimitedDocuments) || currentConversationDocuments.isEmpty else {
+                                upgradeFeature = .unlimitedDocuments
+                                return
+                            }
+                            isFileImporterPresented = true
+                        },
+                        onCancel: {
+                            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                showAttachmentOptions = false
+                            }
+                        }
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 24)
+                }
+                .ignoresSafeArea(.keyboard, edges: .bottom)
+                .transition(.asymmetric(
+                    insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.92)),
+                    removal: .opacity.combined(with: .scale(scale: 0.95))
+                ))
+                .zIndex(100)
             }
         }
         .toolbar {
@@ -499,7 +538,11 @@ struct ChatView: View {
                                     translateReply(message)
                                 },
                                 onSpeak: { message in
-                                    speechManager.speak(message.content)
+                                    if speechManager.isSpeaking && speechManager.currentlySpeakingMessageID == message.id {
+                                        speechManager.stopSpeaking()
+                                    } else {
+                                        speechManager.speak(message.content, messageID: message.id)
+                                    }
                                 },
                                 onSearchWeb: { message in
                                     if let url = URL(string: "https://duckduckgo.com/?q=\(message.content.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
@@ -509,7 +552,11 @@ struct ChatView: View {
                                 onFollowUp: { _, followUpText in
                                     messageText = followUpText
                                     sendMessage()
-                                }
+                                },
+                                showsQuickActions: message.role == .assistant
+                                    && historyManager.currentMessages.last?.id == message.id
+                                    && !message.isStreaming
+                                    && llmEngine.state != .generating
                             )
                                 .id(message.id)
                                 .opacity(messageMatchesSearch(message) ? 1.0 : 0.25)
@@ -528,8 +575,7 @@ struct ChatView: View {
                                        historyManager.currentMessages.last?.id == message.id,
                                        llmEngine.state != .generating {
                                         Button {
-                                            let generator = UIImpactFeedbackGenerator(style: .medium)
-                                            generator.impactOccurred()
+                                            Self.mediumHaptic.impactOccurred()
                                             regenerate(message: message, style: .more)
                                         } label: {
                                             Label(String(localized: "Regenerate"), systemImage: "arrow.clockwise")
@@ -611,7 +657,8 @@ struct ChatView: View {
         }
         
         if delay > 0 {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            Task { @MainActor in
+                try? await Task.sleep(for: .seconds(delay))
                 performScroll()
             }
         } else {
@@ -690,7 +737,9 @@ struct ChatView: View {
 
                 HStack(spacing: 10) {
                     Button {
-                        showAttachmentOptions = true
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                            showAttachmentOptions = true
+                        }
                     } label: {
                         Image(systemName: "plus")
                             .font(.body.weight(.semibold))
@@ -910,7 +959,7 @@ struct ChatView: View {
 
             documentChipDetail(for: document)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: 200, alignment: .leading)
     }
 
     @ViewBuilder
@@ -1135,8 +1184,7 @@ struct ChatView: View {
     }
     
     private func stopGeneration() {
-        let generator = UIImpactFeedbackGenerator(style: .medium)
-        generator.impactOccurred()
+        Self.mediumHaptic.impactOccurred()
         if let conversationID = activeStreamingConversationID,
            let assistantID = activeStreamingAssistantID,
            let message = historyManager.message(id: assistantID, in: conversationID),
@@ -1177,8 +1225,7 @@ struct ChatView: View {
             return
         }
         guard canSend else { return }
-        let generator = UIImpactFeedbackGenerator(style: .light)
-        generator.impactOccurred()
+        Self.lightHaptic.impactOccurred()
 
         guard let model = modelManager.selectedModel else { return }
         if !hasConsent(for: model.id) {
@@ -1235,6 +1282,7 @@ struct ChatView: View {
         messageText = ""
         selectedImage = nil
         selectedPhotoItem = nil
+        isInputFocused = false
         
         // Generate response
         Task {
@@ -1247,10 +1295,27 @@ struct ChatView: View {
 
             // For non-vision models with image, prepend note
             var effectivePrompt = promptContext.prompt
-            if imageToSend != nil, !model.supportsVision {
-                effectivePrompt = "[Note: The user attached an image, but the selected model does not support image analysis. Please describe the image in text or select a vision-capable model.]\n\n" + effectivePrompt
-            } else if imageToSend != nil, model.isTranslateGemma {
-                effectivePrompt = "[Note: The user attached an image. If it contains visible text, translate it into the user's language unless they specified a different target language. If the image has no readable text, say so briefly.]\n\n" + effectivePrompt
+            if let imageToSend {
+                let imageContext = await ImageAnalysisContextBuilder.context(
+                    for: imageToSend,
+                    mode: ImageProcessingMode.current
+                )
+
+                if let imageContext, model.engine == .mlx || !model.supportsVision {
+                    effectivePrompt = """
+                    [Image analysis context from on-device OCR and visual detection]
+                    \(imageContext)
+
+                    [User request]
+                    \(effectivePrompt)
+                    """
+                }
+
+                if !model.supportsVision {
+                    effectivePrompt = "[Note: The selected model cannot inspect pixels directly, so answer from the on-device image context when it is useful. If the context is insufficient, say so briefly.]\n\n" + effectivePrompt
+                } else if model.isTranslateGemma {
+                    effectivePrompt = "[Note: The user attached an image. If it contains visible text, translate it into the user's language unless they specified a different target language. If the image has no readable text, say so briefly.]\n\n" + effectivePrompt
+                }
             }
             
             await runAssistantResponse(
@@ -1369,9 +1434,16 @@ struct ChatView: View {
             try await llmEngine.loadModel(model)
 
             let nextSessionScope = generationSessionScope(for: model, conversationID: conversationID)
+            
+            let isEphemeral = model.engine == .mlx && (
+                !llmEngine.mlxModelSupportsSystemRole(modelID: model.id) ||
+                (model.supportsVision && image != nil)
+            )
+
             let shouldResetSession = resetSession ||
                 activeGenerationSessionScope != nextSessionScope ||
-                !llmEngine.hasConversationContext(for: model)
+                !llmEngine.hasConversationContext(for: model) ||
+                lastGenerationWasEphemeral
 
             if shouldResetSession {
                 llmEngine.resetSession()
@@ -1452,6 +1524,7 @@ struct ChatView: View {
                 sourceTitles: assistantSourceTitles
             )
             activeGenerationSessionScope = nextSessionScope
+            lastGenerationWasEphemeral = isEphemeral
 
             await refineConversationInsightsIfNeeded(
                 conversationID: conversationID,
@@ -1632,7 +1705,7 @@ struct ChatView: View {
     }
 
     private func toggleSpeechPlayback(for message: ChatMessage) {
-        if speechManager.isSpeaking || !speechManager.isSpeechQueueEmpty {
+        if speechManager.isSpeaking && speechManager.currentlySpeakingMessageID == message.id {
             speechManager.stopSpeaking()
             return
         }
@@ -1643,7 +1716,7 @@ struct ChatView: View {
 
         let text = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        speechManager.speak(text)
+        speechManager.speak(text, messageID: message.id)
     }
 
     private func maybeEnqueueKokoroSpeechWhileStreaming() {
@@ -2029,8 +2102,7 @@ struct ChatView: View {
         guard llmEngine.state != .generating else { return }
         guard historyManager.currentMessages.last?.id == message.id else { return }
 
-        let generator = UIImpactFeedbackGenerator(style: .light)
-        generator.impactOccurred()
+        Self.lightHaptic.impactOccurred()
 
         Task {
             await runAssistantResponse(
@@ -2370,6 +2442,7 @@ struct ChatView: View {
 
     private func invalidateGenerationSessionScope() {
         activeGenerationSessionScope = nil
+        lastGenerationWasEphemeral = false
     }
 
     private func generationSessionScope(
@@ -2458,7 +2531,7 @@ struct ChatView: View {
             }
             let instructions = """
             You have access to documents that belong only to this chat.
-            Use the retrieved passages when they are relevant to the user's request.
+            The retrieved passages are ranked by relevance. Use higher-ranked passages and exact matches first.
             If the snippets are insufficient, say that briefly instead of guessing.
             Cite sources inline as [Source n] when you rely on them.
             """
@@ -2561,6 +2634,10 @@ struct SendButtonStyle: ButtonStyle {
 
 private extension UTType {
     static let docx = UTType(filenameExtension: "docx") ?? .data
+    static let markdown = UTType(filenameExtension: "md") ?? .plainText
+    static let jsonDocument = UTType(filenameExtension: "json") ?? .plainText
+    static let commaSeparatedText = UTType(filenameExtension: "csv") ?? .plainText
+    static let logText = UTType(filenameExtension: "log") ?? .plainText
 }
 
 #Preview {

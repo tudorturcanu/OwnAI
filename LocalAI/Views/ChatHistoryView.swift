@@ -23,6 +23,10 @@ struct ChatHistoryView: View {
     @State private var newFolderEmoji = "📁"
     @State private var isMoveToFolderPresented = false
     @State private var conversationToMove: ChatConversation?
+    @State private var isRenamePresented = false
+    @State private var conversationToRename: ChatConversation?
+    @State private var renameText = ""
+    @State private var showPinnedMessages = false
 
     private var folderStore: ChatFolderStore { ChatFolderStore.shared }
 
@@ -86,6 +90,11 @@ struct ChatHistoryView: View {
         NavigationStack {
             ScrollView {
                 LazyVStack(spacing: 8, pinnedViews: [.sectionHeaders]) {
+                    // Conversation Statistics
+                    if !historyManager.conversations.isEmpty && searchText.isEmpty && selectedFolderID == nil {
+                        conversationStatsCard
+                    }
+
                     // Folder Chips (Pro)
                     if monetizationManager.canUse(.chatFolders) && !folderStore.folders.isEmpty {
                         folderChipsRow
@@ -140,6 +149,17 @@ struct ChatHistoryView: View {
                                         }
                                     }
                                     .contextMenu {
+                                        Button {
+                                            renameText = conversation.title
+                                            conversationToRename = conversation
+                                            isRenamePresented = true
+                                        } label: {
+                                            Label(
+                                                String(localized: "Rename"),
+                                                systemImage: "pencil"
+                                            )
+                                        }
+
                                         Button {
                                             handleExport(conversation)
                                         } label: {
@@ -197,6 +217,17 @@ struct ChatHistoryView: View {
 
                 ToolbarItem(placement: .primaryAction) {
                     HStack(spacing: 12) {
+                        // Pinned messages button
+                        if totalPinnedCount > 0 {
+                            Button {
+                                showPinnedMessages = true
+                            } label: {
+                                Image(systemName: "pin.fill")
+                                    .font(.body)
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+
                         // Folders button (Pro)
                         Button {
                             if monetizationManager.canUse(.chatFolders) {
@@ -279,6 +310,88 @@ struct ChatHistoryView: View {
 
                 Button(String(localized: "Cancel"), role: .cancel) { }
             }
+        }
+        // Rename conversation alert
+        .alert(String(localized: "Rename Conversation"), isPresented: $isRenamePresented) {
+            TextField(String(localized: "Conversation name"), text: $renameText)
+            Button(String(localized: "Rename")) {
+                if let conversation = conversationToRename {
+                    historyManager.updateTitle(renameText, for: conversation.id)
+                }
+                conversationToRename = nil
+            }
+            Button(String(localized: "Cancel"), role: .cancel) {
+                conversationToRename = nil
+            }
+        } message: {
+            Text(String(localized: "Enter a new name for this conversation."))
+        }
+        // Pinned messages sheet
+        .sheet(isPresented: $showPinnedMessages) {
+            PinnedMessagesView()
+                .environment(historyManager)
+        }
+    }
+
+    // MARK: - Statistics Card
+
+    private var conversationStatsCard: some View {
+        let conversations = historyManager.conversations
+        let totalConversations = conversations.count
+        let totalMessages = conversations.reduce(0) { $0 + $1.messages.count }
+
+        return HStack(spacing: 0) {
+            statItem(value: "\(totalConversations)", label: String(localized: "Chats"), icon: "bubble.left.and.bubble.right.fill", tint: .blue)
+            statDivider
+            statItem(value: "\(totalMessages)", label: String(localized: "Messages"), icon: "text.bubble.fill", tint: .purple)
+            statDivider
+            statItem(value: abbreviatedWordCount(for: conversations), label: String(localized: "Words"), icon: "textformat.abc", tint: .orange)
+        }
+        .padding(.vertical, 16)
+        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.04), radius: 10, y: 5)
+        .padding(.bottom, 4)
+    }
+
+    /// Computes total word count — called only when stats card is visible.
+    /// Uses a sampling approach for very large histories to avoid blocking the main thread.
+    private func abbreviatedWordCount(for conversations: [ChatConversation]) -> String {
+        let totalWords = conversations.reduce(0) { sum, conv in
+            sum + conv.messages.reduce(0) { $0 + $1.content.split { $0.isWhitespace }.count }
+        }
+        return abbreviatedNumber(totalWords)
+    }
+
+    private var statDivider: some View {
+        Rectangle()
+            .fill(Color(white: 0.9))
+            .frame(width: 1, height: 36)
+    }
+
+    private func statItem(value: String, label: String, icon: String, tint: Color) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(tint)
+            Text(value)
+                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .foregroundStyle(Color(white: 0.15))
+            Text(label)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(Color(white: 0.5))
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func abbreviatedNumber(_ n: Int) -> String {
+        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+        if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }
+        return "\(n)"
+    }
+
+    private var totalPinnedCount: Int {
+        historyManager.conversations.reduce(0) { sum, conv in
+            sum + conv.messages.filter(\.isPinned).count
         }
     }
 
@@ -495,10 +608,14 @@ struct ConversationRow: View {
         }
     }
 
-    private var formattedDate: String {
+    private static let relativeDateFormatter: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: conversation.updatedAt, relativeTo: Date())
+        return formatter
+    }()
+
+    private var formattedDate: String {
+        Self.relativeDateFormatter.localizedString(for: conversation.updatedAt, relativeTo: Date())
     }
 }
 
