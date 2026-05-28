@@ -9,18 +9,32 @@ import AVFoundation
 import Foundation
 import Speech
 import SwiftUI
+import Observation
+import Combine
+import piper
+import libespeak_ng
 
 enum SpeechOutputBackend: String, CaseIterable, Identifiable {
     case system
+    case piperAmy
+    case piperNorman
 
     var id: String { rawValue }
 
     var title: String {
-        "System Voice"
+        switch self {
+        case .system: return "System Voice"
+        case .piperAmy: return "Piper (Amy)"
+        case .piperNorman: return "Piper (Norman)"
+        }
     }
 
     var subtitle: String {
-        "Built-in Apple speech"
+        switch self {
+        case .system: return "Built-in Apple speech"
+        case .piperAmy: return "Local TTS (Amy - US Female)"
+        case .piperNorman: return "Local TTS (Norman - US Male)"
+        }
     }
 }
 
@@ -58,13 +72,21 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     private var speechQueueProcessingTask: Task<Void, Never>?
     private var speechQueueToken = UUID()
 
+    private let ttsAudioEngine = AVAudioEngine()
+    private let ttsPlayerNode = AVAudioPlayerNode()
+    private var piperSynthesizer: OpaquePointer?
+    private var piperSynthesisTask: Task<Void, Never>?
+
     @ObservationIgnored @AppStorage("speechOutputBackend") private var persistedSpeechOutputBackend = SpeechOutputBackend.system.rawValue
 
     var speechOutputBackend: SpeechOutputBackend = .system {
         didSet {
-            speechOutputBackend = .system
-            persistedSpeechOutputBackend = SpeechOutputBackend.system.rawValue
-            speechBackendStatus = statusMessage(for: .system)
+            persistedSpeechOutputBackend = speechOutputBackend.rawValue
+            if speechOutputBackend != .system {
+                loadPiper(backend: speechOutputBackend)
+            } else {
+                speechBackendStatus = statusMessage(for: .system)
+            }
         }
     }
 
@@ -72,7 +94,21 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         super.init()
         speechRecognizer?.delegate = self
         synthesizer.delegate = self
-        speechBackendStatus = statusMessage(for: .system)
+        
+        ttsAudioEngine.attach(ttsPlayerNode)
+        let format = AVAudioFormat(standardFormatWithSampleRate: 22050, channels: 1)
+        ttsAudioEngine.connect(ttsPlayerNode, to: ttsAudioEngine.mainMixerNode, format: format)
+        
+        if let savedBackend = SpeechOutputBackend(rawValue: persistedSpeechOutputBackend) {
+            speechOutputBackend = savedBackend
+            if savedBackend != .system {
+                loadPiper(backend: savedBackend)
+            } else {
+                speechBackendStatus = statusMessage(for: .system)
+            }
+        } else {
+            speechBackendStatus = statusMessage(for: .system)
+        }
     }
 
     func startListening() throws {
@@ -274,7 +310,11 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         guard !cleanedText.isEmpty else { return }
         stopSpeaking()
         currentlySpeakingMessageID = messageID
-        speakWithSystemVoice(cleanedText)
+        if speechOutputBackend == .system {
+            speakWithSystemVoice(cleanedText)
+        } else {
+            speakWithPiper(cleanedText)
+        }
     }
 
     func enqueueSpeak(_ text: String) {
@@ -298,8 +338,13 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         speechQueueProcessingTask = nil
         isProcessingSpeechQueue = false
 
-        let wasSpeaking = isSpeaking || synthesizer.isSpeaking
+        let wasSpeaking = isSpeaking || synthesizer.isSpeaking || ttsPlayerNode.isPlaying
+        
         synthesizer.stopSpeaking(at: .immediate)
+        piperSynthesisTask?.cancel()
+        piperSynthesisTask = nil
+        ttsPlayerNode.stop()
+        
         isSpeaking = false
         currentlySpeakingMessageID = nil
         if wasSpeaking {
@@ -313,7 +358,11 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
 
             let nextChunk = speechQueue.removeFirst()
             let completionVersionBefore = speechCompletionVersion
-            speakWithSystemVoice(nextChunk)
+            if speechOutputBackend == .system {
+                speakWithSystemVoice(nextChunk)
+            } else {
+                speakWithPiper(nextChunk)
+            }
             await waitForSpeechCompletion(since: completionVersionBefore, token: token)
         }
 
@@ -332,7 +381,11 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     }
 
     func prepareSpeechOutputIfNeeded() async {
-        speechBackendStatus = statusMessage(for: .system)
+        if speechOutputBackend != .system && piperSynthesizer == nil {
+            loadPiper(backend: speechOutputBackend)
+        } else if speechOutputBackend == .system {
+            speechBackendStatus = statusMessage(for: .system)
+        }
     }
 
     func unloadKokoro() {
@@ -341,6 +394,160 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     func handleScenePhaseChange(_ phase: ScenePhase) {
         guard phase != .active else { return }
         stopSpeaking()
+    }
+    
+    // MARK: - Piper Integration
+
+    private func getPiperModelPaths(for backend: SpeechOutputBackend) -> (model: String, config: String)? {
+        let modelName: String
+        switch backend {
+        case .piperAmy:
+            modelName = "en_US-amy-medium.onnx"
+        case .piperNorman:
+            modelName = "en_US-norman-medium.onnx"
+        default:
+            return nil
+        }
+        
+        if let path = Bundle.main.path(forResource: modelName, ofType: nil) ?? 
+                      Bundle.main.path(forResource: (modelName as NSString).deletingPathExtension, ofType: (modelName as NSString).pathExtension) {
+            return (path, path + ".json")
+        }
+        
+        if let path = Bundle.main.path(forResource: modelName, ofType: nil, inDirectory: "PiperAudioFiles") {
+            return (path, path + ".json")
+        }
+        
+        // Also check if we have a direct path within the app bundle by searching
+        if let resourcePath = Bundle.main.resourcePath {
+            let url = URL(fileURLWithPath: resourcePath).appendingPathComponent("PiperAudioFiles/\(modelName)")
+            if FileManager.default.fileExists(atPath: url.path) {
+                return (url.path, url.path + ".json")
+            }
+        }
+        
+        return nil
+    }
+    
+    private func loadPiper(backend: SpeechOutputBackend) {
+        if let synth = piperSynthesizer {
+            piper_free(synth)
+            piperSynthesizer = nil
+        }
+        
+        guard let paths = getPiperModelPaths(for: backend) else {
+            publishError("Could not find Piper model files for \(backend.title)")
+            return
+        }
+        
+        guard let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            publishError("Could not access Documents directory for espeak-ng data")
+            return
+        }
+        
+        do {
+            try EspeakLib.ensureBundleInstalled(inRoot: docsURL)
+        } catch {
+            publishError("Failed to install espeak-ng data: \(error.localizedDescription)")
+            return
+        }
+        
+        let espeakDataPath = docsURL.path
+        
+        let synth = piper_create(paths.model, paths.config, espeakDataPath)
+        if synth == nil {
+            publishError("Failed to initialize Piper synthesizer")
+        } else {
+            piperSynthesizer = synth
+            speechBackendStatus = statusMessage(for: backend)
+        }
+    }
+    
+    private func speakWithPiper(_ text: String) {
+        guard let synth = piperSynthesizer else {
+            publishError("Piper synthesizer not loaded")
+            return
+        }
+        
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [.duckOthers])
+            try session.setActive(true, options: .notifyOthersOnDeactivation)
+        } catch {
+            print("Failed to set audio session active for playback: \(error.localizedDescription)")
+        }
+        
+        if !ttsAudioEngine.isRunning {
+            try? ttsAudioEngine.start()
+        }
+        
+        isSpeaking = true
+        ttsPlayerNode.play()
+        
+        piperSynthesisTask?.cancel()
+        
+        piperSynthesisTask = Task.detached { [weak self] in
+            let options = piper_default_synthesize_options(synth)
+            var mutableOptions = options
+            
+            let startResult = text.withCString { cString in
+                piper_synthesize_start(synth, cString, &mutableOptions)
+            }
+            
+            guard startResult == PIPER_OK else {
+                await MainActor.run {
+                    self?.publishError("Failed to start Piper synthesis")
+                    self?.stopSpeaking()
+                }
+                return
+            }
+            
+            var chunk = piper_audio_chunk()
+            while !Task.isCancelled {
+                let nextResult = piper_synthesize_next(synth, &chunk)
+                if nextResult == PIPER_DONE { break }
+                if nextResult != PIPER_OK {
+                    await MainActor.run {
+                        self?.publishError("Error during Piper synthesis")
+                    }
+                    break
+                }
+                
+                let numSamples = Int(chunk.num_samples)
+                guard numSamples > 0 else {
+                    if chunk.is_last { break }
+                    continue
+                }
+                
+                let format = AVAudioFormat(standardFormatWithSampleRate: Double(chunk.sample_rate), channels: 1)!
+                
+                guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(numSamples)) else {
+                    continue
+                }
+                pcmBuffer.frameLength = AVAudioFrameCount(numSamples)
+                if let channelData = pcmBuffer.floatChannelData?[0] {
+                    for i in 0..<numSamples {
+                        channelData[i] = chunk.samples[i]
+                    }
+                }
+                
+                let isLast = chunk.is_last
+                await MainActor.run {
+                    self?.ttsPlayerNode.scheduleBuffer(pcmBuffer, at: nil, options: []) {
+                        if isLast {
+                            Task { @MainActor in
+                                guard let self = self else { return }
+                                self.isSpeaking = false
+                                self.currentlySpeakingMessageID = nil
+                                self.speechCompletionVersion += 1
+                            }
+                        }
+                    }
+                }
+                
+                if isLast { break }
+            }
+        }
     }
 
     private func speakWithSystemVoice(_ text: String) {
@@ -366,6 +573,8 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         switch backend {
         case .system:
             return "System voice is ready."
+        case .piperAmy, .piperNorman:
+            return "\(backend.title) is ready."
         }
     }
 }

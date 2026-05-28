@@ -12,6 +12,8 @@
 		54FE08D92FBD8D7F203EECCC /* LocalAIWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60CB243AFDB195EF86D1CBB /* LocalAIWatchApp.swift */; };
 		6CFE0F75F748001302991B02 /* WatchConnectivityModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C48F86F5CC1AACA464AFB06 /* WatchConnectivityModels.swift */; };
 		7A1C45F0A9B24E5EBF2C3D11 /* WatchConnectivityModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C48F86F5CC1AACA464AFB06 /* WatchConnectivityModels.swift */; };
+		8B4308F12FC44AD9007971CB /* piper1-gpl in Frameworks */ = {isa = PBXBuildFile; productRef = 8B4308F02FC44AD9007971CB /* piper1-gpl */; };
+		8B4308F32FC44AD9007971CB /* espeak-ng-data in Frameworks */ = {isa = PBXBuildFile; productRef = 8B4308F22FC44AD9007971CB /* espeak-ng-data */; };
 		8B8A3DFD2F2B9BF70010461E /* MetalPerformanceShaders.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B8A3DFB2F2B9BF70010461E /* MetalPerformanceShaders.framework */; };
 		8B8A3DFE2F2B9BF70010461E /* Metal.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B8A3DFC2F2B9BF70010461E /* Metal.framework */; };
 		8B8A3E092F2CCB980010461E /* Shimmer in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E082F2CCB980010461E /* Shimmer */; };
@@ -138,6 +140,8 @@
 				ABE93FCF2F94C100008DCDBD /* Hub in Frameworks */,
 				ABE93FE62F94C210008DCDBD /* Tokenizers in Frameworks */,
 				D1E000022F5000010010461E /* MLXUtilsLibrary in Frameworks */,
+				8B4308F12FC44AD9007971CB /* piper1-gpl in Frameworks */,
+				8B4308F32FC44AD9007971CB /* espeak-ng-data in Frameworks */,
 				ABE93FD22F94C112008DCDBD /* Jinja in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -243,6 +247,8 @@
 				ABE93FDF2F94C202008DCDBD /* MLXNN */,
 				ABE93FE12F94C202008DCDBD /* MLXOptimizers */,
 				ABE93FE32F94C202008DCDBD /* MLXRandom */,
+				8B4308F02FC44AD9007971CB /* piper1-gpl */,
+				8B4308F22FC44AD9007971CB /* espeak-ng-data */,
 			);
 			productName = LocalAI;
 			productReference = 8B8A3DBC2F2B75380010461E /* LocalAI.app */;
@@ -304,6 +310,8 @@
 				ABE93FCD2F94C100008DCDBD /* XCRemoteSwiftPackageReference "swift-transformers" */,
 				ABE93FD02F94C111008DCDBD /* XCRemoteSwiftPackageReference "swift-jinja" */,
 				ABE93FD62F94C202008DCDBD /* XCRemoteSwiftPackageReference "mlx-swift" */,
+				8B4308EF2FC44AD9007971CB /* XCRemoteSwiftPackageReference "piper1-gpl-spm" */,
+				8B4308F42FC44AD9007971CB /* XCRemoteSwiftPackageReference "espeak-ng-spm" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8B8A3DBD2F2B75380010461E /* Products */;
@@ -387,6 +395,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
@@ -551,6 +560,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -590,6 +600,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -617,6 +628,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = 4;
@@ -664,6 +676,22 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		8B4308EF2FC44AD9007971CB /* XCRemoteSwiftPackageReference "piper1-gpl-spm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/IhorShevchuk/piper1-gpl-spm.git";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 0.1.2;
+			};
+		};
+		8B4308F42FC44AD9007971CB /* XCRemoteSwiftPackageReference "espeak-ng-spm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/IhorShevchuk/espeak-ng-spm.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2025.10.11;
+			};
+		};
 		8B8A3E072F2CCB980010461E /* XCRemoteSwiftPackageReference "SwiftUI-Shimmer" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/markiv/SwiftUI-Shimmer.git";
@@ -695,8 +723,6 @@
 				kind = upToNextMajorVersion;
 				minimumVersion = 1.1.9;
 			};
-			traits = (
-			);
 		};
 		ABE93FD02F94C111008DCDBD /* XCRemoteSwiftPackageReference "swift-jinja" */ = {
 			isa = XCRemoteSwiftPackageReference;
@@ -725,6 +751,16 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		8B4308F02FC44AD9007971CB /* piper1-gpl */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8B4308EF2FC44AD9007971CB /* XCRemoteSwiftPackageReference "piper1-gpl-spm" */;
+			productName = "piper1-gpl";
+		};
+		8B4308F22FC44AD9007971CB /* espeak-ng-data */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8B4308F42FC44AD9007971CB /* XCRemoteSwiftPackageReference "espeak-ng-spm" */;
+			productName = "espeak-ng-data";
+		};
 		8B8A3E082F2CCB980010461E /* Shimmer */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 8B8A3E072F2CCB980010461E /* XCRemoteSwiftPackageReference "SwiftUI-Shimmer" */;

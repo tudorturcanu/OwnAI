@@ -16,8 +16,8 @@ struct AdvancedSettingsView: View {
     @AppStorage("smartReplyStylesEnabled") private var smartReplyStylesEnabled = false
     @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
     @AppStorage("messageTextScale") private var messageTextScale: Double = 1.0
-
     @AppStorage("autoRead") private var autoRead = false
+    @AppStorage("speechOutputBackend") private var speechOutputBackendRaw = SpeechOutputBackend.system.rawValue
 
     private var pdfOCRMode: PDFOCRMode {
         PDFOCRMode(rawValue: pdfOCRModeRaw) ?? .preferNativeText
@@ -29,6 +29,10 @@ struct AdvancedSettingsView: View {
 
     private var imageProcessingMode: ImageProcessingMode {
         ImageProcessingMode(rawValue: imageProcessingModeRaw) ?? .fast
+    }
+
+    private var speechOutputBackend: SpeechOutputBackend {
+        SpeechOutputBackend(rawValue: speechOutputBackendRaw) ?? .system
     }
 
     var body: some View {
@@ -217,6 +221,60 @@ struct AdvancedSettingsView: View {
 
     private var behaviorSection: some View {
         advancedSection("Behavior") {
+            HStack(spacing: 14) {
+                rowIcon(systemImage: "waveform", tint: .pink)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Voice Backend")
+                        .font(.body)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.primary)
+
+                    Menu {
+                        ForEach(SpeechOutputBackend.allCases) { backend in
+                            Button {
+                                speechOutputBackendRaw = backend.rawValue
+                            } label: {
+                                if backend == speechOutputBackend {
+                                    Label(backend.title, systemImage: "checkmark")
+                                } else {
+                                    Text(backend.title)
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(speechOutputBackend.title)
+                                .font(.subheadline)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Spacer(minLength: 8)
+
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .accessibilityHidden(true)
+                        }
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .background(Color.pink.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    .accessibilityLabel("Voice Backend")
+                    .accessibilityValue(speechOutputBackend.title)
+
+                    Text(speechOutputBackend.subtitle)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+
+            sectionDivider
+
             advancedToggleRow(
                 icon: "speaker.wave.2.fill",
                 tint: .orange,
