@@ -12,6 +12,7 @@
 		54FE08D92FBD8D7F203EECCC /* LocalAIWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60CB243AFDB195EF86D1CBB /* LocalAIWatchApp.swift */; };
 		6CFE0F75F748001302991B02 /* WatchConnectivityModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C48F86F5CC1AACA464AFB06 /* WatchConnectivityModels.swift */; };
 		7A1C45F0A9B24E5EBF2C3D11 /* WatchConnectivityModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C48F86F5CC1AACA464AFB06 /* WatchConnectivityModels.swift */; };
+		7D35A3CBA9CC310B7EC1F09B /* MisakiSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 3E53D0029821E74467DF2F34 /* MisakiSwift */; };
 		8B4308F12FC44AD9007971CB /* piper1-gpl in Frameworks */ = {isa = PBXBuildFile; productRef = 8B4308F02FC44AD9007971CB /* piper1-gpl */; };
 		8B4308F32FC44AD9007971CB /* espeak-ng-data in Frameworks */ = {isa = PBXBuildFile; productRef = 8B4308F22FC44AD9007971CB /* espeak-ng-data */; };
 		8B8A3DFD2F2B9BF70010461E /* MetalPerformanceShaders.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B8A3DFB2F2B9BF70010461E /* MetalPerformanceShaders.framework */; };
@@ -36,6 +37,7 @@
 		ABE93FE62F94C210008DCDBD /* Tokenizers in Frameworks */ = {isa = PBXBuildFile; productRef = ABE93FE52F94C210008DCDBD /* Tokenizers */; };
 		C1A1B2C3D4E5F60700112233 /* LocalAIKit in Frameworks */ = {isa = PBXBuildFile; productRef = C1A1B2C3D4E5F60700112234 /* LocalAIKit */; };
 		D1E000022F5000010010461E /* MLXUtilsLibrary in Frameworks */ = {isa = PBXBuildFile; productRef = D1E000062F5000010010461E /* MLXUtilsLibrary */; };
+		D23913269C72022C79FDB619 /* KokoroSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 52C4E9848B8F8FC8EECC1E16 /* KokoroSwift */; };
 		F28C5059FAD018D9339B8132 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = EE087FDCA43529C4708F4FE2 /* Foundation.framework */; };
 /* End PBXBuildFile section */
 
@@ -143,6 +145,8 @@
 				8B4308F12FC44AD9007971CB /* piper1-gpl in Frameworks */,
 				8B4308F32FC44AD9007971CB /* espeak-ng-data in Frameworks */,
 				ABE93FD22F94C112008DCDBD /* Jinja in Frameworks */,
+				D23913269C72022C79FDB619 /* KokoroSwift in Frameworks */,
+				7D35A3CBA9CC310B7EC1F09B /* MisakiSwift in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -249,6 +253,8 @@
 				ABE93FE32F94C202008DCDBD /* MLXRandom */,
 				8B4308F02FC44AD9007971CB /* piper1-gpl */,
 				8B4308F22FC44AD9007971CB /* espeak-ng-data */,
+				52C4E9848B8F8FC8EECC1E16 /* KokoroSwift */,
+				3E53D0029821E74467DF2F34 /* MisakiSwift */,
 			);
 			productName = LocalAI;
 			productReference = 8B8A3DBC2F2B75380010461E /* LocalAI.app */;
@@ -305,13 +311,15 @@
 				8B8A3E072F2CCB980010461E /* XCRemoteSwiftPackageReference "SwiftUI-Shimmer" */,
 				8B8A3E0A2F2CCBE90010461E /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 				8B8A3E1C2F2D00010010461E /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
-				C1A1B2C3D4E5F60700112235 /* XCLocalSwiftPackageReference "Packages/LocalAIKit" */,
+				C1A1B2C3D4E5F60700112235 /* XCLocalSwiftPackageReference "LocalAIKit" */,
 				D1E000042F5000010010461E /* XCRemoteSwiftPackageReference "MLXUtilsLibrary" */,
 				ABE93FCD2F94C100008DCDBD /* XCRemoteSwiftPackageReference "swift-transformers" */,
 				ABE93FD02F94C111008DCDBD /* XCRemoteSwiftPackageReference "swift-jinja" */,
 				ABE93FD62F94C202008DCDBD /* XCRemoteSwiftPackageReference "mlx-swift" */,
 				8B4308EF2FC44AD9007971CB /* XCRemoteSwiftPackageReference "piper1-gpl-spm" */,
 				8B4308F42FC44AD9007971CB /* XCRemoteSwiftPackageReference "espeak-ng-spm" */,
+				09CF0B8191531DB0E5D081AB /* XCLocalSwiftPackageReference "KokoroSwiftLocal" */,
+				F3DDD970CAC6BFD83388E17F /* XCLocalSwiftPackageReference "MisakiSwiftLocal" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8B8A3DBD2F2B75380010461E /* Products */;
@@ -669,9 +677,17 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		C1A1B2C3D4E5F60700112235 /* XCLocalSwiftPackageReference "Packages/LocalAIKit" */ = {
+		09CF0B8191531DB0E5D081AB /* XCLocalSwiftPackageReference "KokoroSwiftLocal" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/KokoroSwiftLocal;
+		};
+		C1A1B2C3D4E5F60700112235 /* XCLocalSwiftPackageReference "LocalAIKit" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/LocalAIKit;
+		};
+		F3DDD970CAC6BFD83388E17F /* XCLocalSwiftPackageReference "MisakiSwiftLocal" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/MisakiSwiftLocal;
 		};
 /* End XCLocalSwiftPackageReference section */
 
@@ -751,6 +767,14 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		3E53D0029821E74467DF2F34 /* MisakiSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MisakiSwift;
+		};
+		52C4E9848B8F8FC8EECC1E16 /* KokoroSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = KokoroSwift;
+		};
 		8B4308F02FC44AD9007971CB /* piper1-gpl */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 8B4308EF2FC44AD9007971CB /* XCRemoteSwiftPackageReference "piper1-gpl-spm" */;

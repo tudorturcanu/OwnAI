@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct AdvancedSettingsView: View {
+    @Environment(SpeechManager.self) private var speechManager
     @AppStorage(PDFOCRMode.storageKey) private var pdfOCRModeRaw = PDFOCRMode.preferNativeText.rawValue
     @AppStorage(DocumentProcessingMode.storageKey) private var documentProcessingModeRaw = DocumentProcessingMode.fast.rawValue
     @AppStorage(ImageProcessingMode.storageKey) private var imageProcessingModeRaw = ImageProcessingMode.fast.rawValue
@@ -17,7 +18,7 @@ struct AdvancedSettingsView: View {
     @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
     @AppStorage("messageTextScale") private var messageTextScale: Double = 1.0
     @AppStorage("autoRead") private var autoRead = false
-    @AppStorage("speechOutputBackend") private var speechOutputBackendRaw = SpeechOutputBackend.system.rawValue
+    @AppStorage("speechOutputBackend") private var speechOutputBackendRaw = SpeechOutputBackend.piperAmy.rawValue
 
     private var pdfOCRMode: PDFOCRMode {
         PDFOCRMode(rawValue: pdfOCRModeRaw) ?? .preferNativeText
@@ -32,7 +33,17 @@ struct AdvancedSettingsView: View {
     }
 
     private var speechOutputBackend: SpeechOutputBackend {
-        SpeechOutputBackend(rawValue: speechOutputBackendRaw) ?? .system
+        SpeechOutputBackend(rawValue: speechOutputBackendRaw) ?? .piperAmy
+    }
+
+    private func selectSpeechOutputBackend(_ backend: SpeechOutputBackend) {
+        speechOutputBackendRaw = backend.rawValue
+        guard speechManager.speechOutputBackend != backend else { return }
+        speechManager.stopSpeaking()
+        speechManager.speechOutputBackend = backend
+        Task {
+            await speechManager.prepareSpeechOutputIfNeeded()
+        }
     }
 
     var body: some View {
@@ -233,7 +244,7 @@ struct AdvancedSettingsView: View {
                     Menu {
                         ForEach(SpeechOutputBackend.allCases) { backend in
                             Button {
-                                speechOutputBackendRaw = backend.rawValue
+                                selectSpeechOutputBackend(backend)
                             } label: {
                                 if backend == speechOutputBackend {
                                     Label(backend.title, systemImage: "checkmark")

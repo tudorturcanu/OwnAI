@@ -585,7 +585,8 @@ final class ChatHistoryManager {
         in conversationID: UUID?,
         content: String,
         isStreaming: Bool,
-        sourceTitles: [String]? = nil
+        sourceTitles: [String]? = nil,
+        imageFileName: String? = nil
     ) {
         guard let conversationID,
               let convIndex = conversationIndexMap[conversationID],
@@ -595,13 +596,14 @@ final class ChatHistoryManager {
         let role = conversations[convIndex].messages[msgIndex].role
         let preservedSourceTitles = sourceTitles ?? conversations[convIndex].messages[msgIndex].sourceTitles
         let preservedPinned = conversations[convIndex].messages[msgIndex].isPinned
-        let preservedImageFileName = conversations[convIndex].messages[msgIndex].imageFileName
+        let preservedImageFileName = imageFileName ?? conversations[convIndex].messages[msgIndex].imageFileName
         if role == .assistant {
             conversations[convIndex].messages[msgIndex] = assistantMessage(
                 id: id,
                 content: content,
                 isStreaming: isStreaming,
-                sourceTitles: preservedSourceTitles
+                sourceTitles: preservedSourceTitles,
+                imageFileName: preservedImageFileName
             )
             conversations[convIndex].messages[msgIndex].isPinned = preservedPinned
         } else {
@@ -669,7 +671,7 @@ final class ChatHistoryManager {
         )
     }
 
-    private func assistantMessage(id: UUID, content: String, isStreaming: Bool, sourceTitles: [String] = []) -> ChatMessage {
+    private func assistantMessage(id: UUID, content: String, isStreaming: Bool, sourceTitles: [String] = [], imageFileName: String? = nil) -> ChatMessage {
         // Skip heavy sanitization logic while streaming to avoid O(N^2) overhead
         if isStreaming {
             return ChatMessage(
@@ -678,6 +680,7 @@ final class ChatHistoryManager {
                 content: content,
                 thinkingContent: nil,
                 sourceTitles: sourceTitles,
+                imageFileName: imageFileName,
                 isStreaming: true
             )
         }
@@ -689,6 +692,7 @@ final class ChatHistoryManager {
             content: parts.content,
             thinkingContent: parts.thinkingContent,
             sourceTitles: sourceTitles,
+            imageFileName: imageFileName,
             isStreaming: false
         )
     }
@@ -701,10 +705,11 @@ final class ChatHistoryManager {
                 content: AssistantOutputSanitizer.sanitize(message.content),
                 thinkingContent: message.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines),
                 sourceTitles: message.sourceTitles,
+                imageFileName: message.imageFileName,
                 isStreaming: isStreaming
             )
         }
-        return assistantMessage(id: message.id, content: message.content, isStreaming: isStreaming, sourceTitles: message.sourceTitles)
+        return assistantMessage(id: message.id, content: message.content, isStreaming: isStreaming, sourceTitles: message.sourceTitles, imageFileName: message.imageFileName)
     }
 
     private func deduplicateEmptyConversations() -> Bool {

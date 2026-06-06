@@ -18,6 +18,7 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
     case bonsai
     case exaone
     case glm
+    case holo
     case deepSeek
     case tinyLlama
     case llama
@@ -45,6 +46,8 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return String(localized: "EXAONE")
         case .glm:
             return String(localized: "GLM")
+        case .holo:
+            return String(localized: "Holo")
         case .deepSeek:
             return String(localized: "DeepSeek")
         case .tinyLlama:
@@ -78,6 +81,8 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return String(localized: "LG AI Research's compact instruction models")
         case .glm:
             return String(localized: "Z.ai's large agentic models")
+        case .holo:
+            return String(localized: "H Company's computer-use models")
         case .deepSeek:
             return String(localized: "Compact reasoning-style models")
         case .tinyLlama:
@@ -111,6 +116,8 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "sparkles"
         case .glm:
             return "cpu"
+        case .holo:
+            return "cursorarrow.motionlines"
         case .deepSeek:
             return "brain.head.profile"
         case .tinyLlama:
@@ -394,6 +401,9 @@ struct ModelInfo: Identifiable, Equatable {
         if lowercasedID.contains("glm") {
             return "Z.ai (GLM)"
         }
+        if lowercasedID.contains("holo") || lowercasedID.contains("hcompany") {
+            return "H Company (Holo)"
+        }
         if lowercasedID.contains("qwen") {
             return "Alibaba Cloud (Qwen)"
         }
@@ -452,7 +462,9 @@ struct ModelInfo: Identifiable, Equatable {
         "mlx-community/translategemma-4b-it-4bit",
         "mlx-community/SmolVLM2-256M-Video-Instruct-mlx",
         "mlx-community/SmolVLM2-500M-Video-Instruct-mlx",
-        "mlx-community/SmolVLM2-2.2B-Instruct-mlx"
+        "mlx-community/SmolVLM2-2.2B-Instruct-mlx",
+        "Hcompany/Holo-3.1-0.8B",
+        "Hcompany/Holo-3.1-4B"
     ]
 
     var supportsVision: Bool {
@@ -731,6 +743,38 @@ extension ModelInfo {
         shortDescription: "Small Qwen3.5 model with a strong size-to-quality tradeoff.",
         recommendedFor: "Best when you want a newer multilingual chat model with a light download.",
         badges: [.recommended, .smallDownload, .multilingual, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Holo 3.1 0.8B VLM
+    static let holo31_0_8b = ModelInfo(
+        id: "Hcompany/Holo-3.1-0.8B",
+        name: "Holo 3.1 0.8B",
+        description: "H Company's ultra-light computer-use vision-language model, tuned for GUI understanding, screenshots, mobile automation, and local agent workflows.",
+        family: .holo,
+        sizeGB: 2.08,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Hcompany/Holo-3.1-0.8B"),
+        privacyURL: nil,
+        shortDescription: "Small Holo computer-use VLM for screenshots and UI tasks.",
+        recommendedFor: "Best when you want the lightest Holo 3.1 model for visual UI understanding.",
+        badges: [.images, .vision, .smallDownload, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Holo 3.1 4B VLM
+    static let holo31_4b = ModelInfo(
+        id: "Hcompany/Holo-3.1-4B",
+        name: "Holo 3.1 4B",
+        description: "H Company's cost-efficient computer-use vision-language model, based on Qwen3.5 and specialized for GUI understanding, screenshots, and computer-control agent workflows.",
+        family: .holo,
+        sizeGB: 9.66,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Hcompany/Holo-3.1-4B"),
+        privacyURL: nil,
+        shortDescription: "Stronger Holo computer-use VLM for UI and screenshot tasks.",
+        recommendedFor: "Best when you want stronger Holo 3.1 visual UI understanding and have Mac-class device headroom.",
+        badges: [.images, .vision, .higherQuality, .newerDevices, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -1366,6 +1410,7 @@ extension ModelInfo {
         .lfm25_vl_450m_6bit,
         .smolVLM2_256m_4bit,
         .smolVLM2_500m_4bit,
+        .holo31_0_8b,
         .smolVLM2_2_2b_4bit,
         .qwen2VL_2b_4bit,
         .lfm25_vl_1_6b_4bit,
@@ -1400,6 +1445,7 @@ extension ModelInfo {
         .llama31_8b_4bit,
         .qwen3_8b_4bit,
         .qwen35_9b_optiq_4bit,
-        .gemma4_e4b_it_4bit
+        .gemma4_e4b_it_4bit,
+        .holo31_4b
     ]
 }

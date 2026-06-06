@@ -24,8 +24,8 @@ enum SpeechOutputBackend: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .system: return "System Voice"
-        case .piperAmy: return "Piper (Amy)"
-        case .piperNorman: return "Piper (Norman)"
+        case .piperAmy: return "Amy"
+        case .piperNorman: return "Norman"
         }
     }
 
@@ -77,9 +77,9 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     private var piperSynthesizer: OpaquePointer?
     private var piperSynthesisTask: Task<Void, Never>?
 
-    @ObservationIgnored @AppStorage("speechOutputBackend") private var persistedSpeechOutputBackend = SpeechOutputBackend.system.rawValue
+    @ObservationIgnored @AppStorage("speechOutputBackend") private var persistedSpeechOutputBackend = SpeechOutputBackend.piperAmy.rawValue
 
-    var speechOutputBackend: SpeechOutputBackend = .system {
+    var speechOutputBackend: SpeechOutputBackend = .piperAmy {
         didSet {
             persistedSpeechOutputBackend = speechOutputBackend.rawValue
             if speechOutputBackend != .system {
