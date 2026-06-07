@@ -12,7 +12,7 @@ import MachO
 enum MemoryProfiler {
     
     /// Returns the current resident memory in bytes.
-    static var currentResidentMemory: UInt64 {
+    nonisolated static var currentResidentMemory: UInt64 {
         var info = mach_task_basic_info()
         var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
         
@@ -26,12 +26,12 @@ enum MemoryProfiler {
     }
     
     /// Formats bytes into a human-readable string (e.g., "128.5 MB").
-    static func formatBytes(_ bytes: UInt64) -> String {
+    nonisolated static func formatBytes(_ bytes: UInt64) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
     }
     
     /// Logs the current memory usage with a tag.
-    static func log(_ tag: String, message: String? = nil) {
+    nonisolated static func log(_ tag: String, message: String? = nil) {
         let memory = currentResidentMemory
         let formatted = formatBytes(memory)
         var logMessage = "[MemoryProfiler] [\(tag)] Memory: \(formatted)"
@@ -42,7 +42,7 @@ enum MemoryProfiler {
     }
     
     /// Measures memory delta for an operation.
-    static func measure<T>(_ tag: String, operation: () async throws -> T) async rethrows -> T {
+    nonisolated static func measure<T>(_ tag: String, operation: () async throws -> T) async rethrows -> T {
         let startMemory = currentResidentMemory
         log(tag, message: "START (Previous: \(formatBytes(startMemory)))")
         
@@ -57,7 +57,7 @@ enum MemoryProfiler {
     }
 
     /// Synchronous version of measure.
-    static func measureSync<T>(_ tag: String, operation: () throws -> T) rethrows -> T {
+    nonisolated static func measureSync<T>(_ tag: String, operation: () throws -> T) rethrows -> T {
         let startMemory = currentResidentMemory
         log(tag, message: "START (Previous: \(formatBytes(startMemory)))")
         

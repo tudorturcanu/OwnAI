@@ -37,6 +37,7 @@ struct ChatView: View {
     @State private var pendingSessionReset = false
     @State private var activeGenerationSessionScope: GenerationSessionScope?
     @State private var lastGenerationWasEphemeral: Bool = false
+    @State private var activeMlxVisionImageKey: String?
     @State private var selectedDocumentForSources: ConversationDocument?
     @State private var generatedFollowUpSuggestions: [UUID: [String]] = [:]
     @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
@@ -1434,16 +1435,20 @@ struct ChatView: View {
             try await llmEngine.loadModel(model)
 
             let nextSessionScope = generationSessionScope(for: model, conversationID: conversationID)
+            let mlxVisionImageKey = model.engine == .mlx && model.supportsVision
+                ? llmEngine.mlxImageFingerprint(for: image)
+                : nil
             
             let isEphemeral = model.engine == .mlx && (
-                !llmEngine.mlxModelSupportsSystemRole(modelID: model.id) ||
-                (model.supportsVision && image != nil)
+                !llmEngine.mlxModelSupportsSystemRole(modelID: model.id)
             )
+            let isNewMlxVisionImage = mlxVisionImageKey != nil && activeMlxVisionImageKey != mlxVisionImageKey
 
             let shouldResetSession = resetSession ||
                 activeGenerationSessionScope != nextSessionScope ||
                 !llmEngine.hasConversationContext(for: model) ||
-                lastGenerationWasEphemeral
+                lastGenerationWasEphemeral ||
+                isNewMlxVisionImage
 
             if shouldResetSession {
                 llmEngine.resetSession()
@@ -1525,6 +1530,11 @@ struct ChatView: View {
             )
             activeGenerationSessionScope = nextSessionScope
             lastGenerationWasEphemeral = isEphemeral
+            if let mlxVisionImageKey {
+                activeMlxVisionImageKey = mlxVisionImageKey
+            } else if shouldResetSession {
+                activeMlxVisionImageKey = nil
+            }
 
             await refineConversationInsightsIfNeeded(
                 conversationID: conversationID,
@@ -2443,6 +2453,7 @@ struct ChatView: View {
     private func invalidateGenerationSessionScope() {
         activeGenerationSessionScope = nil
         lastGenerationWasEphemeral = false
+        activeMlxVisionImageKey = nil
     }
 
     private func generationSessionScope(

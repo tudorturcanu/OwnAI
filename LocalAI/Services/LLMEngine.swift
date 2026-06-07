@@ -5,6 +5,7 @@
 //  Created by Tudor on 29.01.2026.
 //
 
+import CryptoKit
 import Foundation
 import SwiftUI
 import UIKit
@@ -23,6 +24,30 @@ enum LLMEngineState: Equatable {
     case ready
     case generating
     case error(message: String)
+}
+
+struct MlxPerformanceBenchmarkResult: Equatable {
+    struct Run: Equatable {
+        let label: String
+        let cacheHit: Bool
+        let cachedPromptTokens: Int
+        let estimatedInputTokens: Int
+        let estimatedOutputTokens: Int
+        let firstTokenLatency: TimeInterval?
+        let wallTime: TimeInterval
+        let residentMemoryDelta: Int64
+    }
+
+    let modelID: String
+    let modelName: String
+    let startedAt: Date
+    let finishedAt: Date
+    let runs: [Run]
+
+    var speedup: Double? {
+        guard runs.count >= 2, runs[1].wallTime > 0 else { return nil }
+        return runs[0].wallTime / runs[1].wallTime
+    }
 }
 
 #if !targetEnvironment(simulator)
@@ -116,6 +141,8 @@ final class LLMEngine {
     private var isSceneActive = true
     var streamingTokensPerSecond: Double = 0
     private var streamingStartTime: Date?
+    private var lastMlxRequestFingerprint: MlxRequestFingerprint?
+    private var lastMlxGenerationMetrics: MlxGenerationMetrics?
     
     private var idleTimerTask: Task<Void, Never>?
     private let idleTimeout: TimeInterval = 600 // 10 minutes
@@ -139,6 +166,33 @@ final class LLMEngine {
         let range: Range<String.Index>
         let repeatedUnit: String
         let repetitions: Int
+    }
+
+    private struct MlxRequestFingerprint: Equatable, Sendable {
+        let requestKey: String
+        let reusablePrefixKey: String
+        let imageKey: String?
+        let estimatedPromptTokens: Int
+    }
+
+    private struct MlxGenerationMetrics: Sendable {
+        let requestKey: String
+        let reusablePrefixKey: String
+        let imageKey: String?
+        let cacheHit: Bool
+        let cachedPromptTokens: Int
+        let sessionKind: String
+        let estimatedInputTokens: Int
+        let estimatedOutputTokens: Int
+        let firstTokenLatency: TimeInterval?
+        let wallTime: TimeInterval
+        let residentMemoryDelta: Int64
+    }
+
+    var latestMlxPerformanceSummary: String? {
+        guard let metrics = lastMlxGenerationMetrics else { return nil }
+        let firstToken = metrics.firstTokenLatency.map { String(format: "%.2fs", $0) } ?? "none"
+        return "cache=\(metrics.cacheHit ? "hit" : "miss") input≈\(metrics.estimatedInputTokens) first=\(firstToken) wall=\(String(format: "%.2fs", metrics.wallTime))"
     }
     
     // MARK: - Public Methods
@@ -260,6 +314,18 @@ final class LLMEngine {
         if state == .loading, let task = loadTask {
             _ = try? await task.value
         }
+
+        guard let model = currentModel else {
+            throw LLMError.modelNotLoaded
+        }
+
+        try ensureGPUWorkAllowed(for: model)
+        await LocalInferenceScheduler.shared.acquire(label: "generate:\(model.id)")
+        defer {
+            Task {
+                await LocalInferenceScheduler.shared.release(label: "generate:\(model.id)")
+            }
+        }
         
         switch state {
         case .ready:
@@ -269,12 +335,6 @@ final class LLMEngine {
         default:
             throw LLMError.engineBusy
         }
-        
-        guard let model = currentModel else {
-            throw LLMError.modelNotLoaded
-        }
-
-        try ensureGPUWorkAllowed(for: model)
         
         state = .generating
         IdleTimerCoordinator.shared.setReason("llmGenerating", enabled: true)
@@ -289,8 +349,7 @@ final class LLMEngine {
         print("[LLMEngine] generate start id=\(model.id) engine=\(model.engine.rawValue)")
         
         let usesEphemeralMlxSession = model.engine == .mlx && (
-            !mlxModelSupportsSystemRole(modelID: model.id) ||
-            (model.supportsVision && image != nil)  // VLM: always fresh context per image turn
+            !mlxModelSupportsSystemRole(modelID: model.id)
         )
         var effectiveSystemPrompt = storedSystemPrompt(fallback: systemPrompt)
         if image != nil {
@@ -301,6 +360,35 @@ final class LLMEngine {
             systemPrompt: effectiveSystemPrompt,
             modelID: model.id
         )
+        let mlxFingerprint = model.engine == .mlx
+            ? makeMlxRequestFingerprint(
+                modelID: model.id,
+                prompt: effectiveMlxPrompt,
+                systemPrompt: effectiveSystemPrompt,
+                image: image
+            )
+            : nil
+        if let mlxFingerprint {
+            lastMlxRequestFingerprint = mlxFingerprint
+            print(
+                "[LLMEngine] MLX fingerprint request=\(mlxFingerprint.requestKey) prefix=\(mlxFingerprint.reusablePrefixKey) image=\(mlxFingerprint.imageKey ?? "none") estimatedPromptTokens=\(mlxFingerprint.estimatedPromptTokens)"
+            )
+        }
+        let mlxCacheLookup: MlxPromptReuseStore.LookupResult?
+        if let mlxFingerprint {
+            mlxCacheLookup = await MlxPromptReuseStore.shared.lookup(
+                reusablePrefixKey: mlxFingerprint.reusablePrefixKey,
+                imageKey: mlxFingerprint.imageKey,
+                estimatedPromptTokens: mlxFingerprint.estimatedPromptTokens
+            )
+            if let mlxCacheLookup {
+                print(
+                    "[LLMEngine] MLX prompt cache \(mlxCacheLookup.isHit ? "hit" : "miss") prefix=\(mlxFingerprint.reusablePrefixKey) cachedTokens≈\(mlxCacheLookup.cachedPromptTokens)"
+                )
+            }
+        } else {
+            mlxCacheLookup = nil
+        }
         let currentTopP = overrides?.topP ?? self.topP
         let currentTemperature = overrides?.temperature ?? self.temperature
         let currentMaxTokens = overrides?.maxTokens ?? self.maxTokens
@@ -330,6 +418,10 @@ final class LLMEngine {
         // Run on detached task to avoid blocking UI
         let task = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
+            let generationStartedAt = Date()
+            let residentMemoryBefore = MemoryProfiler.currentResidentMemory
+            var firstTokenAt: Date?
+            var finalMlxContent = ""
             
             do {
                 if model.engine == .appleFoundation {
@@ -380,12 +472,16 @@ final class LLMEngine {
                     
                     for try await chunk in stream {
                         if Task.isCancelled { break }
+                        if firstTokenAt == nil, !chunk.isEmpty {
+                            firstTokenAt = Date()
+                        }
                         lastContent = Self.trimRepeatedLoopIfNeeded(in: lastContent + chunk)
                         await self.updateResponseIfNeeded(lastContent, force: false)
                         if Self.shouldStopStreaming(content: lastContent) {
                             break
                         }
                     }
+                    finalMlxContent = lastContent
                     await self.updateResponseIfNeeded(lastContent, force: true)
                     #endif
                 }
@@ -403,6 +499,22 @@ final class LLMEngine {
                     MLX.GPU.clearCache()
                 }
                 #endif
+                if model.engine == .mlx, let mlxFingerprint {
+                    let metrics = MlxGenerationMetrics(
+                        requestKey: mlxFingerprint.requestKey,
+                        reusablePrefixKey: mlxFingerprint.reusablePrefixKey,
+                        imageKey: mlxFingerprint.imageKey,
+                        cacheHit: mlxCacheLookup?.isHit ?? false,
+                        cachedPromptTokens: mlxCacheLookup?.cachedPromptTokens ?? 0,
+                        sessionKind: usesEphemeralMlxSession ? "ephemeral" : "reused",
+                        estimatedInputTokens: mlxFingerprint.estimatedPromptTokens,
+                        estimatedOutputTokens: PromptBudgeter.estimatedTokenCount(finalMlxContent),
+                        firstTokenLatency: firstTokenAt.map { $0.timeIntervalSince(generationStartedAt) },
+                        wallTime: Date().timeIntervalSince(generationStartedAt),
+                        residentMemoryDelta: Int64(MemoryProfiler.currentResidentMemory) - Int64(residentMemoryBefore)
+                    )
+                    await self.recordMlxGenerationMetrics(metrics)
+                }
             } catch is CancellationError {
                 await MainActor.run {
                     self.state = .ready
@@ -416,6 +528,9 @@ final class LLMEngine {
                     MLX.GPU.clearCache()
                 }
                 #endif
+                if model.engine == .mlx, let mlxFingerprint {
+                    print("[LLMEngine] MLX generation cancelled request=\(mlxFingerprint.requestKey)")
+                }
             } catch {
                 print("[LLMEngine] generate failed id=\(model.id) error=\(error.localizedDescription)")
                 await MainActor.run {
@@ -430,6 +545,9 @@ final class LLMEngine {
                     MLX.GPU.clearCache()
                 }
                 #endif
+                if model.engine == .mlx, let mlxFingerprint {
+                    print("[LLMEngine] MLX generation failed request=\(mlxFingerprint.requestKey) error=\(error.localizedDescription)")
+                }
             }
         }
         
@@ -450,6 +568,13 @@ final class LLMEngine {
 
         if state == .loading, let task = loadTask {
             _ = try? await task.value
+        }
+
+        await LocalInferenceScheduler.shared.acquire(label: "isolated:\(model.id)")
+        defer {
+            Task {
+                await LocalInferenceScheduler.shared.release(label: "isolated:\(model.id)")
+            }
         }
 
         switch state {
@@ -710,6 +835,10 @@ final class LLMEngine {
             #endif
         }
     }
+
+    func mlxImageFingerprint(for image: UIImage?) -> String? {
+        image.flatMap(Self.imageFingerprint)
+    }
     
     /// Check if selected model is available
     var isAvailable: Bool {
@@ -768,6 +897,60 @@ extension LLMEngine {
                 durationMs: Int(Date().timeIntervalSince(start) * 1000.0),
                 timestamp: Date()
             )
+        }
+    }
+
+    func runMlxPerformanceBenchmark(model: ModelInfo) async throws -> MlxPerformanceBenchmarkResult {
+        guard model.engine == .mlx else {
+            throw LLMError.modelNotAvailable("Performance benchmark requires a local MLX model.")
+        }
+
+        let startedAt = Date()
+        let previousResponse = currentResponse
+        var runs: [MlxPerformanceBenchmarkResult.Run] = []
+
+        func captureRun(label: String) throws -> MlxPerformanceBenchmarkResult.Run {
+            guard let metrics = lastMlxGenerationMetrics else {
+                throw LLMError.generationFailed("Benchmark metrics were not recorded.")
+            }
+            return MlxPerformanceBenchmarkResult.Run(
+                label: label,
+                cacheHit: metrics.cacheHit,
+                cachedPromptTokens: metrics.cachedPromptTokens,
+                estimatedInputTokens: metrics.estimatedInputTokens,
+                estimatedOutputTokens: metrics.estimatedOutputTokens,
+                firstTokenLatency: metrics.firstTokenLatency,
+                wallTime: metrics.wallTime,
+                residentMemoryDelta: metrics.residentMemoryDelta
+            )
+        }
+
+        do {
+            try await loadModel(model)
+            resetSession()
+            lastMlxGenerationMetrics = nil
+
+            let prompt = Self.longPrefixBenchmarkPrompt()
+            let overrides = GenerationOverrides(temperature: 0.2, topP: 0.9, maxTokens: 24)
+
+            try await generate(prompt: prompt + "\n\nBenchmark request: Reply with exactly: FIRST.", overrides: overrides)
+            runs.append(try captureRun(label: "Cold prefix"))
+
+            try await generate(prompt: prompt + "\n\nBenchmark request: Reply with exactly: SECOND.", overrides: overrides)
+            runs.append(try captureRun(label: "Repeated prefix"))
+
+            currentResponse = previousResponse
+            resetIdleTimer()
+            return MlxPerformanceBenchmarkResult(
+                modelID: model.id,
+                modelName: model.name,
+                startedAt: startedAt,
+                finishedAt: Date(),
+                runs: runs
+            )
+        } catch {
+            currentResponse = previousResponse
+            throw error
         }
     }
 
@@ -830,6 +1013,94 @@ extension LLMEngine {
         if trimmed.isEmpty { return 0 }
         return trimmed.split { $0.isWhitespace || $0.isNewline }.count
     }
+
+    private nonisolated static func longPrefixBenchmarkPrompt() -> String {
+        let paragraph = """
+        Local benchmark context: The app is measuring repeated long-prefix inference. Keep this line stable so prompt-cache fingerprints can identify reusable work across sequential requests.
+        """
+        return Array(repeating: paragraph, count: 80).joined(separator: "\n")
+    }
+
+    private func makeMlxRequestFingerprint(
+        modelID: String,
+        prompt: String,
+        systemPrompt: String,
+        image: UIImage?
+    ) -> MlxRequestFingerprint {
+        let normalizedSystemPrompt = normalizedFingerprintText(systemPrompt)
+        let normalizedPrompt = normalizedFingerprintText(prompt)
+        let imageKey = image.flatMap(Self.imageFingerprint)
+        let reusablePrefix = String(normalizedPrompt.prefix(8_192))
+        let reusablePrefixKey = Self.sha256Hex([
+            "mlx-prefix-v1",
+            modelID,
+            normalizedSystemPrompt,
+            reusablePrefix,
+            imageKey ?? "no-image"
+        ])
+        let requestKey = Self.sha256Hex([
+            "mlx-request-v1",
+            modelID,
+            normalizedSystemPrompt,
+            normalizedPrompt,
+            imageKey ?? "no-image"
+        ])
+
+        return MlxRequestFingerprint(
+            requestKey: requestKey,
+            reusablePrefixKey: reusablePrefixKey,
+            imageKey: imageKey,
+            estimatedPromptTokens: PromptBudgeter.estimatedTokenCount(prompt)
+        )
+    }
+
+    private func normalizedFingerprintText(_ text: String) -> String {
+        text
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+    }
+
+    private func recordMlxGenerationMetrics(_ metrics: MlxGenerationMetrics) {
+        lastMlxGenerationMetrics = metrics
+        let firstToken = metrics.firstTokenLatency.map { String(format: "%.2fs", $0) } ?? "none"
+        let memoryDelta = Self.formatSignedBytes(metrics.residentMemoryDelta)
+        print(
+            "[LLMEngine] MLX metrics request=\(metrics.requestKey) prefix=\(metrics.reusablePrefixKey) image=\(metrics.imageKey ?? "none") cache=\(metrics.cacheHit ? "hit" : "miss") cachedTokens≈\(metrics.cachedPromptTokens) session=\(metrics.sessionKind) inputTokens≈\(metrics.estimatedInputTokens) outputTokens≈\(metrics.estimatedOutputTokens) firstToken=\(firstToken) wall=\(String(format: "%.2fs", metrics.wallTime)) memoryDelta=\(memoryDelta)"
+        )
+        updateAdaptivePromptBudget(using: metrics)
+        Task {
+            await MlxPromptReuseStore.shared.record(
+                reusablePrefixKey: metrics.reusablePrefixKey,
+                imageKey: metrics.imageKey,
+                estimatedPromptTokens: metrics.estimatedInputTokens,
+                firstTokenLatency: metrics.firstTokenLatency,
+                wallTime: metrics.wallTime,
+                residentMemoryDelta: metrics.residentMemoryDelta
+            )
+        }
+    }
+
+    private func updateAdaptivePromptBudget(using metrics: MlxGenerationMetrics) {
+        guard currentModel?.engine == .mlx, !lowPowerMode else { return }
+
+        let key = "mlxAdaptiveInputBudgetBonus"
+        let previousBonus = UserDefaults.standard.integer(forKey: key)
+        let highMemoryGrowth = Int64(1_500_000_000)
+        let newBonus: Int
+
+        if metrics.residentMemoryDelta > highMemoryGrowth {
+            newBonus = max(0, previousBonus - 500)
+        } else if metrics.cacheHit, metrics.cachedPromptTokens >= 1_500 {
+            newBonus = min(2_000, previousBonus + 250)
+        } else {
+            return
+        }
+
+        guard newBonus != previousBonus else { return }
+        UserDefaults.standard.set(newBonus, forKey: key)
+        print("[LLMEngine] MLX adaptive prompt budget bonus=\(newBonus) previous=\(previousBonus)")
+    }
 }
 
 extension LLMEngine {
@@ -841,6 +1112,36 @@ extension LLMEngine {
 // MARK: - Private Load
 
 private extension LLMEngine {
+    nonisolated static func sha256Hex(_ parts: [String]) -> String {
+        var hasher = SHA256()
+        for part in parts {
+            if let data = part.data(using: .utf8) {
+                hasher.update(data: data)
+            }
+            hasher.update(data: Data([0]))
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    nonisolated static func imageFingerprint(_ image: UIImage) -> String? {
+        let width = Int(image.size.width * image.scale)
+        let height = Int(image.size.height * image.scale)
+        guard let imageData = image.jpegData(compressionQuality: 0.35) else {
+            return sha256Hex(["image-v1", "\(width)x\(height)"])
+        }
+
+        var hasher = SHA256()
+        hasher.update(data: Data("image-v1|\(width)x\(height)|".utf8))
+        hasher.update(data: imageData)
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    nonisolated static func formatSignedBytes(_ bytes: Int64) -> String {
+        let prefix = bytes >= 0 ? "+" : "-"
+        let magnitude = UInt64(bytes.magnitude)
+        return prefix + MemoryProfiler.formatBytes(magnitude)
+    }
+
     func performLoad(_ model: ModelInfo) async throws {
         if Task.isCancelled {
             state = .idle
@@ -1171,5 +1472,178 @@ enum LLMError: LocalizedError {
         case .backgroundGPUWorkNotAllowed:
             return "Bring the app to the foreground before using a local MLX model."
         }
+    }
+}
+
+private actor MlxPromptReuseStore {
+    struct LookupResult: Sendable {
+        let isHit: Bool
+        let cachedPromptTokens: Int
+    }
+
+    private struct PersistedState: Codable {
+        var records: [Record]
+    }
+
+    private struct Record: Codable {
+        let reusablePrefixKey: String
+        let imageKey: String?
+        var estimatedPromptTokens: Int
+        var hitCount: Int
+        var lastFirstTokenLatency: TimeInterval?
+        var bestFirstTokenLatency: TimeInterval?
+        var lastWallTime: TimeInterval
+        var lastResidentMemoryDelta: Int64
+        let createdAt: Date
+        var lastAccessedAt: Date
+    }
+
+    static let shared = MlxPromptReuseStore()
+
+    private var records: [String: Record] = [:]
+    private var hasLoaded = false
+    private let maxRecords = 128
+
+    private var storeURL: URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("LocalAI", isDirectory: true)
+            .appendingPathComponent("mlx_prompt_reuse_store.json")
+    }
+
+    func lookup(
+        reusablePrefixKey: String,
+        imageKey: String?,
+        estimatedPromptTokens: Int
+    ) -> LookupResult {
+        loadIfNeeded()
+
+        guard var record = records[reusablePrefixKey], record.imageKey == imageKey else {
+            return LookupResult(isHit: false, cachedPromptTokens: 0)
+        }
+
+        record.hitCount += 1
+        record.estimatedPromptTokens = max(record.estimatedPromptTokens, estimatedPromptTokens)
+        record.lastAccessedAt = Date()
+        records[reusablePrefixKey] = record
+        persist()
+
+        return LookupResult(isHit: true, cachedPromptTokens: record.estimatedPromptTokens)
+    }
+
+    func record(
+        reusablePrefixKey: String,
+        imageKey: String?,
+        estimatedPromptTokens: Int,
+        firstTokenLatency: TimeInterval?,
+        wallTime: TimeInterval,
+        residentMemoryDelta: Int64
+    ) {
+        loadIfNeeded()
+
+        let now = Date()
+        var record = records[reusablePrefixKey] ?? Record(
+            reusablePrefixKey: reusablePrefixKey,
+            imageKey: imageKey,
+            estimatedPromptTokens: estimatedPromptTokens,
+            hitCount: 0,
+            lastFirstTokenLatency: nil,
+            bestFirstTokenLatency: nil,
+            lastWallTime: wallTime,
+            lastResidentMemoryDelta: residentMemoryDelta,
+            createdAt: now,
+            lastAccessedAt: now
+        )
+
+        record.estimatedPromptTokens = max(record.estimatedPromptTokens, estimatedPromptTokens)
+        record.lastFirstTokenLatency = firstTokenLatency
+        if let firstTokenLatency {
+            record.bestFirstTokenLatency = min(record.bestFirstTokenLatency ?? firstTokenLatency, firstTokenLatency)
+        }
+        record.lastWallTime = wallTime
+        record.lastResidentMemoryDelta = residentMemoryDelta
+        record.lastAccessedAt = now
+        records[reusablePrefixKey] = record
+
+        evictIfNeeded()
+        persist()
+    }
+
+    private func loadIfNeeded() {
+        guard !hasLoaded else { return }
+        hasLoaded = true
+
+        guard let data = try? Data(contentsOf: storeURL),
+              let state = try? JSONDecoder().decode(PersistedState.self, from: data) else {
+            return
+        }
+
+        records = Dictionary(uniqueKeysWithValues: state.records.map { ($0.reusablePrefixKey, $0) })
+        evictIfNeeded()
+    }
+
+    private func evictIfNeeded() {
+        guard records.count > maxRecords else { return }
+        let staleKeys = records.values
+            .sorted { lhs, rhs in
+                if lhs.hitCount == rhs.hitCount {
+                    return lhs.lastAccessedAt < rhs.lastAccessedAt
+                }
+                return lhs.hitCount < rhs.hitCount
+            }
+            .prefix(records.count - maxRecords)
+            .map(\.reusablePrefixKey)
+
+        for key in staleKeys {
+            records.removeValue(forKey: key)
+        }
+    }
+
+    private func persist() {
+        let directory = storeURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let state = PersistedState(records: Array(records.values))
+        guard let data = try? JSONEncoder().encode(state) else { return }
+        try? data.write(to: storeURL, options: [.atomic])
+    }
+}
+
+private actor LocalInferenceScheduler {
+    static let shared = LocalInferenceScheduler()
+
+    private struct Waiter {
+        let label: String
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
+    private var isRunning = false
+    private var waiters: [Waiter] = []
+
+    func acquire(label: String) async {
+        if !isRunning {
+            isRunning = true
+            print("[LocalInferenceScheduler] acquired label=\(label) queueDepth=0")
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            waiters.append(Waiter(label: label, continuation: continuation))
+            print("[LocalInferenceScheduler] queued label=\(label) queueDepth=\(waiters.count)")
+        }
+        print("[LocalInferenceScheduler] resumed label=\(label) queueDepth=\(waiters.count)")
+    }
+
+    func release(label: String) {
+        guard isRunning else { return }
+
+        if waiters.isEmpty {
+            isRunning = false
+            print("[LocalInferenceScheduler] released label=\(label) queueDepth=0")
+            return
+        }
+
+        let next = waiters.removeFirst()
+        print("[LocalInferenceScheduler] handoff from=\(label) to=\(next.label) queueDepth=\(waiters.count)")
+        next.continuation.resume()
     }
 }

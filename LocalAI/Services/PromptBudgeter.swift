@@ -9,7 +9,7 @@ enum PromptBudgeter {
             let outputTokens = lowPowerMode ? min(maxOutputTokens, 768) : maxOutputTokens
             self.maxOutputTokens = max(outputTokens, 128)
 
-            let baseBudget: Int
+            var baseBudget: Int
             switch model.engine {
             case .appleFoundation:
                 baseBudget = model.supportsVision ? 4_500 : 5_500
@@ -23,6 +23,10 @@ enum PromptBudgeter {
                     baseBudget = 5_500
                 } else {
                     baseBudget = 3_800
+                }
+                if !lowPowerMode {
+                    let adaptiveBonus = UserDefaults.standard.integer(forKey: "mlxAdaptiveInputBudgetBonus")
+                    baseBudget += min(max(adaptiveBonus, 0), 2_000)
                 }
             }
 
@@ -45,7 +49,7 @@ enum PromptBudgeter {
         let omittedCount: Int
     }
 
-    static func documentPackage(
+    nonisolated static func documentPackage(
         snippets: [DocumentSnippet],
         configuration: Configuration,
         reservedTokens: Int
@@ -95,7 +99,7 @@ enum PromptBudgeter {
         )
     }
 
-    static func budgetedPrompt(
+    nonisolated static func budgetedPrompt(
         instructions: String,
         context: String,
         userRequest: String,
@@ -131,14 +135,14 @@ enum PromptBudgeter {
         """
     }
 
-    static func finalPromptGuard(_ prompt: String, configuration: Configuration) -> String {
+    nonisolated static func finalPromptGuard(_ prompt: String, configuration: Configuration) -> String {
         guard estimatedTokenCount(prompt) > configuration.inputTokenBudget else {
             return prompt
         }
         return clippedTextPreservingEdges(prompt, maxTokens: configuration.inputTokenBudget)
     }
 
-    static func estimatedTokenCount(_ text: String) -> Int {
+    nonisolated static func estimatedTokenCount(_ text: String) -> Int {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return 0 }
 
@@ -147,7 +151,7 @@ enum PromptBudgeter {
         return Int(max(wordEstimate, characterEstimate).rounded(.up))
     }
 
-    private static func clippedText(_ text: String, maxTokens: Int) -> String {
+    nonisolated private static func clippedText(_ text: String, maxTokens: Int) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard maxTokens > 0, estimatedTokenCount(trimmed) > maxTokens else {
             return trimmed
@@ -158,7 +162,7 @@ enum PromptBudgeter {
         return prefix.trimmingCharacters(in: .whitespacesAndNewlines) + "\n[Context clipped to fit the model.]"
     }
 
-    private static func clippedTextPreservingEdges(_ text: String, maxTokens: Int) -> String {
+    nonisolated private static func clippedTextPreservingEdges(_ text: String, maxTokens: Int) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard maxTokens > 0, estimatedTokenCount(trimmed) > maxTokens else {
             return trimmed

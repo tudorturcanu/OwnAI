@@ -15,7 +15,7 @@ enum AssistantOutputSanitizer {
         let thinkingContent: String?
     }
 
-    private static let controlMarkers = [
+    nonisolated private static let controlMarkers = [
         "<end_of_turn>",
         "<start_of_turn>",
         "<|eot_id|>",
@@ -28,14 +28,14 @@ enum AssistantOutputSanitizer {
         "[/INST]",
         "[INST]"
     ]
-    private static let thinkingOpenMarker = "<think>"
-    private static let thinkingCloseMarker = "</think>"
+    nonisolated private static let thinkingOpenMarker = "<think>"
+    nonisolated private static let thinkingCloseMarker = "</think>"
 
-    static func sanitize(_ content: String) -> String {
+    nonisolated static func sanitize(_ content: String) -> String {
         parts(from: content).content
     }
 
-    static func parts(from content: String) -> Parts {
+    nonisolated static func parts(from content: String) -> Parts {
         let withoutPartialMarker = stripTrailingPartialMarker(from: content)
         let truncated = truncateAtFirstControlMarker(in: withoutPartialMarker)
         let extracted = extractThinkingSegments(from: truncated)
@@ -53,25 +53,25 @@ enum AssistantOutputSanitizer {
         )
     }
 
-    static func containsControlMarker(_ content: String) -> Bool {
+    nonisolated static func containsControlMarker(_ content: String) -> Bool {
         firstControlMarkerIndex(in: content) != nil
     }
 
-    private static func truncateAtFirstControlMarker(in content: String) -> String {
+    nonisolated private static func truncateAtFirstControlMarker(in content: String) -> String {
         guard let index = firstControlMarkerIndex(in: content) else {
             return content
         }
         return String(content[..<index])
     }
 
-    private static func firstControlMarkerIndex(in content: String) -> String.Index? {
+    nonisolated private static func firstControlMarkerIndex(in content: String) -> String.Index? {
         controlMarkers.compactMap { marker in
             content.range(of: marker)?.lowerBound
         }
         .min()
     }
 
-    private static func stripTrailingPartialMarker(from content: String) -> String {
+    nonisolated private static func stripTrailingPartialMarker(from content: String) -> String {
         guard !content.isEmpty else { return content }
 
         let minimumPartialLength = 4
@@ -93,7 +93,7 @@ enum AssistantOutputSanitizer {
         return String(content.dropLast(longestSuffixLength))
     }
 
-    private static func stripStandaloneThinkingMarkers(from content: String) -> String {
+    nonisolated private static func stripStandaloneThinkingMarkers(from content: String) -> String {
         guard !content.isEmpty else { return content }
 
         // Some models emit a stray closing tag without a matching <think> block.
@@ -103,7 +103,7 @@ enum AssistantOutputSanitizer {
             .replacingOccurrences(of: thinkingOpenMarker, with: "")
     }
 
-    private static func extractThinkingSegments(from content: String) -> (content: String, thinkingContent: String, containsThinking: Bool) {
+    nonisolated private static func extractThinkingSegments(from content: String) -> (content: String, thinkingContent: String, containsThinking: Bool) {
         guard !content.isEmpty else {
             return (content: "", thinkingContent: "", containsThinking: false)
         }
@@ -151,7 +151,7 @@ enum AssistantOutputSanitizer {
         return (content: content, thinkingContent: "", containsThinking: false)
     }
 
-    private static func skipLeadingWhitespace(in content: String, from index: String.Index) -> String.Index {
+    nonisolated private static func skipLeadingWhitespace(in content: String, from index: String.Index) -> String.Index {
         var cursor = index
         while cursor < content.endIndex, content[cursor].isWhitespace {
             cursor = content.index(after: cursor)
@@ -159,7 +159,7 @@ enum AssistantOutputSanitizer {
         return cursor
     }
 
-    private static func normalizeSegment(_ content: String, trimWhitespace: Bool) -> String {
+    nonisolated private static func normalizeSegment(_ content: String, trimWhitespace: Bool) -> String {
         trimWhitespace ? content.trimmingCharacters(in: .whitespacesAndNewlines) : content
     }
 }
