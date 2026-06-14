@@ -51,6 +51,96 @@ struct AsyncCodeBlockView: View {
     }
 }
 
+/// Renders an assistant message's markdown body. Extracted as its own
+/// `Equatable` view so SwiftUI memoizes the (expensive) markdown parse to exactly
+/// these value inputs: when content/theme/scale are unchanged the parse is
+/// skipped even though the surrounding bubble re-evaluates (e.g. on every
+/// streamed token tick for other on-screen messages). The equality surface is
+/// only these four value-typed fields, so — unlike a hand-rolled `==` over the
+/// whole bubble and its closures — it can't silently drift as the bubble grows.
+struct AssistantMarkdownView: View, Equatable {
+    let content: String
+    let isStreaming: Bool
+    let theme: CodeTheme
+    let textScale: Double
+
+    private static let lightHaptic = UIImpactFeedbackGenerator(style: .light)
+
+    var body: some View {
+        Markdown(content)
+            .markdownTextStyle {
+                FontSize(CGFloat(17 * textScale))
+            }
+            .foregroundStyle(Color(white: 0.15))
+            .markdownBlockStyle(\.codeBlock) { configuration in
+                VStack(spacing: 0) {
+                    HStack {
+                        Text(configuration.language?.lowercased() ?? "code")
+                            .font(.caption.bold())
+                            .foregroundStyle(theme.foreground.opacity(0.8))
+                        Spacer()
+                        Button {
+                            UIPasteboard.general.string = configuration.content
+                            Self.lightHaptic.impactOccurred()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.caption2)
+                                Text("Copy")
+                                    .font(.caption.bold())
+                            }
+                            .foregroundStyle(theme.foreground)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(theme.background)
+                            .clipShape(Capsule())
+                            .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(theme.headerBackground)
+
+                    ScrollView(.horizontal, showsIndicators: true) {
+                        AsyncCodeBlockView(
+                            content: configuration.content,
+                            language: configuration.language,
+                            theme: theme,
+                            isStreaming: isStreaming,
+                            textScale: textScale
+                        )
+                    }
+                    .background(theme.background)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(theme.borderColor, lineWidth: 1)
+                )
+                .padding(.vertical, 8)
+            }
+    }
+}
+
+/// Memoized render of the "thinking" markdown. Same rationale as
+/// ``AssistantMarkdownView``: keyed on its value inputs (including the
+/// expanded color state) so the parse is skipped when nothing relevant changed.
+struct ThinkingMarkdownView: View, Equatable {
+    let text: String
+    let isExpanded: Bool
+
+    var body: some View {
+        Markdown(text)
+            .font(.callout)
+            .markdownTextStyle {
+                ForegroundColor(isExpanded ? Color(white: 0.66) : Color(white: 0.86))
+            }
+            .foregroundStyle(isExpanded ? Color(white: 0.86) : Color(white: 0.66))
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 struct MessageBubble: View {
     let message: ChatMessage
     let showsContinue: Bool
@@ -118,7 +208,7 @@ struct MessageBubble: View {
         self.onFollowUp = onFollowUp
         self.showsQuickActions = showsQuickActions
     }
-    
+
     var body: some View {
         let thinkingText = message.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let hasThinking = !thinkingText.isEmpty
@@ -368,15 +458,9 @@ struct MessageBubble: View {
         .accessibilityLabel(label)
     }
 
-    @ViewBuilder
     private func thinkingMarkdown(_ thinkingText: String) -> some View {
-        Markdown(thinkingText)
-            .font(.callout)
-            .markdownTextStyle {
-                ForegroundColor(isThinkingExpanded ? Color(white: 0.66) : Color(white: 0.86))
-            }
-            .foregroundStyle(isThinkingExpanded ? Color(white: 0.86) : Color(white: 0.66))
-            .frame(maxWidth: .infinity, alignment: .leading)
+        ThinkingMarkdownView(text: thinkingText, isExpanded: isThinkingExpanded)
+            .equatable()
     }
 
     private var messageCard: some View {
@@ -577,59 +661,13 @@ struct MessageBubble: View {
             }
         } else {
             let theme = CodeTheme(rawValue: codeThemeRaw) ?? .defaultTheme
-            Markdown(message.content)
-                .markdownTextStyle {
-                    FontSize(CGFloat(17 * messageTextScale))
-                }
-                .foregroundStyle(Color(white: 0.15))
-                .markdownBlockStyle(\.codeBlock) { configuration in
-                    VStack(spacing: 0) {
-                        HStack {
-                            Text(configuration.language?.lowercased() ?? "code")
-                                .font(.caption.bold())
-                                .foregroundStyle(theme.foreground.opacity(0.8))
-                            Spacer()
-                            Button {
-                                UIPasteboard.general.string = configuration.content
-                                Self.lightHaptic.impactOccurred()
-                            } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "doc.on.doc")
-                                        .font(.caption2)
-                                    Text("Copy")
-                                        .font(.caption.bold())
-                                }
-                                .foregroundStyle(theme.foreground)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(theme.background)
-                                .clipShape(Capsule())
-                                .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(theme.headerBackground)
-
-                        ScrollView(.horizontal, showsIndicators: true) {
-                            AsyncCodeBlockView(
-                                content: configuration.content,
-                                language: configuration.language,
-                                theme: theme,
-                                isStreaming: message.isStreaming,
-                                textScale: messageTextScale
-                            )
-                        }
-                        .background(theme.background)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(theme.borderColor, lineWidth: 1)
-                    )
-                    .padding(.vertical, 8)
-                }
+            AssistantMarkdownView(
+                content: message.content,
+                isStreaming: message.isStreaming,
+                theme: theme,
+                textScale: messageTextScale
+            )
+            .equatable()
         }
     }
 

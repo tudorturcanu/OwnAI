@@ -344,6 +344,7 @@ final class ModelManager: ObservableObject {
         case cellularRestricted
         case network
         case corrupted
+        case incomplete(missingRequirements: [String])
         case simulatorUnsupported
         case unknown
     }
@@ -668,6 +669,8 @@ final class ModelManager: ObservableObject {
             return allowCellularDownloads ? .retry : .cellularRestricted
         case .corrupted:
             return .repair
+        case .incomplete:
+            return .repair
         case .network, .simulatorUnsupported, .unknown:
             return .retry
         }
@@ -853,13 +856,20 @@ final class ModelManager: ObservableObject {
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 if let idx = self.models.firstIndex(where: { $0.id == modelID }) {
+                    self.models[idx].downloadState = .validating(progress: 0.99)
+                }
+            }
+            persistModelIfNeeded(modelID: modelID)
+            let validation = MLXStorage.validationReport(for: modelID)
+            guard validation.isValid else {
+                throw DownloadFailureError(failure: incompleteArtifactsFailure(validation))
+            }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                if let idx = self.models.firstIndex(where: { $0.id == modelID }) {
                     self.models[idx].downloadState = .downloaded
                 }
                 self.downloadFailures.removeValue(forKey: modelID)
-            }
-            persistModelIfNeeded(modelID: modelID)
-            guard MLXStorage.hasValidModelArtifacts(for: modelID) else {
-                throw DownloadFailureError(failure: corruptedFailure())
             }
             if downloadNotifications {
                 await MainActor.run {
@@ -876,9 +886,11 @@ final class ModelManager: ObservableObject {
             }
         } catch is CancellationError {
             downloadDiagnostics.cancel(modelID: modelID)
+            cleanupIncompleteArtifactsIfNeeded(modelID: modelID)
             print("[ModelManager] download cancelled id=\(modelID)")
         } catch let failureError as DownloadFailureError {
             downloadDiagnostics.fail(modelID: modelID, message: failureError.failure.message)
+            cleanupArtifactsIfNeeded(after: failureError.failure, modelID: modelID)
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.applyDownloadFailure(failureError.failure, for: modelID)
@@ -892,6 +904,7 @@ final class ModelManager: ObservableObject {
         } catch {
             let failure = classifyDownloadError(error, for: model)
             downloadDiagnostics.fail(modelID: modelID, message: failure.message)
+            cleanupArtifactsIfNeeded(after: failure, modelID: modelID)
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.applyDownloadFailure(failure, for: modelID)
@@ -957,6 +970,15 @@ final class ModelManager: ObservableObject {
         )
     }
 
+    nonisolated private func incompleteArtifactsFailure(_ report: MLXStorage.ArtifactValidationReport) -> DownloadFailure {
+        DownloadFailure(
+            reason: .incomplete(missingRequirements: report.missingRequirements),
+            message: report.missingRequirements.isEmpty
+                ? "Model files were not found after download. Tap Repair to re-download."
+                : "\(report.message) Tap Repair to re-download."
+        )
+    }
+
     nonisolated private func classifyDownloadError(_ error: Error, for model: ModelInfo) -> DownloadFailure {
         let nsError = error as NSError
 
@@ -1009,6 +1031,21 @@ final class ModelManager: ObservableObject {
             || lower.contains("unexpected eof")
             || lower.contains("tokenizer")
             || lower.contains("safetensors")
+    }
+
+    nonisolated private func cleanupArtifactsIfNeeded(after failure: DownloadFailure, modelID: String) {
+        switch failure.reason {
+        case .network, .cellularRestricted, .simulatorUnsupported:
+            return
+        case .lowStorage, .corrupted, .incomplete, .unknown:
+            cleanupIncompleteArtifactsIfNeeded(modelID: modelID)
+        }
+    }
+
+    nonisolated private func cleanupIncompleteArtifactsIfNeeded(modelID: String) {
+        #if !targetEnvironment(simulator)
+        MLXStorage.removeIncompleteModelArtifacts(for: modelID)
+        #endif
     }
 
     #if !targetEnvironment(simulator)
@@ -1195,11 +1232,12 @@ final class ModelManager: ObservableObject {
             if model.engine == .mlx {
                 let migrated = migrateLegacyModelIfNeeded(modelID: model.id)
                 if migrated || MLXStorage.hasValidModelArtifacts(for: model.id) {
-                    if MLXStorage.hasValidModelArtifacts(for: model.id) {
+                    let validation = MLXStorage.validationReport(for: model.id)
+                    if validation.isValid {
                         models[index].downloadState = .downloaded
                         downloadFailures.removeValue(forKey: model.id)
                     } else {
-                        let failure = corruptedFailure()
+                        let failure = incompleteArtifactsFailure(validation)
                         downloadFailures[model.id] = failure
                         models[index].downloadState = .error(message: failure.message)
                     }

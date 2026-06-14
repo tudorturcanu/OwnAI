@@ -8,6 +8,18 @@
 import Foundation
 
 enum MLXStorage {
+    struct ArtifactValidationReport: Equatable {
+        let isValid: Bool
+        let checkedDirectory: URL?
+        let missingRequirements: [String]
+
+        var message: String {
+            guard !isValid else { return "Model artifacts are valid." }
+            guard !missingRequirements.isEmpty else { return "Model artifacts were not found." }
+            return "Missing model artifacts: \(missingRequirements.joined(separator: ", "))."
+        }
+    }
+
     static func persistentBaseURL() -> URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("models", isDirectory: true)
@@ -61,7 +73,16 @@ enum MLXStorage {
         }
     }
 
+    static func removeIncompleteModelArtifacts(for modelID: String) {
+        guard !hasValidModelArtifacts(for: modelID) else { return }
+        removeModelArtifacts(for: modelID)
+    }
+
     static func hasValidModelArtifacts(for modelID: String) -> Bool {
+        validationReport(for: modelID).isValid
+    }
+
+    static func validationReport(for modelID: String) -> ArtifactValidationReport {
         let candidates = [
             modelDirectory(for: modelID),
             legacyModelDirectory(for: modelID),
@@ -69,18 +90,34 @@ enum MLXStorage {
             legacyDocumentsModelDirectory(for: modelID)
         ]
 
+        var bestReport = ArtifactValidationReport(
+            isValid: false,
+            checkedDirectory: nil,
+            missingRequirements: []
+        )
+
         for candidate in candidates {
-            if containsValidArtifacts(at: candidate, modelID: modelID) {
-                return true
+            let report = validateArtifacts(at: candidate, modelID: modelID)
+            if report.isValid {
+                return report
+            }
+            if report.checkedDirectory != nil {
+                bestReport = report
             }
         }
-        return false
+        return bestReport
     }
 
-    private static func containsValidArtifacts(at directory: URL, modelID: String) -> Bool {
-        guard FileManager.default.fileExists(atPath: directory.path) else { return false }
-        guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) else {
-            return false
+    private static func validateArtifacts(at directory: URL, modelID: String) -> ArtifactValidationReport {
+        guard FileManager.default.fileExists(atPath: directory.path) else {
+            return ArtifactValidationReport(isValid: false, checkedDirectory: nil, missingRequirements: [])
+        }
+        guard let enumerator = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey], options: [.skipsHiddenFiles]) else {
+            return ArtifactValidationReport(
+                isValid: false,
+                checkedDirectory: directory,
+                missingRequirements: ["readable model directory"]
+            )
         }
 
         var hasConfig = false
@@ -91,6 +128,10 @@ enum MLXStorage {
         var hasProcessorConfig = false
 
         for case let fileURL as URL in enumerator {
+            let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+            guard values?.isRegularFile == true, (values?.fileSize ?? 0) > 0 else {
+                continue
+            }
             let filename = fileURL.lastPathComponent.lowercased()
             if filename == "config.json" || filename == "params.json" {
                 hasConfig = true
@@ -112,11 +153,29 @@ enum MLXStorage {
             }
             let hasRequiredProcessorConfig = !ModelInfo.vlmMLXModelIDs.contains(modelID) || hasProcessorConfig
             if hasConfig && hasWeights && (hasTokenizer || (hasVocab && hasMerges)) && hasRequiredProcessorConfig {
-                return true
+                return ArtifactValidationReport(isValid: true, checkedDirectory: directory, missingRequirements: [])
             }
         }
 
         let hasRequiredProcessorConfig = !ModelInfo.vlmMLXModelIDs.contains(modelID) || hasProcessorConfig
-        return hasConfig && hasWeights && (hasTokenizer || (hasVocab && hasMerges)) && hasRequiredProcessorConfig
+        var missingRequirements: [String] = []
+        if !hasConfig {
+            missingRequirements.append("config.json or params.json")
+        }
+        if !hasWeights {
+            missingRequirements.append("model weights")
+        }
+        if !(hasTokenizer || (hasVocab && hasMerges)) {
+            missingRequirements.append("tokenizer")
+        }
+        if !hasRequiredProcessorConfig {
+            missingRequirements.append("vision processor config")
+        }
+
+        return ArtifactValidationReport(
+            isValid: false,
+            checkedDirectory: directory,
+            missingRequirements: missingRequirements
+        )
     }
 }

@@ -513,7 +513,7 @@ struct OnboardingView: View {
         }
         if let activeModel = effectiveOnboardingModel {
             switch activeModel.downloadState {
-            case .downloading(let progress, _):
+            case .downloading(let progress, _), .validating(let progress):
                 return String(
                     format: String(
                         localized: "Continue While %@ Downloads (%lld%%)",
@@ -572,6 +572,14 @@ struct OnboardingView: View {
                 format: String(
                     localized: "%@ is downloading now. You can continue and let the download finish in the app.",
                     defaultValue: "%@ is downloading now. You can continue and let the download finish in the app."
+                ),
+                activeModel.name
+            )
+        case .validating:
+            return String(
+                format: String(
+                    localized: "%@ is validating the local files.",
+                    defaultValue: "%@ is validating the local files."
                 ),
                 activeModel.name
             )

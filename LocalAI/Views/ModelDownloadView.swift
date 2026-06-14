@@ -680,6 +680,10 @@ struct ModelCard: View {
                 DownloadingButton(progress: progress, speedBytesPerSecond: speedBytesPerSecond, action: {
                     modelManager.cancelDownload(model.id)
                 })
+            case .validating(let progress):
+                DownloadingButton(progress: progress, speedBytesPerSecond: nil, action: {
+                    modelManager.cancelDownload(model.id)
+                })
             default:
                 UnsupportedModelButton(title: title, subtitle: compatibilityMessage)
             }
@@ -707,6 +711,10 @@ struct ModelCard: View {
                 
             case .downloading(let progress, let speedBytesPerSecond):
                 DownloadingButton(progress: progress, speedBytesPerSecond: speedBytesPerSecond, action: {
+                    modelManager.cancelDownload(model.id)
+                })
+            case .validating(let progress):
+                DownloadingButton(progress: progress, speedBytesPerSecond: nil, action: {
                     modelManager.cancelDownload(model.id)
                 })
                 

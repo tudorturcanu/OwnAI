@@ -90,9 +90,12 @@ actor RAGEngine {
 
     static let shared = RAGEngine()
     private static let persistedStateVersion = 3
+    private static let persistenceDebounceNanoseconds: UInt64 = 1_000_000_000
 
     private var chunks: [TextChunk] = []
     private var documentFingerprints: [DocumentKey: String] = [:]
+    private var pendingPersistTask: Task<Void, Never>?
+    private var hasPendingPersist = false
 
     private init() {}
 
@@ -127,26 +130,26 @@ actor RAGEngine {
             }
 
             documentFingerprints[DocumentKey(conversationID: conversationID, documentID: documentID)] = contentHash(for: text)
-            persistState()
+            schedulePersistState()
         }
     }
 
     func clear(documentID: UUID, conversationID: UUID) {
         chunks.removeAll { $0.documentID == documentID && $0.conversationID == conversationID }
         documentFingerprints.removeValue(forKey: DocumentKey(conversationID: conversationID, documentID: documentID))
-        persistState()
+        schedulePersistState()
     }
 
     func clearConversation(_ conversationID: UUID) {
         chunks.removeAll { $0.conversationID == conversationID }
         documentFingerprints = documentFingerprints.filter { $0.key.conversationID != conversationID }
-        persistState()
+        schedulePersistState()
     }
 
     func clearAll() {
         chunks.removeAll()
         documentFingerprints.removeAll()
-        persistState()
+        persistStateImmediately()
     }
 
     func restoreIndexIfCurrent(with documents: [IndexedDocumentSnapshot]) -> Bool {
@@ -170,6 +173,9 @@ actor RAGEngine {
 
         chunks = state.chunks
         documentFingerprints = storedFingerprints
+        pendingPersistTask?.cancel()
+        pendingPersistTask = nil
+        hasPendingPersist = false
         return true
     }
 
@@ -207,7 +213,7 @@ actor RAGEngine {
 
             chunks = rebuiltChunks
             documentFingerprints = rebuiltFingerprints
-            persistState()
+            persistStateImmediately()
         }
     }
 
@@ -298,7 +304,29 @@ actor RAGEngine {
         return digest.map { String(format: "%02x", $0) }.joined()
     }
 
-    private func persistState() {
+    private func schedulePersistState() {
+        hasPendingPersist = true
+        pendingPersistTask?.cancel()
+        pendingPersistTask = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: Self.persistenceDebounceNanoseconds)
+            } catch {
+                return
+            }
+            await self?.flushPendingPersistState()
+        }
+    }
+
+    private func flushPendingPersistState() {
+        guard hasPendingPersist else { return }
+        persistStateImmediately()
+    }
+
+    private func persistStateImmediately() {
+        pendingPersistTask?.cancel()
+        pendingPersistTask = nil
+        hasPendingPersist = false
+
         let state = PersistedState(
             version: Self.persistedStateVersion,
             documentFingerprints: documentFingerprints.map { key, value in

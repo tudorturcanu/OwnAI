@@ -300,12 +300,14 @@ enum ModelEngine: String, Equatable {
 enum DownloadState: Equatable {
     case notDownloaded
     case downloading(progress: Double, speedBytesPerSecond: Double?)
+    case validating(progress: Double)
     case downloaded
     case builtin  // For Apple Foundation Model
     case error(message: String)
     
     var isDownloading: Bool {
         if case .downloading = self { return true }
+        if case .validating = self { return true }
         return false
     }
     

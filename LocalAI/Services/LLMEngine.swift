@@ -494,11 +494,10 @@ final class LLMEngine {
                     self.streamingStartTime = nil
                     self.streamingTokensPerSecond = 0
                 }
-                #if !targetEnvironment(simulator)
-                if model.engine == .mlx {
-                    MLX.GPU.clearCache()
-                }
-                #endif
+                // Note: no GPU.clearCache() here. On the successful path the user
+                // typically continues the conversation, so we keep the bounded
+                // buffer cache warm (see configureMlxGPUMemoryIfNeeded) for faster
+                // first tokens on the next turn. Teardown paths below still clear.
                 if model.engine == .mlx, let mlxFingerprint {
                     let metrics = MlxGenerationMetrics(
                         requestKey: mlxFingerprint.requestKey,
@@ -1300,7 +1299,28 @@ private extension LLMEngine {
         return ChatSession(container, instructions: instructions, generateParameters: generateParameters)
     }
 
+    /// Bound the MLX Metal buffer cache once per process. The cache lets scratch
+    /// and KV buffers be reused across turns; without a limit it grows unbounded,
+    /// which is why the engine previously cleared it after every generation. A
+    /// bounded cache reuses buffers between back-to-back turns (lower first-token
+    /// latency) while keeping idle GPU memory in check on device.
+    private static var didConfigureGPUMemory = false
+    private static func configureMlxGPUMemoryIfNeeded() {
+        guard !didConfigureGPUMemory else { return }
+        didConfigureGPUMemory = true
+        let physical = ProcessInfo.processInfo.physicalMemory
+        // ~5% of RAM, clamped to a sane window for on-device inference.
+        let floorBytes: UInt64 = 64 * 1024 * 1024
+        let capBytes: UInt64 = 384 * 1024 * 1024
+        let fivePercent: UInt64 = physical / 20
+        let clamped: UInt64 = min(max(fivePercent, floorBytes), capBytes)
+        let cacheLimit = Int(clamped)
+        MLX.Memory.cacheLimit = cacheLimit
+        print("[LLMEngine] MLX GPU cache limit set to \(cacheLimit / (1024 * 1024))MB (physical=\(physical / (1024 * 1024))MB)")
+    }
+
     private func loadMlxContainer(modelID: String) async throws -> ModelContainer {
+        Self.configureMlxGPUMemoryIfNeeded()
         let persistentPath = MLXStorage.modelDirectory(for: modelID)
         if FileManager.default.fileExists(atPath: persistentPath.path) {
             if ModelInfo.vlmMLXModelIDs.contains(modelID) {
