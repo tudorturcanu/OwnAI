@@ -18,6 +18,9 @@ struct TextChunk: Identifiable, Codable {
     let languageRawValue: String?
     let sequenceIndex: Int
     let embedding: [Float]
+    /// Identifies which model produced `embedding`. Vectors from different
+    /// embedders live in incompatible spaces and must never be compared.
+    let embedderID: String
 
     init(
         conversationID: UUID,
@@ -26,7 +29,8 @@ struct TextChunk: Identifiable, Codable {
         sourceLocationLabel: String?,
         language: NLLanguage?,
         sequenceIndex: Int,
-        embedding: [Float]
+        embedding: [Float],
+        embedderID: String
     ) {
         self.id = UUID()
         self.conversationID = conversationID
@@ -36,6 +40,7 @@ struct TextChunk: Identifiable, Codable {
         self.languageRawValue = language?.rawValue
         self.sequenceIndex = sequenceIndex
         self.embedding = embedding
+        self.embedderID = embedderID
     }
 
     var language: NLLanguage? {
@@ -89,8 +94,14 @@ actor RAGEngine {
     }
 
     static let shared = RAGEngine()
-    private static let persistedStateVersion = 3
+    // v4: chunks gained `embedderID`; switching the embedding backend forces a rebuild.
+    private static let persistedStateVersion = 4
     private static let persistenceDebounceNanoseconds: UInt64 = 1_000_000_000
+
+    /// UserDefaults key controlling whether neural embeddings are used.
+    static let neuralEmbeddingsDefaultsKey = "neuralEmbeddingsEnabled"
+    /// Tag for vectors produced by Apple's NLEmbedding fallback.
+    private static let legacyEmbedderID = "nl-embedding-v1"
 
     private var chunks: [TextChunk] = []
     private var documentFingerprints: [DocumentKey: String] = [:]
@@ -113,9 +124,10 @@ actor RAGEngine {
         await MemoryProfiler.measure("RAGEngine.ingest(doc: \(documentID))") {
             let language = dominantLanguage(for: text)
             let rawChunks = chunkText(text, targetSize: 900, overlapSentences: 1)
+            let embeddings = await embedDocumentChunks(rawChunks.map(\.content), language: language)
 
             for (index, chunkContent) in rawChunks.enumerated() {
-                if let vector = embedding(for: chunkContent.content, language: language) {
+                if let embedded = embeddings[index] {
                     let chunk = TextChunk(
                         conversationID: conversationID,
                         documentID: documentID,
@@ -123,7 +135,8 @@ actor RAGEngine {
                         sourceLocationLabel: sourceLocationLabel(for: chunkContent, sections: sections),
                         language: language,
                         sequenceIndex: index,
-                        embedding: vector
+                        embedding: embedded.vector,
+                        embedderID: embedded.embedderID
                     )
                     chunks.append(chunk)
                 }
@@ -191,9 +204,10 @@ actor RAGEngine {
             for document in sortedDocuments {
                 let language = dominantLanguage(for: document.content)
                 let rawChunks = chunkText(document.content, targetSize: 900, overlapSentences: 1)
+                let embeddings = await embedDocumentChunks(rawChunks.map(\.content), language: language)
 
                 for (index, chunkContent) in rawChunks.enumerated() {
-                    if let vector = embedding(for: chunkContent.content, language: language) {
+                    if let embedded = embeddings[index] {
                         rebuiltChunks.append(
                             TextChunk(
                                 conversationID: document.conversationID,
@@ -202,7 +216,8 @@ actor RAGEngine {
                                 sourceLocationLabel: sourceLocationLabel(for: chunkContent, sections: document.sections),
                                 language: language,
                                 sequenceIndex: index,
-                                embedding: vector
+                                embedding: embedded.vector,
+                                embedderID: embedded.embedderID
                             )
                         )
                     }
@@ -217,18 +232,25 @@ actor RAGEngine {
         }
     }
 
-    func retrieveDetailed(query: String, limit: Int = 3, conversationID: UUID) -> [RetrievedChunk] {
+    func retrieveDetailed(query: String, limit: Int = 3, conversationID: UUID) async -> [RetrievedChunk] {
         let queryLanguage = dominantLanguage(for: query)
-        let queryVector = embedding(for: query, language: queryLanguage)
+        let queryEmbedding = await embedQuery(query, language: queryLanguage)
         let normalizedQuery = normalizedSearchText(query)
         let queryTerms = searchTerms(in: query)
 
-        guard queryVector != nil || !queryTerms.isEmpty else { return [] }
+        guard queryEmbedding != nil || !queryTerms.isEmpty else { return [] }
 
         let ranked = chunks
             .filter { $0.conversationID == conversationID }
             .map { chunk in
-                let semanticScore = queryVector.map { max(0, cosineSimilarity($0, chunk.embedding)) } ?? 0
+                // Only compare vectors from the same embedder; otherwise rely on
+                // lexical/phrase signals so mixed-embedder indexes still work.
+                let semanticScore: Double
+                if let queryEmbedding, queryEmbedding.embedderID == chunk.embedderID {
+                    semanticScore = max(0, cosineSimilarity(queryEmbedding.vector, chunk.embedding))
+                } else {
+                    semanticScore = 0
+                }
                 let lexicalScore = lexicalSimilarity(queryTerms: queryTerms, candidateText: chunk.content)
                 let phraseScore = phraseMatchScore(normalizedQuery: normalizedQuery, candidateText: chunk.content)
                 let languageMultiplier = languageCompatibilityMultiplier(queryLanguage: queryLanguage, chunkLanguage: chunk.language)
@@ -357,7 +379,42 @@ actor RAGEngine {
         }
     }
 
-    private func embedding(for text: String, language: NLLanguage?) -> [Float]? {
+    private var neuralEmbeddingsEnabled: Bool {
+        UserDefaults.standard.bool(forKey: Self.neuralEmbeddingsDefaultsKey)
+    }
+
+    /// Embeds document chunks, aligned 1:1 with `texts` (nil entries are skipped
+    /// by callers). Uses the neural embedder when enabled and available, otherwise
+    /// falls back to NLEmbedding.
+    private func embedDocumentChunks(
+        _ texts: [String],
+        language: NLLanguage?
+    ) async -> [(vector: [Float], embedderID: String)?] {
+        if neuralEmbeddingsEnabled,
+           let vectors = await EmbeddingService.shared.embed(texts, kind: .document),
+           vectors.count == texts.count {
+            return vectors.map { ($0, EmbeddingService.embedderIdentifier) }
+        }
+
+        return texts.map { text in
+            legacyEmbedding(for: text, language: language).map { ($0, Self.legacyEmbedderID) }
+        }
+    }
+
+    private func embedQuery(
+        _ text: String,
+        language: NLLanguage?
+    ) async -> (vector: [Float], embedderID: String)? {
+        if neuralEmbeddingsEnabled,
+           let vectors = await EmbeddingService.shared.embed([text], kind: .query),
+           let vector = vectors.first {
+            return (vector, EmbeddingService.embedderIdentifier)
+        }
+
+        return legacyEmbedding(for: text, language: language).map { ($0, Self.legacyEmbedderID) }
+    }
+
+    private func legacyEmbedding(for text: String, language: NLLanguage?) -> [Float]? {
         let normalized = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return nil }
 
@@ -503,7 +560,8 @@ actor RAGEngine {
                         sourceLocationLabel: mergedLocationLabel(for: currentGroup),
                         language: first.chunk.language,
                         sequenceIndex: first.chunk.sequenceIndex,
-                        embedding: first.chunk.embedding
+                        embedding: first.chunk.embedding,
+                        embedderID: first.chunk.embedderID
                     )
                     merged.append((chunk: mergedChunk, score: mergedScore))
                 }

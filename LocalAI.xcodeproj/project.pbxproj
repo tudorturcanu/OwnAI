@@ -13,6 +13,8 @@
 		6CFE0F75F748001302991B02 /* WatchConnectivityModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C48F86F5CC1AACA464AFB06 /* WatchConnectivityModels.swift */; };
 		7A1C45F0A9B24E5EBF2C3D11 /* WatchConnectivityModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C48F86F5CC1AACA464AFB06 /* WatchConnectivityModels.swift */; };
 		7D35A3CBA9CC310B7EC1F09B /* MisakiSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 3E53D0029821E74467DF2F34 /* MisakiSwift */; };
+		8B0F13D22FDEA1240053FFDA /* WhisperKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8B0F13D12FDEA1240053FFDA /* WhisperKit */; };
+		8B0F13D52FDEA1670053FFDA /* Embeddings in Frameworks */ = {isa = PBXBuildFile; productRef = 8B0F13D42FDEA1670053FFDA /* Embeddings */; };
 		8B4308F12FC44AD9007971CB /* piper1-gpl in Frameworks */ = {isa = PBXBuildFile; productRef = 8B4308F02FC44AD9007971CB /* piper1-gpl */; };
 		8B4308F32FC44AD9007971CB /* espeak-ng-data in Frameworks */ = {isa = PBXBuildFile; productRef = 8B4308F22FC44AD9007971CB /* espeak-ng-data */; };
 		8B8A3DFD2F2B9BF70010461E /* MetalPerformanceShaders.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B8A3DFB2F2B9BF70010461E /* MetalPerformanceShaders.framework */; };
@@ -75,6 +77,24 @@
 		};
 /* End PBXCopyFilesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		8BAA01112FFF0A0100000001 /* Patch onnxruntime MinimumOSVersion */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Patch onnxruntime MinimumOSVersion";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# The onnxruntime.framework binary (from piper1-gpl-spm) ships an Info.plist\n# without a MinimumOSVersion key, which App Store validation rejects. Inject it\n# into the embedded copy and re-sign so the signature stays valid.\nset -e\nFRAMEWORK=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/onnxruntime.framework\"\nPLIST=\"$FRAMEWORK/Info.plist\"\n[ -f \"$PLIST\" ] || { echo \"onnxruntime.framework not embedded; skipping.\"; exit 0; }\nVERSION=\"${IPHONEOS_DEPLOYMENT_TARGET:-15.0}\"\n/usr/libexec/PlistBuddy -c \"Add :MinimumOSVersion string $VERSION\" \"$PLIST\" 2>/dev/null || /usr/libexec/PlistBuddy -c \"Set :MinimumOSVersion $VERSION\" \"$PLIST\"\necho \"Set MinimumOSVersion=$VERSION in onnxruntime.framework\"\nif [ -n \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ]; then\n  codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$FRAMEWORK\"\n  echo \"Re-signed onnxruntime.framework\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXFileReference section */
 		3A8EE3D327FDFFA223930871 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = ../LocalAI/Assets.xcassets; sourceTree = "<group>"; };
 		5C48F86F5CC1AACA464AFB06 /* WatchConnectivityModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchConnectivityModels.swift; sourceTree = "<group>"; };
@@ -130,6 +150,7 @@
 				8B8A3E1F2F2D00010010461E /* MLXVLM in Frameworks */,
 				8B8A3E092F2CCB980010461E /* Shimmer in Frameworks */,
 				ABE93FDC2F94C202008DCDBD /* MLXFast in Frameworks */,
+				8B0F13D22FDEA1240053FFDA /* WhisperKit in Frameworks */,
 				8B8A3F012F2B9C000010461E /* MetalPerformanceShadersGraph.framework in Frameworks */,
 				ABE93FE42F94C202008DCDBD /* MLXRandom in Frameworks */,
 				8B8A3DFD2F2B9BF70010461E /* MetalPerformanceShaders.framework in Frameworks */,
@@ -138,6 +159,7 @@
 				8B8A3E0C2F2CCBE90010461E /* MarkdownUI in Frameworks */,
 				ABE93FDE2F94C202008DCDBD /* MLXLinalg in Frameworks */,
 				8B8A3E1A2F2D00010010461E /* MLXLMCommon in Frameworks */,
+				8B0F13D52FDEA1670053FFDA /* Embeddings in Frameworks */,
 				8B8A3E1B2F2D00010010461E /* MLXLLM in Frameworks */,
 				ABE93FCF2F94C100008DCDBD /* Hub in Frameworks */,
 				ABE93FE62F94C210008DCDBD /* Tokenizers in Frameworks */,
@@ -222,6 +244,7 @@
 				8B8A3DB92F2B75380010461E /* Frameworks */,
 				8B8A3DBA2F2B75380010461E /* Resources */,
 				C14E2F305162738495A6B7C8 /* Embed Frameworks */,
+				8BAA01112FFF0A0100000001 /* Patch onnxruntime MinimumOSVersion */,
 				B781217A2D87E60444C42B89 /* Embed Watch Content */,
 			);
 			buildRules = (
@@ -255,6 +278,8 @@
 				8B4308F22FC44AD9007971CB /* espeak-ng-data */,
 				52C4E9848B8F8FC8EECC1E16 /* KokoroSwift */,
 				3E53D0029821E74467DF2F34 /* MisakiSwift */,
+				8B0F13D12FDEA1240053FFDA /* WhisperKit */,
+				8B0F13D42FDEA1670053FFDA /* Embeddings */,
 			);
 			productName = LocalAI;
 			productReference = 8B8A3DBC2F2B75380010461E /* LocalAI.app */;
@@ -311,15 +336,17 @@
 				8B8A3E072F2CCB980010461E /* XCRemoteSwiftPackageReference "SwiftUI-Shimmer" */,
 				8B8A3E0A2F2CCBE90010461E /* XCRemoteSwiftPackageReference "swift-markdown-ui" */,
 				8B8A3E1C2F2D00010010461E /* XCRemoteSwiftPackageReference "mlx-swift-lm" */,
-				C1A1B2C3D4E5F60700112235 /* XCLocalSwiftPackageReference "LocalAIKit" */,
+				C1A1B2C3D4E5F60700112235 /* XCLocalSwiftPackageReference "Packages/LocalAIKit" */,
 				D1E000042F5000010010461E /* XCRemoteSwiftPackageReference "MLXUtilsLibrary" */,
 				ABE93FCD2F94C100008DCDBD /* XCRemoteSwiftPackageReference "swift-transformers" */,
 				ABE93FD02F94C111008DCDBD /* XCRemoteSwiftPackageReference "swift-jinja" */,
 				ABE93FD62F94C202008DCDBD /* XCRemoteSwiftPackageReference "mlx-swift" */,
 				8B4308EF2FC44AD9007971CB /* XCRemoteSwiftPackageReference "piper1-gpl-spm" */,
 				8B4308F42FC44AD9007971CB /* XCRemoteSwiftPackageReference "espeak-ng-spm" */,
-				09CF0B8191531DB0E5D081AB /* XCLocalSwiftPackageReference "KokoroSwiftLocal" */,
-				F3DDD970CAC6BFD83388E17F /* XCLocalSwiftPackageReference "MisakiSwiftLocal" */,
+				09CF0B8191531DB0E5D081AB /* XCLocalSwiftPackageReference "Packages/KokoroSwiftLocal" */,
+				F3DDD970CAC6BFD83388E17F /* XCLocalSwiftPackageReference "Packages/MisakiSwiftLocal" */,
+				8B0F13D02FDEA1240053FFDA /* XCRemoteSwiftPackageReference "WhisperKit" */,
+				8B0F13D32FDEA1670053FFDA /* XCRemoteSwiftPackageReference "swift-embeddings" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8B8A3DBD2F2B75380010461E /* Products */;
@@ -450,7 +477,7 @@
 				DEVELOPMENT_TEAM = 75YTB67VJZ;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -515,7 +542,7 @@
 				DEVELOPMENT_TEAM = 75YTB67VJZ;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -542,7 +569,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = LocalAI/LocalAI.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 40;
+				CURRENT_PROJECT_VERSION = 41;
 				DEVELOPMENT_TEAM = 75YTB67VJZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -561,7 +588,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 3.21;
+				MARKETING_VERSION = 3.22;
 				PRODUCT_BUNDLE_IDENTIFIER = alice.turcanu.LocalAI;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -582,7 +609,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = LocalAI/LocalAI.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 40;
+				CURRENT_PROJECT_VERSION = 41;
 				DEVELOPMENT_TEAM = 75YTB67VJZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -601,7 +628,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 3.21;
+				MARKETING_VERSION = 3.22;
 				PRODUCT_BUNDLE_IDENTIFIER = alice.turcanu.LocalAI;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -677,21 +704,37 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		09CF0B8191531DB0E5D081AB /* XCLocalSwiftPackageReference "KokoroSwiftLocal" */ = {
+		09CF0B8191531DB0E5D081AB /* XCLocalSwiftPackageReference "Packages/KokoroSwiftLocal" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/KokoroSwiftLocal;
 		};
-		C1A1B2C3D4E5F60700112235 /* XCLocalSwiftPackageReference "LocalAIKit" */ = {
+		C1A1B2C3D4E5F60700112235 /* XCLocalSwiftPackageReference "Packages/LocalAIKit" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/LocalAIKit;
 		};
-		F3DDD970CAC6BFD83388E17F /* XCLocalSwiftPackageReference "MisakiSwiftLocal" */ = {
+		F3DDD970CAC6BFD83388E17F /* XCLocalSwiftPackageReference "Packages/MisakiSwiftLocal" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/MisakiSwiftLocal;
 		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		8B0F13D02FDEA1240053FFDA /* XCRemoteSwiftPackageReference "WhisperKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/argmaxinc/WhisperKit";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+		8B0F13D32FDEA1670053FFDA /* XCRemoteSwiftPackageReference "swift-embeddings" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/jkrukowski/swift-embeddings";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.1.0;
+			};
+		};
 		8B4308EF2FC44AD9007971CB /* XCRemoteSwiftPackageReference "piper1-gpl-spm" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/IhorShevchuk/piper1-gpl-spm.git";
@@ -774,6 +817,16 @@
 		52C4E9848B8F8FC8EECC1E16 /* KokoroSwift */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = KokoroSwift;
+		};
+		8B0F13D12FDEA1240053FFDA /* WhisperKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8B0F13D02FDEA1240053FFDA /* XCRemoteSwiftPackageReference "WhisperKit" */;
+			productName = WhisperKit;
+		};
+		8B0F13D42FDEA1670053FFDA /* Embeddings */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8B0F13D32FDEA1670053FFDA /* XCRemoteSwiftPackageReference "swift-embeddings" */;
+			productName = Embeddings;
 		};
 		8B4308F02FC44AD9007971CB /* piper1-gpl */ = {
 			isa = XCSwiftPackageProductDependency;

@@ -1,5 +1,5 @@
 {
-  "originHash" : "651222d305b6035f523846d73673c85b8e0d728e21fd23d791668c3e66b8b828",
+  "originHash" : "ccbc799024286881159d4de93c16a402d01f77660158a1ff9932a708870f59fe",
   "pins" : [
     {
       "identity" : "espeak-ng-spm",
@@ -65,6 +65,15 @@
       }
     },
     {
+      "identity" : "swift-argument-parser",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-argument-parser.git",
+      "state" : {
+        "revision" : "6a52f3251125d74daf04fcbd5e6f08a75d074382",
+        "version" : "1.8.2"
+      }
+    },
+    {
       "identity" : "swift-asn1",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-asn1.git",
@@ -107,6 +116,15 @@
       "state" : {
         "revision" : "1b6b2e274e85105bfa155183145a1dcfd63331f1",
         "version" : "4.5.0"
+      }
+    },
+    {
+      "identity" : "swift-embeddings",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/jkrukowski/swift-embeddings",
+      "state" : {
+        "revision" : "b8e7c9fc71075c88764f9202e0ce9648476a901e",
+        "version" : "0.1.0"
       }
     },
     {
@@ -155,6 +173,24 @@
       }
     },
     {
+      "identity" : "swift-safetensors",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/jkrukowski/swift-safetensors.git",
+      "state" : {
+        "revision" : "3852f0bd561071588361c26c49c016d344234c60",
+        "version" : "0.1.1"
+      }
+    },
+    {
+      "identity" : "swift-sentencepiece",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/jkrukowski/swift-sentencepiece",
+      "state" : {
+        "revision" : "36a8b2b45733f6adb3092100f16e4c7d38a10a7c",
+        "version" : "0.0.6"
+      }
+    },
+    {
       "identity" : "swift-syntax",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swiftlang/swift-syntax.git",
@@ -188,6 +224,15 @@
       "state" : {
         "revision" : "0226e21f9bf355d40e07e5f5e1c33679d50e167f",
         "version" : "1.5.1"
+      }
+    },
+    {
+      "identity" : "whisperkit",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/argmaxinc/WhisperKit",
+      "state" : {
+        "branch" : "main",
+        "revision" : "99d0a2fc9e95f5a1d736f4fb04144f9e1b3a4b33"
       }
     },
     {

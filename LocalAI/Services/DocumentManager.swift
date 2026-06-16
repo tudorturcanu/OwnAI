@@ -323,6 +323,27 @@ final class DocumentManager {
         await ragEngine.rebuildIndex(from: indexedDocumentSnapshots)
     }
 
+    /// Rebuilds the semantic index for all documents using the currently selected
+    /// embedding backend. Safe to call after toggling neural embeddings.
+    func rebuildSemanticIndex() async {
+        await reindexAllDocuments()
+    }
+
+    /// Switches the embedding backend. When enabling neural embeddings, the model
+    /// is downloaded/loaded first; the index is then rebuilt either way so all
+    /// vectors share one embedder.
+    func setNeuralEmbeddingsEnabled(_ enabled: Bool) async {
+        UserDefaults.standard.set(enabled, forKey: RAGEngine.neuralEmbeddingsDefaultsKey)
+        if enabled {
+            // If the download/load fails, RAGEngine falls back to NLEmbedding,
+            // so we still rebuild to keep the index internally consistent.
+            _ = await EmbeddingService.shared.ensureLoaded(downloadIfNeeded: true)
+        } else {
+            await EmbeddingService.shared.unload()
+        }
+        await reindexAllDocuments()
+    }
+
     private var indexedDocumentSnapshots: [RAGEngine.IndexedDocumentSnapshot] {
         documentsByConversationID.flatMap { conversationID, documents in
             documents.map { document in

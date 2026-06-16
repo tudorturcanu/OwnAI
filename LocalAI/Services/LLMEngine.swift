@@ -152,6 +152,7 @@ final class LLMEngine {
     private var adaptiveThrottleInterval: TimeInterval = 0.08
     private var estimatedTokenCount: Int = 0
     private var lastTokenCountTextLength: Int = 0
+    private var lastStreamingUpdateLength: Int = 0
     private var throttleInterval: TimeInterval {
         max(lowPowerMode ? 0.16 : 0.08, adaptiveThrottleInterval)
     } // Balance smooth streaming with UI responsiveness
@@ -344,6 +345,7 @@ final class LLMEngine {
         adaptiveThrottleInterval = lowPowerMode ? 0.16 : 0.08
         estimatedTokenCount = 0
         lastTokenCountTextLength = 0
+        lastStreamingUpdateLength = 0
         streamingStartTime = Date()
         streamingTokensPerSecond = 0
         print("[LLMEngine] generate start id=\(model.id) engine=\(model.engine.rawValue)")
@@ -436,7 +438,7 @@ final class LLMEngine {
                         image: image
                     ) { [weak self] content in
                         guard let self else { return true }
-                        await self.updateResponseIfNeeded(content, force: false)
+                        self.postStreamingUpdate(content)
                         return AssistantOutputSanitizer.containsControlMarker(content)
                     }
                 } else if model.engine == .mlx {
@@ -476,10 +478,15 @@ final class LLMEngine {
                             firstTokenAt = Date()
                         }
                         lastContent = Self.trimRepeatedLoopIfNeeded(in: lastContent + chunk)
-                        await self.updateResponseIfNeeded(lastContent, force: false)
+                        // Fire-and-forget so draining the model stream never blocks
+                        // on a per-token main-actor hop (which batched updates).
+                        self.postStreamingUpdate(lastContent)
                         if Self.shouldStopStreaming(content: lastContent) {
                             break
                         }
+                        // Let the consumer interleave with the synchronous MLX
+                        // producer so tokens surface as they are generated.
+                        await Task.yield()
                     }
                     finalMlxContent = lastContent
                     await self.updateResponseIfNeeded(lastContent, force: true)
@@ -744,8 +751,28 @@ final class LLMEngine {
         )
     }
     
+    /// Posts a streaming update to the main actor WITHOUT the caller awaiting it.
+    /// The token-draining loop must never suspend on a main-actor hop per token:
+    /// doing so serialized every token against the `@MainActor generate()` frame
+    /// that is awaiting the generation task, which batched all updates to the end
+    /// of the run. Fire-and-forget keeps the consumer draining the model stream as
+    /// fast as tokens arrive while the UI catches up independently (throttled).
+    nonisolated private func postStreamingUpdate(_ content: String) {
+        Task { @MainActor [weak self] in
+            await self?.updateResponseIfNeeded(content, force: false)
+        }
+    }
+
     /// Throttled UI update
     private func updateResponseIfNeeded(_ content: String, force: Bool) async {
+        // Drop stale out-of-order updates: fire-and-forget posts can land in any
+        // order, so never let a shorter (older) snapshot overwrite a longer one.
+        // `force` (the final snapshot) always wins.
+        if !force {
+            guard content.count >= lastStreamingUpdateLength else { return }
+        }
+        lastStreamingUpdateLength = content.count
+
         let now = Date()
         if force || now.timeIntervalSince(lastUpdate) >= throttleInterval {
             let uiStart = Date()

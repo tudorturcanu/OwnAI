@@ -152,7 +152,10 @@ struct ChatView: View {
             .sheet(item: $selectedDocumentForSources) { document in
                 DocumentSourceDrawerView(document: document)
             }
-            .sheet(isPresented: $isEditSheetPresented) {
+            .sheet(isPresented: $isEditSheetPresented, onDismiss: {
+                editingMessage = nil
+                editedMessageText = ""
+            }) {
                 NavigationStack {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 16) {
@@ -197,6 +200,11 @@ struct ChatView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.thinMaterial)
+                .onAppear {
+                    if let editingMessage {
+                        editedMessageText = editingMessage.content
+                    }
+                }
             }
             .overlay(alignment: .bottom) {
                 VStack(spacing: 10) {
@@ -488,6 +496,14 @@ struct ChatView: View {
         Task {
             await llmEngine.prewarmIfNeeded(model: model)
         }
+        // Warm the Whisper model in the background so the first mic tap is
+        // instant instead of paying the ~1 min Core ML load. Only when Whisper
+        // is the active backend and the model is already on disk.
+        if speechManager.speechInputBackend == .whisper, speechManager.isWhisperModelDownloaded {
+            Task {
+                await speechManager.prepareTranscriptionIfNeeded(downloadIfNeeded: false)
+            }
+        }
     }
     
     private var backgroundView: some View {
@@ -557,7 +573,8 @@ struct ChatView: View {
                                 showsQuickActions: message.role == .assistant
                                     && historyManager.currentMessages.last?.id == message.id
                                     && !message.isStreaming
-                                    && llmEngine.state != .generating
+                                    && llmEngine.state != .generating,
+                                liveStreamingContent: liveStreamingContent(for: message)
                             )
                                 .id(message.id)
                                 .opacity(messageMatchesSearch(message) ? 1.0 : 0.25)
@@ -603,15 +620,20 @@ struct ChatView: View {
             .onChange(of: historyManager.currentMessages.count) {
                 scrollToBottom(proxy: proxy)
             }
-            .onChange(of: llmEngine.state) {
-                if llmEngine.state != .generating {
+            .onChange(of: llmEngine.state) { oldState, newState in
+                // Only clear the streaming IDs when generation actually ENDS.
+                // Clearing on every non-generating state wiped them during the
+                // model-load (.loading/.ready) that runs after the IDs are set
+                // but before generation begins — which broke live streaming into
+                // the bubble (the final reply still showed via the direct write).
+                if oldState == .generating && newState != .generating {
                     activeStreamingConversationID = nil
                     activeStreamingAssistantID = nil
-                    if pendingSessionReset {
-                        pendingSessionReset = false
-                        llmEngine.resetSession()
-                        invalidateGenerationSessionScope()
-                    }
+                }
+                if newState != .generating, pendingSessionReset {
+                    pendingSessionReset = false
+                    llmEngine.resetSession()
+                    invalidateGenerationSessionScope()
                 }
                 scrollToBottom(proxy: proxy)
             }
@@ -1917,7 +1939,9 @@ struct ChatView: View {
     }
 
     private var editComposerCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let editorPadding = EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12)
+
+        return VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text(String(localized: "Your revision"))
                     .font(.caption.weight(.semibold))
@@ -1935,15 +1959,17 @@ struct ChatView: View {
                     Text(String(localized: "Rewrite the message here..."))
                         .font(.callout)
                         .foregroundStyle(Color(white: 0.55))
-                        .padding(.top, 8)
-                        .padding(.leading, 4)
+                        .padding(editorPadding)
+                        .allowsHitTesting(false)
                 }
 
                 TextEditor(text: $editedMessageText)
                     .font(.body)
                     .scrollContentBackground(.hidden)
+                    .background(Color.clear)
                     .frame(minHeight: 220)
-                    .padding(12)
+                    .padding(editorPadding)
+                    .id(editingMessage?.id)
             }
             .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
             .background(Color(white: 0.985), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -2265,6 +2291,20 @@ struct ChatView: View {
             return response
         }
         return streamingPrefix + response
+    }
+
+    /// Live text for the assistant bubble currently being generated. Reading
+    /// `llmEngine.currentResponse` here makes the enclosing row re-render on every
+    /// token tick, so the reply streams in directly from the engine — bypassing
+    /// the per-token history write that otherwise batched updates into one render.
+    private func liveStreamingContent(for message: ChatMessage) -> String? {
+        guard llmEngine.state == .generating,
+              message.role == .assistant,
+              message.isStreaming,
+              message.id == activeStreamingAssistantID else {
+            return nil
+        }
+        return combinedStreamingContent(for: llmEngine.currentResponse)
     }
 
     private func failureContent(

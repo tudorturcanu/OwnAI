@@ -21,9 +21,14 @@ struct AdvancedSettingsView: View {
     @AppStorage("messageTextScale") private var messageTextScale: Double = 1.0
     @AppStorage("autoRead") private var autoRead = false
     @AppStorage("speechOutputBackend") private var speechOutputBackendRaw = SpeechOutputBackend.piperAmy.rawValue
+    @AppStorage(RAGEngine.neuralEmbeddingsDefaultsKey) private var neuralEmbeddingsEnabled = false
     @State private var benchmarkResult: MlxPerformanceBenchmarkResult?
     @State private var benchmarkError: String?
     @State private var isRunningBenchmark = false
+    @State private var isEmbeddingBusy = false
+    @State private var embeddingStatusMessage: String?
+    @State private var embeddingModelPresent = false
+    @State private var whisperModelPresent = false
 
     private var pdfOCRMode: PDFOCRMode {
         PDFOCRMode(rawValue: pdfOCRModeRaw) ?? .preferNativeText
@@ -55,6 +60,7 @@ struct AdvancedSettingsView: View {
         ScrollView {
             VStack(spacing: 28) {
                 pdfOCRSection
+                documentSearchSection
                 behaviorSection
                 diagnosticsSection
                 textSizeSection
@@ -66,6 +72,228 @@ struct AdvancedSettingsView: View {
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Advanced")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            embeddingModelPresent = EmbeddingService.shared.isModelDownloaded
+            whisperModelPresent = speechManager.isWhisperModelDownloaded
+        }
+    }
+
+    private func selectSpeechInputBackend(_ backend: SpeechInputBackend) {
+        guard speechManager.speechInputBackend != backend else { return }
+        if speechManager.isListening { speechManager.stopListening() }
+
+        if backend == .whisper {
+            speechManager.speechInputBackend = .whisper
+            Task {
+                let ok = await speechManager.prepareTranscriptionIfNeeded(downloadIfNeeded: true)
+                await MainActor.run {
+                    whisperModelPresent = speechManager.isWhisperModelDownloaded
+                    if !ok { speechManager.speechInputBackend = .system }
+                }
+            }
+        } else {
+            speechManager.speechInputBackend = .system
+            speechManager.unloadWhisper()
+        }
+    }
+
+    private func deleteWhisperModel() {
+        speechManager.speechInputBackend = .system
+        speechManager.deleteWhisperModel()
+        whisperModelPresent = speechManager.isWhisperModelDownloaded
+    }
+
+    // MARK: - Document Search (Embeddings)
+
+    private var documentSearchSection: some View {
+        advancedSection("Document Search") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 14) {
+                    rowIcon(systemImage: "sparkle.magnifyingglass", tint: .blue)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Smart Document Search")
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.primary)
+
+                        Text("Higher-quality, multilingual search across your documents using an on-device AI model (~470 MB download). When off, a lighter built-in method is used.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    if isEmbeddingBusy {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Toggle("Smart Document Search", isOn: embeddingToggleBinding)
+                            .labelsHidden()
+                            .tint(.blue)
+                    }
+                }
+
+                if let embeddingStatusMessage {
+                    Text(embeddingStatusMessage)
+                        .font(.footnote)
+                        .foregroundStyle(isEmbeddingBusy ? Color.secondary : Color.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
+
+            if !neuralEmbeddingsEnabled && embeddingModelPresent && !isEmbeddingBusy {
+                sectionDivider
+
+                Button(role: .destructive) {
+                    deleteEmbeddingModel()
+                } label: {
+                    HStack(spacing: 14) {
+                        rowIcon(systemImage: "trash", tint: .red)
+
+                        Text("Delete Search Model")
+                            .font(.body)
+                            .foregroundStyle(.red)
+
+                        Spacer(minLength: 8)
+
+                        Text("~470 MB")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var embeddingToggleBinding: Binding<Bool> {
+        Binding(
+            get: { neuralEmbeddingsEnabled },
+            set: { setNeuralEmbeddings($0) }
+        )
+    }
+
+    private func setNeuralEmbeddings(_ enabled: Bool) {
+        guard !isEmbeddingBusy else { return }
+        neuralEmbeddingsEnabled = enabled
+        isEmbeddingBusy = true
+        embeddingStatusMessage = enabled
+            ? String(localized: "Preparing model and indexing documents…")
+            : String(localized: "Switching back to standard search…")
+
+        Task {
+            await DocumentManager.shared.setNeuralEmbeddingsEnabled(enabled)
+            await MainActor.run {
+                isEmbeddingBusy = false
+                embeddingModelPresent = EmbeddingService.shared.isModelDownloaded
+                if enabled && !embeddingModelPresent {
+                    neuralEmbeddingsEnabled = false
+                    embeddingStatusMessage = String(localized: "Couldn’t download the model. Check your connection and try again.")
+                } else {
+                    embeddingStatusMessage = nil
+                }
+            }
+        }
+    }
+
+    private func deleteEmbeddingModel() {
+        isEmbeddingBusy = true
+        Task {
+            await EmbeddingService.shared.deleteModel()
+            await MainActor.run {
+                embeddingModelPresent = EmbeddingService.shared.isModelDownloaded
+                isEmbeddingBusy = false
+                embeddingStatusMessage = nil
+            }
+        }
+    }
+
+    // MARK: - Speech Input (Dictation)
+
+    private var speechInputRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 14) {
+                rowIcon(systemImage: "mic.fill", tint: .red)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Dictation")
+                        .font(.body)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.primary)
+
+                    Menu {
+                        ForEach(SpeechInputBackend.allCases) { backend in
+                            Button {
+                                selectSpeechInputBackend(backend)
+                            } label: {
+                                if backend == speechManager.speechInputBackend {
+                                    Label(backend.title, systemImage: "checkmark")
+                                } else {
+                                    Text(backend.title)
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(speechManager.speechInputBackend.title)
+                                .font(.subheadline)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Spacer(minLength: 8)
+
+                            if speechManager.isPreparingTranscription {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    .disabled(speechManager.isPreparingTranscription)
+                    .accessibilityLabel("Dictation Backend")
+                    .accessibilityValue(speechManager.speechInputBackend.title)
+
+                    Text(speechInputSubtitle)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if speechManager.speechInputBackend == .system && whisperModelPresent && !speechManager.isPreparingTranscription {
+                Button(role: .destructive) {
+                    deleteWhisperModel()
+                } label: {
+                    Text("Delete Whisper Model (~145 MB)")
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(.red)
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 48)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+    }
+
+    private var speechInputSubtitle: String {
+        if speechManager.isPreparingTranscription {
+            return String(localized: "Downloading the Whisper model…")
+        }
+        return speechManager.speechInputBackend.subtitle
     }
 
     // MARK: - Diagnostics
@@ -344,6 +572,12 @@ struct AdvancedSettingsView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
+
+            if SpeechManager.isWhisperEnabled {
+                sectionDivider
+
+                speechInputRow
+            }
 
             sectionDivider
 

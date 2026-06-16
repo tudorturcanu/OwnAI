@@ -13,6 +13,28 @@ import Observation
 import Combine
 import piper
 import libespeak_ng
+import WhisperKit
+
+enum SpeechInputBackend: String, CaseIterable, Identifiable {
+    case system
+    case whisper
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return "System (Apple)"
+        case .whisper: return "Whisper"
+        }
+    }
+
+    var subtitle: String {
+        switch self {
+        case .system: return "Built-in Apple dictation (English)"
+        case .whisper: return "Local Whisper model (multilingual)"
+        }
+    }
+}
 
 enum SpeechOutputBackend: String, CaseIterable, Identifiable {
     case system
@@ -57,6 +79,28 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     var errorVersion = 0
     var speechBackendStatus = "System voice is ready."
     var isPreparingSpeechOutput = false
+    var isPreparingTranscription = false
+
+    /// Whisper model variant to download/run. "base" balances accuracy and speed
+    /// on phones (~145 MB Core ML download).
+    nonisolated static let whisperModelName = "base"
+
+    /// Feature flag: Whisper dictation is hidden for release until the slow
+    /// (~1 min) model load is improved. Flip to `true` to re-enable the UI.
+    nonisolated static let isWhisperEnabled = false
+
+    @ObservationIgnored @AppStorage("speechInputBackend") private var persistedSpeechInputBackend = SpeechInputBackend.system.rawValue
+    /// Optional ISO language code for Whisper (nil = auto-detect / multilingual).
+    @ObservationIgnored @AppStorage("speechInputLanguage") private var speechInputLanguage = ""
+
+    var speechInputBackend: SpeechInputBackend = .system {
+        didSet { persistedSpeechInputBackend = speechInputBackend.rawValue }
+    }
+
+    private var whisperKit: WhisperKit?
+    private var whisperTranscriber: AudioStreamTranscriber?
+    private var whisperStreamTask: Task<Void, Never>?
+    private var whisperLoadTask: Task<WhisperKit?, Never>?
 
     private let speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
@@ -74,6 +118,7 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
 
     private let ttsAudioEngine = AVAudioEngine()
     private let ttsPlayerNode = AVAudioPlayerNode()
+    private var ttsGraphConfigured = false
     private var piperSynthesizer: OpaquePointer?
     private var piperSynthesisTask: Task<Void, Never>?
 
@@ -94,11 +139,19 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         super.init()
         speechRecognizer?.delegate = self
         synthesizer.delegate = self
-        
+
+        if let savedInputBackend = SpeechInputBackend(rawValue: persistedSpeechInputBackend) {
+            // If Whisper was previously selected but the feature is now hidden,
+            // fall back to the system backend so dictation keeps working.
+            speechInputBackend = (savedInputBackend == .whisper && !Self.isWhisperEnabled) ? .system : savedInputBackend
+        }
+
         ttsAudioEngine.attach(ttsPlayerNode)
-        let format = AVAudioFormat(standardFormatWithSampleRate: 22050, channels: 1)
-        ttsAudioEngine.connect(ttsPlayerNode, to: ttsAudioEngine.mainMixerNode, format: format)
-        
+        // Note: the player -> mainMixer connection is deferred to playback time
+        // (see configureTTSGraphIfNeeded). Connecting here, before the audio
+        // session is active for playback, can lock the mixer -> output route to
+        // a 0 Hz / 0 channel hardware format, producing silence with no error.
+
         if let savedBackend = SpeechOutputBackend(rawValue: persistedSpeechOutputBackend) {
             speechOutputBackend = savedBackend
             if savedBackend != .system {
@@ -113,6 +166,12 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
 
     func startListening() throws {
         guard !isListening else { return }
+
+        if speechInputBackend == .whisper {
+            startWhisperListening()
+            return
+        }
+
         listeningRestartToken = UUID()
         guard speechRecognizer?.isAvailable == true else {
             publishError("Speech recognition is currently unavailable.")
@@ -271,6 +330,10 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     }
 
     func stopListening(_ invalidateRestartToken: Bool = true) {
+        if whisperTranscriber != nil || whisperStreamTask != nil {
+            stopWhisperListening()
+            return
+        }
         guard isListening || recognitionTask != nil || recognitionRequest != nil else { return }
         audioEngine.stop()
         recognitionTask?.cancel()
@@ -394,8 +457,187 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     func handleScenePhaseChange(_ phase: ScenePhase) {
         guard phase != .active else { return }
         stopSpeaking()
+        if isListening { stopListening() }
     }
-    
+
+    // MARK: - Whisper (Speech-to-Text)
+
+    /// swift-transformers HubApi lays Whisper Core ML models out under
+    /// <downloadBase>/models/argmaxinc/whisperkit-coreml/openai_whisper-<variant>.
+    nonisolated private static var whisperDownloadBase: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("whisperkit", isDirectory: true)
+    }
+
+    nonisolated private static var whisperModelFolder: URL {
+        whisperDownloadBase
+            .appendingPathComponent("models/argmaxinc/whisperkit-coreml/openai_whisper-\(whisperModelName)", isDirectory: true)
+    }
+
+    nonisolated var isWhisperModelDownloaded: Bool {
+        FileManager.default.fileExists(atPath: Self.whisperModelFolder.path)
+    }
+
+    /// Loads (and optionally downloads) the Whisper model. Returns true on success.
+    @discardableResult
+    func prepareTranscriptionIfNeeded(downloadIfNeeded: Bool) async -> Bool {
+        print("[SpeechManager] prepareTranscriptionIfNeeded(downloadIfNeeded: \(downloadIfNeeded)) — model=\(Self.whisperModelName), downloaded=\(isWhisperModelDownloaded), folder=\(Self.whisperModelFolder.path)")
+
+        if whisperKit != nil {
+            print("[SpeechManager] WhisperKit already loaded — reusing instance.")
+            return true
+        }
+        if !downloadIfNeeded && !isWhisperModelDownloaded {
+            print("[SpeechManager] Model not downloaded and downloadIfNeeded=false — skipping load.")
+            return false
+        }
+
+        if let whisperLoadTask {
+            print("[SpeechManager] A WhisperKit load is already in progress — awaiting it.")
+            whisperKit = await whisperLoadTask.value
+            print("[SpeechManager] In-progress load finished — whisperKit \(whisperKit == nil ? "is nil" : "ready").")
+            return whisperKit != nil
+        }
+
+        isPreparingTranscription = true
+        let base = Self.whisperDownloadBase
+        let modelName = Self.whisperModelName
+        print("[SpeechManager] Starting WhisperKit load — base=\(base.path)")
+        let task = Task { () -> WhisperKit? in
+            do {
+                try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+                // `load: true` is required: WhisperKit's init only calls
+                // loadModels() when `load == true` (or modelFolder is set).
+                // Without it the instance is created but the model/tokenizer
+                // are never loaded (modelState stays .unloaded, tokenizer nil).
+                let config = WhisperKitConfig(
+                    model: modelName,
+                    downloadBase: base,
+                    load: true,
+                    download: true
+                )
+                let kit = try await WhisperKit(config)
+                print("[SpeechManager] WhisperKit initialized — tokenizer \(kit.tokenizer == nil ? "MISSING (nil)" : "loaded"), modelState=\(kit.modelState)")
+                return kit
+            } catch {
+                print("[SpeechManager] WhisperKit load failed: \(error)")
+                return nil
+            }
+        }
+        whisperLoadTask = task
+        let loaded = await task.value
+        whisperLoadTask = nil
+        whisperKit = loaded
+        isPreparingTranscription = false
+        print("[SpeechManager] prepareTranscriptionIfNeeded finished — success=\(loaded != nil)")
+        return loaded != nil
+    }
+
+    func unloadWhisper() {
+        whisperStreamTask?.cancel()
+        whisperStreamTask = nil
+        whisperTranscriber = nil
+        whisperKit = nil
+    }
+
+    func deleteWhisperModel() {
+        unloadWhisper()
+        try? FileManager.default.removeItem(at: Self.whisperDownloadBase)
+    }
+
+    private func startWhisperListening() {
+        listeningRestartToken = UUID()
+        Task {
+            let granted = await requestMicrophoneAuthorization()
+            guard granted else {
+                showPermissionAlert = true
+                return
+            }
+
+            guard await prepareTranscriptionIfNeeded(downloadIfNeeded: false) else {
+                print("[SpeechManager] startWhisperListening aborted — model not prepared (not downloaded or load failed).")
+                publishError("Download the Whisper model in Settings to use it.")
+                return
+            }
+            guard let whisperKit else {
+                print("[SpeechManager] startWhisperListening aborted — whisperKit is nil after prepare returned true.")
+                publishError("Whisper model is not ready.")
+                return
+            }
+            guard let tokenizer = whisperKit.tokenizer else {
+                print("[SpeechManager] startWhisperListening aborted — whisperKit loaded but tokenizer is nil (modelState=\(whisperKit.modelState)).")
+                publishError("Whisper model is not ready.")
+                return
+            }
+
+            stopSpeaking()
+
+            var options = DecodingOptions()
+            options.task = .transcribe
+            let trimmedLanguage = speechInputLanguage.trimmingCharacters(in: .whitespaces)
+            options.language = trimmedLanguage.isEmpty ? nil : trimmedLanguage
+            options.usePrefillPrompt = !(options.language == nil)
+
+            let transcriber = AudioStreamTranscriber(
+                audioEncoder: whisperKit.audioEncoder,
+                featureExtractor: whisperKit.featureExtractor,
+                segmentSeeker: whisperKit.segmentSeeker,
+                textDecoder: whisperKit.textDecoder,
+                tokenizer: tokenizer,
+                audioProcessor: whisperKit.audioProcessor,
+                decodingOptions: options,
+                stateChangeCallback: { [weak self] _, newState in
+                    Task { @MainActor in
+                        self?.handleWhisperState(newState)
+                    }
+                }
+            )
+            whisperTranscriber = transcriber
+            isListening = true
+            transcribedText = ""
+            errorMessage = nil
+
+            whisperStreamTask = Task {
+                do {
+                    try await transcriber.startStreamTranscription()
+                } catch {
+                    if !(error is CancellationError) {
+                        await MainActor.run {
+                            self.publishError(error.localizedDescription)
+                            self.stopWhisperListening()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func handleWhisperState(_ state: AudioStreamTranscriber.State) {
+        var text = state.confirmedSegments.map(\.text).joined(separator: " ")
+        if !state.currentText.isEmpty {
+            text += (text.isEmpty ? "" : " ") + state.currentText
+        }
+        transcribedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func stopWhisperListening() {
+        whisperStreamTask?.cancel()
+        whisperStreamTask = nil
+
+        if let transcriber = whisperTranscriber {
+            Task { await transcriber.stopStreamTranscription() }
+        }
+        whisperTranscriber = nil
+
+        let final = transcribedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !final.isEmpty {
+            lastFinalTranscription = final
+            finalTranscriptionVersion += 1
+        }
+        isListening = false
+        listeningRestartToken = UUID()
+    }
+
     // MARK: - Piper Integration
 
     private func getPiperModelPaths(for backend: SpeechOutputBackend) -> (model: String, config: String)? {
@@ -463,6 +705,24 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         }
     }
     
+    private func configureAndStartTTSEngine() throws {
+        if !ttsGraphConfigured {
+            // 22050 Hz mono matches the Piper voice models; the mixer handles
+            // sample-rate conversion to whatever the active output route uses.
+            guard let format = AVAudioFormat(standardFormatWithSampleRate: 22050, channels: 1) else {
+                throw NSError(domain: "SpeechManager", code: -1,
+                              userInfo: [NSLocalizedDescriptionKey: "Could not create TTS audio format"])
+            }
+            ttsAudioEngine.connect(ttsPlayerNode, to: ttsAudioEngine.mainMixerNode, format: format)
+            ttsGraphConfigured = true
+        }
+
+        if !ttsAudioEngine.isRunning {
+            ttsAudioEngine.prepare()
+            try ttsAudioEngine.start()
+        }
+    }
+
     private func speakWithPiper(_ text: String) {
         guard let synth = piperSynthesizer else {
             publishError("Piper synthesizer not loaded")
@@ -474,13 +734,19 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
             try session.setCategory(.playback, mode: .default, options: [.duckOthers])
             try session.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
-            print("Failed to set audio session active for playback: \(error.localizedDescription)")
+            publishError("Failed to activate audio for playback: \(error.localizedDescription)")
+            return
         }
-        
-        if !ttsAudioEngine.isRunning {
-            try? ttsAudioEngine.start()
+
+        // Connect and start the engine now that the playback route is active so
+        // the mixer -> output connection picks up the real hardware format.
+        do {
+            try configureAndStartTTSEngine()
+        } catch {
+            publishError("Audio engine failed to start: \(error.localizedDescription)")
+            return
         }
-        
+
         isSpeaking = true
         ttsPlayerNode.play()
         
@@ -503,6 +769,7 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
             }
             
             var chunk = piper_audio_chunk()
+            var scheduledFinal = false
             while !Task.isCancelled {
                 let nextResult = piper_synthesize_next(synth, &chunk)
                 if nextResult == PIPER_DONE { break }
@@ -512,7 +779,7 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
                     }
                     break
                 }
-                
+
                 let numSamples = Int(chunk.num_samples)
                 guard numSamples > 0 else {
                     if chunk.is_last { break }
@@ -532,6 +799,7 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
                 }
                 
                 let isLast = chunk.is_last
+                if isLast { scheduledFinal = true }
                 await MainActor.run {
                     self?.ttsPlayerNode.scheduleBuffer(pcmBuffer, at: nil, options: []) {
                         if isLast {
@@ -544,8 +812,21 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
                         }
                     }
                 }
-                
+
                 if isLast { break }
+            }
+
+            // If synthesis ended without a non-empty final chunk (empty last
+            // chunk, or PIPER_DONE before any is_last), no scheduleBuffer
+            // completion will fire. Reset state directly so playback isn't left
+            // "speaking" forever and the speech queue can advance.
+            if !scheduledFinal && !Task.isCancelled {
+                await MainActor.run {
+                    guard let self = self else { return }
+                    self.isSpeaking = false
+                    self.currentlySpeakingMessageID = nil
+                    self.speechCompletionVersion += 1
+                }
             }
         }
     }
