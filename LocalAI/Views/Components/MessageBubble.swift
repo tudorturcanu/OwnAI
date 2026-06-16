@@ -66,8 +66,38 @@ struct AssistantMarkdownView: View, Equatable {
 
     private static let lightHaptic = UIImpactFeedbackGenerator(style: .light)
 
+    /// URL scheme used to make inline `[Source n]` citations tappable. Taps are
+    /// intercepted by the enclosing message via `\.openURL`; see `MessageBubble`.
+    static let sourceURLScheme = "localai-source"
+
+    /// Matches the `[Source n]` markers the model is instructed to emit so they
+    /// can be turned into tappable links that map to the numbered source chips.
+    private static let sourceMarkerRegex = try? NSRegularExpression(
+        pattern: #"\[Source (\d+)\]"#
+    )
+
+    /// Rewrites `[Source n]` markers into markdown links (`[Source n](localai-source://n)`)
+    /// without touching the persisted message — this is render-only.
+    static func linkifySources(_ text: String) -> String {
+        guard text.contains("[Source "), let regex = sourceMarkerRegex else { return text }
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.stringByReplacingMatches(
+            in: text,
+            range: range,
+            withTemplate: "[Source $1](\(sourceURLScheme)://$1)"
+        )
+    }
+
     var body: some View {
-        Markdown(content)
+        // Render with MarkdownUI for both the live (streaming) and finished reply.
+        // The engine throttles UI updates (~12/sec, with adaptive back-off if a
+        // parse is slow), so re-parsing the growing response stays smooth. Code
+        // blocks fall back to plain text while streaming via AsyncCodeBlockView.
+        Markdown(Self.linkifySources(content))
+            .markdownTextStyle(\.link) {
+                ForegroundColor(.accentColor)
+                FontWeight(.semibold)
+            }
             .markdownTextStyle {
                 FontSize(CGFloat(17 * textScale))
             }
@@ -141,6 +171,43 @@ struct ThinkingMarkdownView: View, Equatable {
     }
 }
 
+/// Animated "typing" indicator: a pulse travels across three dots, driven by
+/// `PhaseAnimator` for a smooth, self-sustaining loop (no fragile one-shot state).
+/// Under Reduce Motion it renders three calm static dots.
+struct TypingDots: View {
+    let gradient: LinearGradient
+    let reduceMotion: Bool
+
+    var body: some View {
+        if reduceMotion {
+            dots { _ in (1.0, 0.55) }
+        } else {
+            // Phases 0–2 light each dot in turn; phase 3 is a brief rest beat
+            // before the wave restarts.
+            PhaseAnimator([0, 1, 2, 3]) { phase in
+                dots { index in
+                    phase == index ? (1.35, 1.0) : (0.7, 0.4)
+                }
+            } animation: { _ in .easeInOut(duration: 0.28) }
+        }
+    }
+
+    private func dots(
+        _ style: @escaping (Int) -> (scale: CGFloat, opacity: Double)
+    ) -> some View {
+        HStack(spacing: 4) {
+            ForEach(0..<3, id: \.self) { index in
+                let appearance = style(index)
+                Circle()
+                    .fill(gradient)
+                    .frame(width: 4, height: 4)
+                    .scaleEffect(appearance.scale)
+                    .opacity(appearance.opacity)
+            }
+        }
+    }
+}
+
 struct MessageBubble: View {
     let message: ChatMessage
     let showsContinue: Bool
@@ -159,13 +226,23 @@ struct MessageBubble: View {
     let onSearchWeb: ((ChatMessage) -> Void)?
     let onFollowUp: ((ChatMessage, String) -> Void)?
     let showsQuickActions: Bool
+    /// When set, this text is displayed instead of `message.content` for the
+    /// streaming assistant bubble. ChatView feeds it the engine's live
+    /// `currentResponse` so the reply renders token-by-token directly, without
+    /// round-tripping every token through history (and a disk write).
+    let liveStreamingContent: String?
     @AppStorage("codeTheme") private var codeThemeRaw = CodeTheme.defaultTheme.rawValue
     @AppStorage("messageTextScale") private var messageTextScale: Double = 1.0
     @Environment(SpeechManager.self) private var speechManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
     @State private var isThinkingExpanded = false
     @State private var showCopied = false
     @State private var showStats = false
+    /// The `[Source n]` citation the reader last tapped, used to briefly pulse the
+    /// matching chip so they can connect an inline citation to its document.
+    @State private var highlightedSourceNumber: Int?
+    @State private var highlightClearTask: Task<Void, Never>?
     private let userLeadingInset: CGFloat = 60
     private let assistantTrailingInset: CGFloat = 16
     private let collapsedThinkingHeight: CGFloat = 76
@@ -188,7 +265,8 @@ struct MessageBubble: View {
         onSpeak: ((ChatMessage) -> Void)? = nil,
         onSearchWeb: ((ChatMessage) -> Void)? = nil,
         onFollowUp: ((ChatMessage, String) -> Void)? = nil,
-        showsQuickActions: Bool = false
+        showsQuickActions: Bool = false,
+        liveStreamingContent: String? = nil
     ) {
         self.message = message
         self.showsContinue = showsContinue
@@ -207,49 +285,26 @@ struct MessageBubble: View {
         self.onSearchWeb = onSearchWeb
         self.onFollowUp = onFollowUp
         self.showsQuickActions = showsQuickActions
+        self.liveStreamingContent = liveStreamingContent
+    }
+
+    /// The text actually shown in the bubble — the live streaming text while the
+    /// engine is producing it, otherwise the persisted message content.
+    private var displayedContent: String {
+        liveStreamingContent ?? message.content
     }
 
     var body: some View {
         let thinkingText = message.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let hasThinking = !thinkingText.isEmpty
-        let hasAnswerContent = !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let hasAnswerContent = !displayedContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let sourceTitles = message.sourceTitles
 
         HStack(alignment: .top, spacing: 12) {
             if message.role == .user {
                 Spacer(minLength: userLeadingInset)
-            } else {
-                // Assistant avatar
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [.blue.opacity(0.15), .purple.opacity(0.15)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 32, height: 32)
-                    
-                    Image(systemName: "sparkles")
-                        .font(.caption)
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [.blue, .purple],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                }
-                .scaleEffect(message.isStreaming ? 1.05 : 1.0)
-                .animation(
-                    message.isStreaming ?
-                    .easeInOut(duration: 1.0).repeatForever(autoreverses: true) :
-                    .default,
-                    value: message.isStreaming
-                )
             }
-            
+
             VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 6) {
                 if message.role == .assistant && hasThinking {
                     thinkingCard(thinkingText: thinkingText, showsStreamingIndicator: message.isStreaming && !hasAnswerContent)
@@ -294,10 +349,8 @@ struct MessageBubble: View {
                     quickActionsBar
                 }
             }
-            
-            if message.role == .assistant {
-                Spacer(minLength: assistantTrailingInset)
-            }
+            .frame(maxWidth: message.role == .assistant ? .infinity : nil, alignment: .leading)
+            .environment(\.openURL, sourceOpenURLAction)
         }
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 10)
@@ -316,7 +369,7 @@ struct MessageBubble: View {
             }
         }
         .onAppear {
-            withAnimation(.spring(response: 0.45, dampingFraction: 0.8)) {
+            withAnimation(reduceMotion ? nil : .spring(response: 0.45, dampingFraction: 0.8)) {
                 appeared = true
             }
             if message.role == .assistant && message.content.isEmpty && message.thinkingContent == nil {
@@ -481,12 +534,14 @@ struct MessageBubble: View {
 
             if message.isStreaming {
                 streamingIndicator
-                    .padding(.top, message.content.isEmpty ? 0 : 4)
+                    .padding(.top, displayedContent.isEmpty ? 0 : 4)
                     .transition(.opacity)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        // User messages keep the chat bubble; assistant replies render as plain
+        // text on the chat background (no bubble, no shadow) for a cleaner read.
+        .padding(.horizontal, message.role == .user ? 16 : 0)
+        .padding(.vertical, message.role == .user ? 12 : 4)
         .background {
             if message.role == .user {
                 LinearGradient(
@@ -494,14 +549,25 @@ struct MessageBubble: View {
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
-            } else {
-                Rectangle().fill(.ultraThinMaterial)
             }
         }
-        .clipShape(MessageShape(isUser: message.role == .user))
-        .shadow(color: .black.opacity(message.role == .user ? 0.12 : 0.06), radius: message.role == .user ? 8 : 4, y: 3)
+        .clipShape(message.role == .user ? AnyShape(MessageShape(isUser: true)) : AnyShape(Rectangle()))
+        .shadow(
+            color: message.role == .user ? .black.opacity(0.12) : .clear,
+            radius: message.role == .user ? 8 : 0,
+            y: message.role == .user ? 3 : 0
+        )
         .contentTransition(.interpolate)
-        .animation(message.isStreaming ? nil : .spring(response: 0.4, dampingFraction: 0.9), value: message.content)
+        // No animation on the content swap WHILE streaming: animating the
+        // per-token MarkdownUI re-render cross-fades old vs new and reads as
+        // flicker. Stream the text in instantly; only the finalized reply gets
+        // a gentle settling spring.
+        .animation(
+            message.isStreaming || reduceMotion
+                ? nil
+                : .spring(response: 0.4, dampingFraction: 0.9),
+            value: displayedContent
+        )
         .contextMenu {
             Button {
                 copyAndShowToast(message.content)
@@ -659,10 +725,13 @@ struct MessageBubble: View {
                     .font(.system(size: 17 * messageTextScale))
                     .foregroundStyle(.white)
             }
-        } else {
+        } else if !displayedContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // Only render the markdown body when there's actual text. An empty
+            // Markdown("") block expands to full width, which made the initial
+            // streaming placeholder (just the typing dots) render as a huge bubble.
             let theme = CodeTheme(rawValue: codeThemeRaw) ?? .defaultTheme
             AssistantMarkdownView(
-                content: message.content,
+                content: displayedContent,
                 isStreaming: message.isStreaming,
                 theme: theme,
                 textScale: messageTextScale
@@ -672,51 +741,90 @@ struct MessageBubble: View {
     }
 
     private var streamingIndicator: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<3) { i in
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                message.role == .user ? .white.opacity(0.8) : .blue.opacity(0.6),
-                                message.role == .user ? .white.opacity(0.6) : .purple.opacity(0.6)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .frame(width: 4, height: 4)
-                    .opacity(appeared ? 1.0 : 0.3)
-                    .scaleEffect(appeared ? 1.0 : 0.7)
-                    .animation(
-                        .easeInOut(duration: 0.6)
-                        .repeatForever()
-                        .delay(Double(i) * 0.2),
-                        value: appeared
-                    )
+        TypingDots(
+            gradient: LinearGradient(
+                colors: [
+                    message.role == .user ? .white.opacity(0.8) : .blue.opacity(0.6),
+                    message.role == .user ? .white.opacity(0.6) : .purple.opacity(0.6)
+                ],
+                startPoint: .leading,
+                endPoint: .trailing
+            ),
+            reduceMotion: reduceMotion
+        )
+    }
+
+    /// Intercepts taps on inline `[Source n]` citation links (see
+    /// `AssistantMarkdownView.linkifySources`). Source links pulse the matching
+    /// chip; any other URL falls through to the system handler.
+    private var sourceOpenURLAction: OpenURLAction {
+        OpenURLAction { url in
+            guard url.scheme == AssistantMarkdownView.sourceURLScheme,
+                  let number = Int(url.host ?? "") else {
+                return .systemAction
+            }
+            highlightSource(number)
+            return .handled
+        }
+    }
+
+    private func highlightSource(_ number: Int) {
+        guard number >= 1, number <= message.sourceTitles.count else { return }
+        Self.lightHaptic.impactOccurred()
+        highlightClearTask?.cancel()
+        withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7)) {
+            highlightedSourceNumber = number
+        }
+        highlightClearTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            guard !Task.isCancelled else { return }
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) {
+                highlightedSourceNumber = nil
             }
         }
     }
 
     private func sourceChips(_ sourceTitles: [String]) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(sourceTitles, id: \.self) { title in
-                    HStack(spacing: 6) {
-                        Image(systemName: "doc.text")
-                        Text(title)
-                            .lineLimit(1)
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(sourceTitles.enumerated()), id: \.offset) { index, title in
+                        let number = index + 1
+                        let isHighlighted = highlightedSourceNumber == number
+                        HStack(spacing: 6) {
+                            Text("\(number)")
+                                .font(.caption2.weight(.bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 16, height: 16)
+                                .background(isHighlighted ? Color.accentColor : Color(white: 0.55))
+                                .clipShape(Circle())
+                            Text(title)
+                                .lineLimit(1)
+                        }
+                        .font(.caption2.weight(.medium))
+                        .foregroundStyle(isHighlighted ? Color.accentColor : Color(white: 0.4))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(isHighlighted ? Color.accentColor.opacity(0.12) : Color.white.opacity(0.92))
+                        .clipShape(Capsule())
+                        .overlay(
+                            Capsule()
+                                .stroke(Color.accentColor, lineWidth: isHighlighted ? 1.5 : 0)
+                        )
+                        .scaleEffect(isHighlighted ? 1.05 : 1)
+                        .id(number)
                     }
-                    .font(.caption2.weight(.medium))
-                    .foregroundStyle(Color(white: 0.4))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.92))
-                    .clipShape(Capsule())
+                }
+                .padding(.vertical, 2)
+            }
+            .frame(maxWidth: 280, alignment: .leading)
+            .onChange(of: highlightedSourceNumber) { _, newValue in
+                guard let newValue else { return }
+                withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8)) {
+                    proxy.scrollTo(newValue, anchor: .center)
                 }
             }
         }
-        .frame(maxWidth: 280, alignment: .leading)
     }
 
     private func thinkingCard(thinkingText: String, showsStreamingIndicator: Bool) -> some View {

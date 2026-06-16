@@ -57,13 +57,19 @@ enum PromptBudgeter {
         let budget = max(500, configuration.inputTokenBudget - reservedTokens)
         var remainingTokens = budget
         var blocks: [String] = []
+        // `sourceTitles` is ordered so that its position matches the `[Source n]`
+        // marker the model is asked to cite: sourceTitles[n - 1] is Source n. Each
+        // distinct document·location gets one stable number, reused when the same
+        // source contributes multiple passages, so the chips shown in the UI line
+        // up 1:1 with the inline citations in the answer.
         var sourceTitles: [String] = []
-        var seenTitles = Set<String>()
+        var numberByKey: [String: Int] = [:]
         var omittedCount = 0
 
         for (index, snippet) in snippets.enumerated() {
             let sourceTitle = snippet.location.map { "\(snippet.title) · \($0)" } ?? snippet.title
-            let header = "[Source \(index + 1): \(snippet.title)]"
+            let assignedNumber = numberByKey[sourceTitle] ?? (sourceTitles.count + 1)
+            let header = "[Source \(assignedNumber): \(snippet.title)]"
             let locationLine = snippet.location.map { "Location: \($0)\n" } ?? ""
             let overhead = estimatedTokenCount(header + "\n" + locationLine) + 12
             let availableForContent = remainingTokens - overhead
@@ -86,7 +92,8 @@ enum PromptBudgeter {
             }
 
             blocks.append(block)
-            if seenTitles.insert(sourceTitle).inserted {
+            if numberByKey[sourceTitle] == nil {
+                numberByKey[sourceTitle] = assignedNumber
                 sourceTitles.append(sourceTitle)
             }
             remainingTokens -= usedTokens
