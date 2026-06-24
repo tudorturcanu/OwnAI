@@ -2560,7 +2560,7 @@ struct ChatView: View {
         let trimmedText = userText.trimmingCharacters(in: .whitespacesAndNewlines)
         let effectiveRequest = trimmedText.isEmpty ? String(localized: "Summarize the documents in this chat.") : trimmedText
 
-        guard let conversationID, documentManager.hasDocuments(in: conversationID) else {
+        guard let conversationID, documentManager.shouldSearchDocuments(in: conversationID) else {
             return (budgetedGenerationPrompt(trimmedText, model: model), [])
         }
 

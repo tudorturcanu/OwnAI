@@ -22,9 +22,6 @@ struct AdvancedSettingsView: View {
     @AppStorage("autoRead") private var autoRead = false
     @AppStorage("speechOutputBackend") private var speechOutputBackendRaw = SpeechOutputBackend.piperAmy.rawValue
     @AppStorage(RAGEngine.neuralEmbeddingsDefaultsKey) private var neuralEmbeddingsEnabled = false
-    @State private var benchmarkResult: MlxPerformanceBenchmarkResult?
-    @State private var benchmarkError: String?
-    @State private var isRunningBenchmark = false
     @State private var isEmbeddingBusy = false
     @State private var embeddingStatusMessage: String?
     @State private var embeddingModelPresent = false
@@ -62,7 +59,6 @@ struct AdvancedSettingsView: View {
                 pdfOCRSection
                 documentSearchSection
                 behaviorSection
-                diagnosticsSection
                 textSizeSection
             }
             .padding(.horizontal, 20)
@@ -294,61 +290,6 @@ struct AdvancedSettingsView: View {
             return String(localized: "Downloading the Whisper model…")
         }
         return speechManager.speechInputBackend.subtitle
-    }
-
-    // MARK: - Diagnostics
-
-    private var diagnosticsSection: some View {
-        advancedSection("Diagnostics") {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(spacing: 14) {
-                    rowIcon(systemImage: "speedometer", tint: .cyan)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("MLX Benchmark")
-                            .font(.body)
-                            .fontWeight(.medium)
-                            .foregroundStyle(.primary)
-
-                        Text(benchmarkSubtitle)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 8)
-
-                    Button {
-                        runBenchmark()
-                    } label: {
-                        if isRunningBenchmark {
-                            ProgressView()
-                                .controlSize(.small)
-                        } else {
-                            Image(systemName: "play.fill")
-                                .font(.caption.weight(.bold))
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
-                    .disabled(!canRunBenchmark || isRunningBenchmark)
-                    .accessibilityLabel("Run MLX Benchmark")
-                }
-
-                if let benchmarkError {
-                    Text(benchmarkError)
-                        .font(.footnote)
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if let benchmarkResult {
-                    benchmarkSummary(benchmarkResult)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-        }
     }
 
     // MARK: - PDF OCR
@@ -750,105 +691,6 @@ struct AdvancedSettingsView: View {
             .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
     }
 
-    private var canRunBenchmark: Bool {
-        guard let model = modelManager.selectedModel else { return false }
-        return model.engine == .mlx && model.downloadState.isDownloaded
-    }
-
-    private var benchmarkSubtitle: String {
-        guard let model = modelManager.selectedModel else {
-            return String(localized: "Select a downloaded local model first.")
-        }
-
-        guard model.engine == .mlx else {
-            return String(localized: "Select a local MLX model first.")
-        }
-
-        guard model.downloadState.isDownloaded else {
-            return String(localized: "Download the selected local model first.")
-        }
-
-        return String(format: String(localized: "Runs two repeated-prefix prompts on %@."), model.name)
-    }
-
-    private func benchmarkSummary(_ result: MlxPerformanceBenchmarkResult) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(result.modelName)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.primary)
-
-                Spacer(minLength: 8)
-
-                if let speedup = result.speedup {
-                    Text(String(format: "%.2fx", speedup))
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(speedup >= 1 ? .green : .orange)
-                }
-            }
-
-            ForEach(Array(result.runs.enumerated()), id: \.offset) { _, run in
-                benchmarkRunRow(run)
-            }
-        }
-        .padding(12)
-        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    private func benchmarkRunRow(_ run: MlxPerformanceBenchmarkResult.Run) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(run.label)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.primary)
-
-                Spacer(minLength: 8)
-
-                Text(run.cacheHit ? "Cache hit" : "Cache miss")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(run.cacheHit ? .green : .secondary)
-            }
-
-            Text(
-                "first \(formattedDuration(run.firstTokenLatency)) · wall \(formattedDuration(run.wallTime)) · input \(run.estimatedInputTokens) · cached \(run.cachedPromptTokens) · memory \(formattedSignedBytes(run.residentMemoryDelta))"
-            )
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    private func runBenchmark() {
-        guard let model = modelManager.selectedModel, canRunBenchmark else { return }
-
-        isRunningBenchmark = true
-        benchmarkError = nil
-
-        Task {
-            do {
-                let result = try await llmEngine.runMlxPerformanceBenchmark(model: model)
-                await MainActor.run {
-                    benchmarkResult = result
-                    isRunningBenchmark = false
-                }
-            } catch {
-                await MainActor.run {
-                    benchmarkError = error.localizedDescription
-                    isRunningBenchmark = false
-                }
-            }
-        }
-    }
-
-    private func formattedDuration(_ value: TimeInterval?) -> String {
-        guard let value else { return "none" }
-        return String(format: "%.2fs", value)
-    }
-
-    private func formattedSignedBytes(_ bytes: Int64) -> String {
-        let prefix = bytes >= 0 ? "+" : "-"
-        return prefix + MemoryProfiler.formatBytes(UInt64(bytes.magnitude))
-    }
 }
 
 #Preview {

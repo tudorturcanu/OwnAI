@@ -676,12 +676,12 @@ struct ModelCard: View {
                         modelManager.deleteModel(model.id)
                     })
                 }
-            case .downloading(let progress, let speedBytesPerSecond):
-                DownloadingButton(progress: progress, speedBytesPerSecond: speedBytesPerSecond, action: {
+            case .downloading:
+                DownloadingButton(action: {
                     modelManager.cancelDownload(model.id)
                 })
-            case .validating(let progress):
-                DownloadingButton(progress: progress, speedBytesPerSecond: nil, action: {
+            case .validating:
+                DownloadingButton(action: {
                     modelManager.cancelDownload(model.id)
                 })
             default:
@@ -709,12 +709,12 @@ struct ModelCard: View {
                     })
                 }
                 
-            case .downloading(let progress, let speedBytesPerSecond):
-                DownloadingButton(progress: progress, speedBytesPerSecond: speedBytesPerSecond, action: {
+            case .downloading:
+                DownloadingButton(action: {
                     modelManager.cancelDownload(model.id)
                 })
-            case .validating(let progress):
-                DownloadingButton(progress: progress, speedBytesPerSecond: nil, action: {
+            case .validating:
+                DownloadingButton(action: {
                     modelManager.cancelDownload(model.id)
                 })
                 
@@ -1231,27 +1231,9 @@ struct UnsupportedModelButton: View {
 }
 
 struct DownloadingButton: View {
-    let progress: Double
-    let speedBytesPerSecond: Double?
     let action: () -> Void
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @ScaledMetric(relativeTo: .body) private var progressBarHeight = 6.0
     @ScaledMetric(relativeTo: .body) private var closeButtonSize = 32.0
-
-    private var clampedProgress: Double {
-        max(0.0, min(progress, 0.99))
-    }
-
-    private var statusLine: String {
-        guard let speedBytesPerSecond,
-              speedBytesPerSecond > 50_000 else {
-            return String(localized: "Measuring download speed...")
-        }
-
-        let speedLabel = Self.speedFormatter.string(fromByteCount: Int64(speedBytesPerSecond)) + "/s"
-        return "Current speed: \(speedLabel)"
-    }
 
     private var panelShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: 12)
@@ -1259,29 +1241,15 @@ struct DownloadingButton: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 8) {
-                    Text(String(localized: "Downloading"))
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Color.blue)
+            ProgressView()
+                .controlSize(.small)
+                .tint(.blue)
 
-                    Text("\(Int(clampedProgress * 100))%")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color.blue.opacity(0.78))
-                        .monospacedDigit()
-                }
+            Text(String(localized: "Loading"))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.blue)
 
-                progressBar
-
-                Text(statusLine)
-                    .font(.caption2)
-                    .foregroundStyle(Color(white: 0.43))
-                    .monospacedDigit()
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.82)
-                    .allowsTightening(true)
-                    .contentTransition(.numericText())
-            }
+            Spacer(minLength: 8)
 
             Button(role: .cancel, action: action) {
                 Image(systemName: "xmark")
@@ -1305,65 +1273,8 @@ struct DownloadingButton: View {
                 .strokeBorder(Color.blue.opacity(0.08), lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Download in progress")
-        .accessibilityValue("\(Int(clampedProgress * 100)) percent complete. \(statusLine)")
+        .accessibilityLabel("Loading")
     }
-
-    private var progressBar: some View {
-        GeometryReader { proxy in
-            let availableWidth = max(0, proxy.size.width)
-            let fillWidth = max(progressBarHeight * 1.4, availableWidth * clampedProgress)
-            let handleOffset = min(max(progressBarHeight * 0.8, fillWidth), availableWidth)
-
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.blue.opacity(0.12))
-
-                Capsule()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                Color.blue,
-                                Color.blue.opacity(0.72)
-                            ],
-                            startPoint: .leading,
-                            endPoint: .trailing
-                        )
-                    )
-                    .frame(width: fillWidth)
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: clampedProgress)
-
-                if !reduceMotion {
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: [
-                                    Color.white.opacity(0),
-                                    Color.white.opacity(0.35),
-                                    Color.white.opacity(0)
-                                ],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                        .frame(width: min(availableWidth * 0.16, 56), height: progressBarHeight)
-                        .offset(x: max(0, handleOffset - min(availableWidth * 0.12, 44)))
-                        .blendMode(.plusLighter)
-                        .animation(.easeInOut(duration: 0.25), value: clampedProgress)
-                }
-            }
-        }
-        .frame(height: progressBarHeight)
-    }
-    private static let speedFormatter: ByteCountFormatter = {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useGB, .useMB, .useKB]
-        formatter.countStyle = .file
-        formatter.includesUnit = true
-        formatter.isAdaptive = true
-        formatter.zeroPadsFractionDigits = true
-        return formatter
-    }()
 }
 
 struct DeleteButton: View {

@@ -89,6 +89,16 @@ final class DocumentManager {
     private static let maxPersistedCorpusBytes: Int64 = 1_073_741_824
     private static let reclaimBytesOnOverflow: Int64 = 734_003_200
 
+    /// Reserved sentinel scope for documents that belong to the persistent,
+    /// cross-chat library rather than a single conversation. Real conversation IDs
+    /// are random UUIDs, so this fixed value never collides with one. Storing the
+    /// library under this key lets it reuse all the per-conversation ingest,
+    /// indexing, and persistence machinery for free.
+    static let libraryScopeID = UUID(uuidString: "11111111-0000-4000-A000-11111111CAFE")!
+
+    /// UserDefaults key controlling whether the library is searched from every chat.
+    static let librarySearchEnabledDefaultsKey = "librarySearchEnabled"
+
     var extractionProgress: Double = 0
     var documentsByConversationID: [UUID: [ConversationDocument]] = [:]
 
@@ -198,6 +208,43 @@ final class DocumentManager {
             }
     }
 
+    // MARK: - Library (cross-chat)
+
+    /// Documents in the persistent, cross-chat library.
+    var libraryDocuments: [ConversationDocument] {
+        documentsByConversationID[Self.libraryScopeID] ?? []
+    }
+
+    var hasLibraryDocuments: Bool {
+        !libraryDocuments.isEmpty
+    }
+
+    /// Whether the library is consulted from every chat. Defaults to on.
+    var librarySearchEnabled: Bool {
+        if UserDefaults.standard.object(forKey: Self.librarySearchEnabledDefaultsKey) == nil {
+            return true
+        }
+        return UserDefaults.standard.bool(forKey: Self.librarySearchEnabledDefaultsKey)
+    }
+
+    func setLibrarySearchEnabled(_ enabled: Bool) {
+        UserDefaults.standard.set(enabled, forKey: Self.librarySearchEnabledDefaultsKey)
+    }
+
+    func addDocumentToLibrary(from attachedDocument: AttachedDocument) async {
+        await addDocumentToConversation(from: attachedDocument, conversationID: Self.libraryScopeID)
+    }
+
+    func removeFromLibrary(id: UUID) {
+        removeDocument(id: id, from: Self.libraryScopeID)
+    }
+
+    /// Whether answering in `conversationID` should consult any documents — its own
+    /// attachments or, when enabled, the shared library.
+    func shouldSearchDocuments(in conversationID: UUID?) -> Bool {
+        hasDocuments(in: conversationID) || (librarySearchEnabled && hasLibraryDocuments)
+    }
+
     func addDocumentToConversation(from attachedDocument: AttachedDocument, conversationID: UUID) async {
         let maxStoredCharacters = Self.currentDocumentProcessingMode().maxStoredCharacters
         let document = ConversationDocument(from: attachedDocument, maxCharacters: maxStoredCharacters)
@@ -277,8 +324,14 @@ final class DocumentManager {
         conversationID: UUID,
         limit: Int = 3
     ) async -> [(document: ConversationDocument, chunk: RetrievedChunk)] {
-        let retrieved = await ragEngine.retrieveDetailed(query: query, limit: limit, conversationID: conversationID)
-        let documents = documentsByConversationID[conversationID] ?? []
+        var scopes: Set<UUID> = [conversationID]
+        if librarySearchEnabled, hasLibraryDocuments {
+            scopes.insert(Self.libraryScopeID)
+        }
+
+        let retrieved = await ragEngine.retrieveDetailed(query: query, limit: limit, conversationIDs: scopes)
+        // Resolve each chunk back to its document from the scope it came from.
+        let documents = (documentsByConversationID[conversationID] ?? []) + libraryDocuments
         return retrieved.compactMap { chunk in
             guard let document = documents.first(where: { $0.id == chunk.documentID }) else {
                 return nil

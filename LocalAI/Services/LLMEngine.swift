@@ -26,30 +26,6 @@ enum LLMEngineState: Equatable {
     case error(message: String)
 }
 
-struct MlxPerformanceBenchmarkResult: Equatable {
-    struct Run: Equatable {
-        let label: String
-        let cacheHit: Bool
-        let cachedPromptTokens: Int
-        let estimatedInputTokens: Int
-        let estimatedOutputTokens: Int
-        let firstTokenLatency: TimeInterval?
-        let wallTime: TimeInterval
-        let residentMemoryDelta: Int64
-    }
-
-    let modelID: String
-    let modelName: String
-    let startedAt: Date
-    let finishedAt: Date
-    let runs: [Run]
-
-    var speedup: Double? {
-        guard runs.count >= 2, runs[1].wallTime > 0 else { return nil }
-        return runs[0].wallTime / runs[1].wallTime
-    }
-}
-
 #if !targetEnvironment(simulator)
 private struct LocalAITokenizerLoader: MLXLMCommon.TokenizerLoader {
     func load(from directory: URL) async throws -> any MLXLMCommon.Tokenizer {
@@ -926,60 +902,6 @@ extension LLMEngine {
         }
     }
 
-    func runMlxPerformanceBenchmark(model: ModelInfo) async throws -> MlxPerformanceBenchmarkResult {
-        guard model.engine == .mlx else {
-            throw LLMError.modelNotAvailable("Performance benchmark requires a local MLX model.")
-        }
-
-        let startedAt = Date()
-        let previousResponse = currentResponse
-        var runs: [MlxPerformanceBenchmarkResult.Run] = []
-
-        func captureRun(label: String) throws -> MlxPerformanceBenchmarkResult.Run {
-            guard let metrics = lastMlxGenerationMetrics else {
-                throw LLMError.generationFailed("Benchmark metrics were not recorded.")
-            }
-            return MlxPerformanceBenchmarkResult.Run(
-                label: label,
-                cacheHit: metrics.cacheHit,
-                cachedPromptTokens: metrics.cachedPromptTokens,
-                estimatedInputTokens: metrics.estimatedInputTokens,
-                estimatedOutputTokens: metrics.estimatedOutputTokens,
-                firstTokenLatency: metrics.firstTokenLatency,
-                wallTime: metrics.wallTime,
-                residentMemoryDelta: metrics.residentMemoryDelta
-            )
-        }
-
-        do {
-            try await loadModel(model)
-            resetSession()
-            lastMlxGenerationMetrics = nil
-
-            let prompt = Self.longPrefixBenchmarkPrompt()
-            let overrides = GenerationOverrides(temperature: 0.2, topP: 0.9, maxTokens: 24)
-
-            try await generate(prompt: prompt + "\n\nBenchmark request: Reply with exactly: FIRST.", overrides: overrides)
-            runs.append(try captureRun(label: "Cold prefix"))
-
-            try await generate(prompt: prompt + "\n\nBenchmark request: Reply with exactly: SECOND.", overrides: overrides)
-            runs.append(try captureRun(label: "Repeated prefix"))
-
-            currentResponse = previousResponse
-            resetIdleTimer()
-            return MlxPerformanceBenchmarkResult(
-                modelID: model.id,
-                modelName: model.name,
-                startedAt: startedAt,
-                finishedAt: Date(),
-                runs: runs
-            )
-        } catch {
-            currentResponse = previousResponse
-            throw error
-        }
-    }
-
     func prewarmIfNeeded(model: ModelInfo) async {
         print("[LLMEngine] prewarm requested id=\(model.id) engine=\(model.engine.rawValue) current=\(currentModel?.id ?? "none") state=\(state)")
 
@@ -1038,13 +960,6 @@ extension LLMEngine {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return 0 }
         return trimmed.split { $0.isWhitespace || $0.isNewline }.count
-    }
-
-    private nonisolated static func longPrefixBenchmarkPrompt() -> String {
-        let paragraph = """
-        Local benchmark context: The app is measuring repeated long-prefix inference. Keep this line stable so prompt-cache fingerprints can identify reusable work across sequential requests.
-        """
-        return Array(repeating: paragraph, count: 80).joined(separator: "\n")
     }
 
     private func makeMlxRequestFingerprint(

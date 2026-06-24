@@ -232,7 +232,10 @@ actor RAGEngine {
         }
     }
 
-    func retrieveDetailed(query: String, limit: Int = 3, conversationID: UUID) async -> [RetrievedChunk] {
+    /// Retrieves the most relevant chunks across one or more scopes. Passing both a
+    /// conversation's ID and the shared library scope lets a chat search its own
+    /// attached documents and the persistent library in a single ranked pass.
+    func retrieveDetailed(query: String, limit: Int = 3, conversationIDs: Set<UUID>) async -> [RetrievedChunk] {
         let queryLanguage = dominantLanguage(for: query)
         let queryEmbedding = await embedQuery(query, language: queryLanguage)
         let normalizedQuery = normalizedSearchText(query)
@@ -241,7 +244,7 @@ actor RAGEngine {
         guard queryEmbedding != nil || !queryTerms.isEmpty else { return [] }
 
         let ranked = chunks
-            .filter { $0.conversationID == conversationID }
+            .filter { conversationIDs.contains($0.conversationID) }
             .map { chunk in
                 // Only compare vectors from the same embedder; otherwise rely on
                 // lexical/phrase signals so mixed-embedder indexes still work.
