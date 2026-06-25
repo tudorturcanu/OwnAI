@@ -113,8 +113,8 @@ struct DataPrivacySheet: View {
                     
                     // Links
                     VStack(alignment: .leading, spacing: 8) {
-                        Link("Privacy Policy", destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/privacy.html")!)
-                        Link("Terms of Service", destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/terms.html")!)
+                        Link("Privacy Policy", destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/privacy.html") ?? URL(string: "about:blank")!)
+                        Link("Terms of Service", destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/terms.html") ?? URL(string: "about:blank")!)
                     }
                     .font(.subheadline.weight(.medium))
                     .foregroundStyle(.blue)

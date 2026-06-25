@@ -12,8 +12,8 @@ struct UpgradeView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(MonetizationManager.self) private var monetizationManager
 
-    private let privacyPolicyURL = URL(string: "https://sudoswisshub.github.io/MetalMind-AI/privacy.html")!
-    private let termsOfUseURL = URL(string: "https://sudoswisshub.github.io/MetalMind-AI/terms.html")!
+    private let privacyPolicyURL = URL(string: "https://sudoswisshub.github.io/MetalMind-AI/privacy.html") ?? URL(string: "about:blank")!
+    private let termsOfUseURL = URL(string: "https://sudoswisshub.github.io/MetalMind-AI/terms.html") ?? URL(string: "about:blank")!
 
     let feature: PremiumFeature
 

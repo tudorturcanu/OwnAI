@@ -229,7 +229,8 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
             recognitionRequest.requiresOnDeviceRecognition = true
         }
 
-        recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { result, error in
+        recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+            guard let self = self else { return }
             var isFinal = false
 
             if let result = result {
@@ -285,8 +286,8 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         }
 
         let recordingFormat = inputNode.outputFormat(forBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { buffer, _ in
-            self.recognitionRequest?.append(buffer)
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+            self?.recognitionRequest?.append(buffer)
         }
 
         audioEngine.prepare()
@@ -786,7 +787,9 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
                     continue
                 }
                 
-                let format = AVAudioFormat(standardFormatWithSampleRate: Double(chunk.sample_rate), channels: 1)!
+                guard let format = AVAudioFormat(standardFormatWithSampleRate: Double(chunk.sample_rate), channels: 1) else {
+                    continue
+                }
                 
                 guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(numSamples)) else {
                     continue

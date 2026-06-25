@@ -224,11 +224,11 @@ final class ChatHistoryManager {
     
     var currentConversation: ChatConversation? {
         get {
-            guard let id = currentConversationID else { return nil }
-            return conversations.first { $0.id == id }
+            guard let id = currentConversationID, let index = conversationIndexMap[id] else { return nil }
+            return conversations[index]
         }
         set {
-            if let newValue = newValue, let index = conversations.firstIndex(where: { $0.id == newValue.id }) {
+            if let newValue = newValue, let index = conversationIndexMap[newValue.id] {
                 conversations[index] = newValue
             }
         }

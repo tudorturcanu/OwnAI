@@ -421,14 +421,14 @@ struct ModelInfo: Identifiable, Equatable {
         if lowercasedID.contains("exaone") {
             return "LG AI Research (EXAONE)"
         }
+        if lowercasedID.contains("tinyllama") {
+            return "TinyLlama Project"
+        }
         if lowercasedID.contains("llama") {
             return "Meta Platforms, Inc. (Llama)"
         }
         if lowercasedID.contains("phi") {
             return "Microsoft (Phi)"
-        }
-        if lowercasedID.contains("tinyllama") {
-            return "TinyLlama Project"
         }
         if lowercasedID.contains("smollm") {
             return "HuggingFace (SmolLM)"

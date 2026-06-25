@@ -15,6 +15,7 @@ struct ModelQuickTestResult: Codable, Equatable {
     let timestamp: Date
 }
 
+@MainActor
 final class ModelHealthStore {
     static let shared = ModelHealthStore()
 

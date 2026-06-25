@@ -228,8 +228,8 @@ final class LLMEngine {
             do {
                 try await Task.sleep(nanoseconds: UInt64(idleTimeout * 1_000_000_000))
                 guard !Task.isCancelled else { return }
-                await MainActor.run {
-                    self.unloadModelIfIdle()
+                await MainActor.run { [weak self] in
+                    self?.unloadModelIfIdle()
                 }
             } catch {
                 // Task cancelled

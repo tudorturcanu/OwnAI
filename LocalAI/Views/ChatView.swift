@@ -50,7 +50,7 @@ struct ChatView: View {
     @State private var isEditSheetPresented = false
     @State private var inChatSearchText: String = ""
     @State private var isInChatSearchActive = false
-    @State private var translateTargetLanguage: String = ""
+
 
     // MARK: - Shared Haptic Generators (avoid per-tap allocation)
     private static let lightHaptic = UIImpactFeedbackGenerator(style: .light)
@@ -2675,13 +2675,7 @@ struct ChatView: View {
 
 // MARK: - Send Button Style
 
-struct SendButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.9 : 1.0)
-            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: configuration.isPressed)
-    }
-}
+
 
 private extension UTType {
     static let docx = UTType(filenameExtension: "docx") ?? .data

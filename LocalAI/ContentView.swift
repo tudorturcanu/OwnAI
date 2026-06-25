@@ -35,6 +35,7 @@ struct ContentView: View {
                                 showSettings = true
                             } label: {
                                 Image(systemName: "gearshape")
+                                    .accessibilityLabel(String(localized: "Settings"))
                                     .font(.body.weight(.medium))
                                     .foregroundStyle(Color(white: 0.3))
                                     .padding(8)
@@ -50,6 +51,7 @@ struct ContentView: View {
                                 showHistory = true
                             } label: {
                                 Image(systemName: "bubble.left")
+                                    .accessibilityLabel(String(localized: "Chat History"))
                                     .font(.body.weight(.medium))
                                     .foregroundStyle(Color(white: 0.3))
                                     .padding(8)
@@ -90,6 +92,7 @@ struct ContentView: View {
                                     handleExportCurrentConversation()
                                 } label: {
                                     Image(systemName: "square.and.arrow.up")
+                                        .accessibilityLabel(String(localized: "Export Chat"))
                                         .font(.body.weight(.medium))
                                         .foregroundStyle(Color(white: 0.3))
                                         .frame(width: 32, height: 32)
@@ -106,6 +109,7 @@ struct ContentView: View {
                                 }
                             } label: {
                                 Image(systemName: "square.and.pencil")
+                                    .accessibilityLabel(String(localized: "New Chat"))
                                     .font(.body.weight(.medium))
                                     .foregroundStyle(Color(white: 0.3))
                                     .frame(width: 32, height: 32)
@@ -175,9 +179,13 @@ struct ContentView: View {
             .appendingPathComponent(
                 ConversationExporter.fileName(title: conversation.title, format: .markdown)
             )
-        try? markdown.write(to: tempURL, atomically: true, encoding: .utf8)
-        exportShareItems = [tempURL]
-        isExportShareSheetPresented = true
+        do {
+            try markdown.write(to: tempURL, atomically: true, encoding: .utf8)
+            exportShareItems = [tempURL]
+            isExportShareSheetPresented = true
+        } catch {
+            print("Export failed: \(error)")
+        }
     }
 
     private func handleIncomingURL(_ url: URL) {

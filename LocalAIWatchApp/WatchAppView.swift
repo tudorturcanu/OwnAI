@@ -235,9 +235,6 @@ private struct WatchWaveformView: View {
 
 private struct WatchThinkingDots: View {
     @State private var activeIndex = 0
-    let timer = Timer.publish(every: 0.4, on: .main, in: .common).autoconnect()
-
-    var body: some View {
         HStack(spacing: 5) {
             ForEach(0..<3, id: \.self) { index in
                 Circle()
@@ -247,8 +244,11 @@ private struct WatchThinkingDots: View {
                     .animation(.easeInOut(duration: 0.3), value: activeIndex)
             }
         }
-        .onReceive(timer) { _ in
-            activeIndex = (activeIndex + 1) % 3
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                activeIndex = (activeIndex + 1) % 3
+            }
         }
     }
 }
@@ -723,13 +723,7 @@ private struct WatchMessageBubble: View {
         )
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
-        .contextMenu {
-            if entry.role == .assistant && !entry.isPending {
-                Button("Copy", systemImage: "doc.on.doc") {
-                    copyToClipboard(entry.content)
-                }
-            }
-        }
+
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
     }
@@ -809,11 +803,7 @@ private struct WatchMessageBubble: View {
         return "\(speaker). \(entry.content)"
     }
 
-    private func copyToClipboard(_ text: String) {
-        #if os(watchOS)
-        // watchOS doesn't have UIPasteboard — handled via WatchKit extension if needed
-        #endif
-    }
+
 }
 
 // MARK: - Message State Pill

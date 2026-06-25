@@ -83,26 +83,26 @@ struct ChatEmptyStateView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    SuggestionCard(icon: "lightbulb.fill", title: "Tell me", subtitle: "something fascinating") {
-                        onSuggestion("Tell me something fascinating")
+                    SuggestionCard(icon: "lightbulb.fill", title: String(localized: "Tell me"), subtitle: String(localized: "something fascinating")) {
+                        onSuggestion(String(localized: "Tell me something fascinating"))
                     }
-                    SuggestionCard(icon: "atom", title: "Explain", subtitle: "complex topics simply") {
-                        onSuggestion("Explain a complex topic like black holes simply")
+                    SuggestionCard(icon: "atom", title: String(localized: "Explain"), subtitle: String(localized: "complex topics simply")) {
+                        onSuggestion(String(localized: "Explain a complex topic like black holes simply"))
                     }
-                    SuggestionCard(icon: "pencil.line", title: "Write", subtitle: "an email or story") {
-                        onSuggestion("Write a short creative story about a robot")
+                    SuggestionCard(icon: "pencil.line", title: String(localized: "Write"), subtitle: String(localized: "an email or story")) {
+                        onSuggestion(String(localized: "Write a short creative story about a robot"))
                     }
-                    SuggestionCard(icon: "book.fill", title: "Discover", subtitle: "my next book") {
-                        onSuggestion("Help me discover my next book")
+                    SuggestionCard(icon: "book.fill", title: String(localized: "Discover"), subtitle: String(localized: "my next book")) {
+                        onSuggestion(String(localized: "Help me discover my next book"))
                     }
-                    SuggestionCard(icon: "map.fill", title: "Plan", subtitle: "my weekend trip") {
-                        onSuggestion("Help me plan a relaxing weekend trip")
+                    SuggestionCard(icon: "map.fill", title: String(localized: "Plan"), subtitle: String(localized: "my weekend trip")) {
+                        onSuggestion(String(localized: "Help me plan a relaxing weekend trip"))
                     }
-                    SuggestionCard(icon: "bolt.fill", title: "Boost", subtitle: "my productivity") {
-                        onSuggestion("How can I boost my productivity?")
+                    SuggestionCard(icon: "bolt.fill", title: String(localized: "Boost"), subtitle: String(localized: "my productivity")) {
+                        onSuggestion(String(localized: "How can I boost my productivity?"))
                     }
-                    SuggestionCard(icon: "ladybug.fill", title: "Debug", subtitle: "my code snippet") {
-                        onSuggestion("Help me debug this Swift code snippet:\n")
+                    SuggestionCard(icon: "ladybug.fill", title: String(localized: "Debug"), subtitle: String(localized: "my code snippet")) {
+                        onSuggestion(String(localized: "Help me debug this Swift code snippet:\n"))
                     }
                 }
                 .padding(.horizontal, 20)

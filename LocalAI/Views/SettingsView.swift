@@ -348,7 +348,7 @@ struct SettingsView: View {
 
             sectionDivider
 
-            Link(destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/privacy.html")!) {
+            Link(destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/privacy.html") ?? URL(string: "about:blank")!) {
                 settingsRow(
                     icon: "lock.doc.fill",
                     tint: .blue,
@@ -361,7 +361,7 @@ struct SettingsView: View {
 
             sectionDivider
 
-            Link(destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/terms.html")!) {
+            Link(destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/terms.html") ?? URL(string: "about:blank")!) {
                 settingsRow(
                     icon: "doc.text.fill",
                     tint: .gray,

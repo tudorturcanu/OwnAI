@@ -992,8 +992,8 @@ struct ModelConsentSheet: View {
                 if let privacyURL = model.privacyURL {
                     Link(String(localized: "Model Privacy"), destination: privacyURL)
                 }
-                Link(String(localized: "App Terms of Service"), destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/terms.html")!)
-                Link(String(localized: "App Privacy Policy"), destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/privacy.html")!)
+                Link(String(localized: "App Terms of Service"), destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/terms.html") ?? URL(string: "about:blank")!)
+                Link(String(localized: "App Privacy Policy"), destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/privacy.html") ?? URL(string: "about:blank")!)
             }
             .font(.subheadline.weight(.medium))
             .foregroundStyle(.blue)

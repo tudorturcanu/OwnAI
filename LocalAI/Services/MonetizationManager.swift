@@ -127,9 +127,7 @@ final class MonetizationManager {
     }
     #endif
 
-    @ObservationIgnored
-    @AppStorage(StorageKey.cachedPurchasedProductIDs)
-    private var storedPurchasedProductIDs = ""
+
 
     @ObservationIgnored
     private var updatesTask: Task<Void, Never>?
@@ -294,26 +292,21 @@ final class MonetizationManager {
         return true
     }
 
+    private var secureCacheURL: URL {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
+        return docs.appendingPathComponent("monetization_cache.secure")
+    }
+
     private func loadCachedPurchasedProductIDs() -> Set<String> {
-        guard let data = storedPurchasedProductIDs.data(using: .utf8) else {
-            return []
+        if let decoded = try? SecureFileStore.load([String].self, from: secureCacheURL) {
+            return Set(decoded)
         }
-
-        guard let decoded = try? JSONDecoder().decode([String].self, from: data) else {
-            return []
-        }
-
-        return Set(decoded)
+        return []
     }
 
     private func cachePurchasedProductIDs(_ productIDs: Set<String>) {
         let encodedIDs = Array(productIDs).sorted()
-        guard let data = try? JSONEncoder().encode(encodedIDs),
-              let json = String(data: data, encoding: .utf8) else {
-            return
-        }
-
-        storedPurchasedProductIDs = json
+        try? SecureFileStore.save(encodedIDs, to: secureCacheURL)
     }
 
     private func productSortOrder(lhs: Product, rhs: Product) -> Bool {

@@ -94,7 +94,7 @@ final class DocumentManager {
     /// are random UUIDs, so this fixed value never collides with one. Storing the
     /// library under this key lets it reuse all the per-conversation ingest,
     /// indexing, and persistence machinery for free.
-    static let libraryScopeID = UUID(uuidString: "11111111-0000-4000-A000-11111111CAFE")!
+    static let libraryScopeID = UUID(uuidString: "11111111-0000-4000-A000-11111111CAFE") ?? UUID()
 
     /// UserDefaults key controlling whether the library is searched from every chat.
     static let librarySearchEnabledDefaultsKey = "librarySearchEnabled"

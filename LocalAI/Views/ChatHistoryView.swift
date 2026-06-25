@@ -12,6 +12,7 @@ struct ChatHistoryView: View {
     @Environment(ChatHistoryManager.self) private var historyManager
     @Environment(MonetizationManager.self) private var monetizationManager
 
+    @State private var asyncWordCount: String = "0"
     @State private var searchText = ""
     @State private var selectedFolderID: UUID? = nil    // nil = "All"
     @State private var exportConversation: ChatConversation?
@@ -223,6 +224,7 @@ struct ChatHistoryView: View {
                                 showPinnedMessages = true
                             } label: {
                                 Image(systemName: "pin.fill")
+                                    .accessibilityLabel(String(localized: "Pinned Messages"))
                                     .font(.body)
                                     .foregroundStyle(.orange)
                             }
@@ -239,6 +241,7 @@ struct ChatHistoryView: View {
                             }
                         } label: {
                             Image(systemName: "folder.badge.plus")
+                                .accessibilityLabel(String(localized: "New Folder"))
                                 .font(.body)
                                 .foregroundStyle(.secondary)
                         }
@@ -248,6 +251,7 @@ struct ChatHistoryView: View {
                             dismiss()
                         } label: {
                             Image(systemName: "plus.circle.fill")
+                                .accessibilityLabel(String(localized: "New Chat"))
                                 .font(.title3)
                                 .foregroundStyle(
                                     LinearGradient(
@@ -345,21 +349,26 @@ struct ChatHistoryView: View {
             statDivider
             statItem(value: "\(totalMessages)", label: String(localized: "Messages"), icon: "text.bubble.fill", tint: .purple)
             statDivider
-            statItem(value: abbreviatedWordCount(for: conversations), label: String(localized: "Words"), icon: "textformat.abc", tint: .orange)
+            statItem(value: asyncWordCount, label: String(localized: "Words"), icon: "textformat.abc", tint: .orange)
         }
         .padding(.vertical, 16)
         .background(.white, in: RoundedRectangle(cornerRadius: 16))
         .shadow(color: .black.opacity(0.04), radius: 10, y: 5)
         .padding(.bottom, 4)
+        .task(id: totalMessages) {
+            await fetchAbbreviatedWordCount(for: conversations)
+        }
     }
 
     /// Computes total word count — called only when stats card is visible.
     /// Uses a sampling approach for very large histories to avoid blocking the main thread.
-    private func abbreviatedWordCount(for conversations: [ChatConversation]) -> String {
-        let totalWords = conversations.reduce(0) { sum, conv in
-            sum + conv.messages.reduce(0) { $0 + $1.content.split { $0.isWhitespace }.count }
-        }
-        return abbreviatedNumber(totalWords)
+    private func fetchAbbreviatedWordCount(for conversations: [ChatConversation]) async {
+        let totalWords = await Task.detached(priority: .userInitiated) {
+            conversations.reduce(0) { sum, conv in
+                sum + conv.messages.reduce(0) { $0 + $1.content.split { $0.isWhitespace }.count }
+            }
+        }.value
+        self.asyncWordCount = abbreviatedNumber(totalWords)
     }
 
     private var statDivider: some View {
@@ -466,9 +475,13 @@ struct ChatHistoryView: View {
         )
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(ConversationExporter.fileName(title: conversation.title, format: .markdown))
-        try? markdown.write(to: tempURL, atomically: true, encoding: .utf8)
-        exportShareItems = [tempURL]
-        isShareSheetPresented = true
+        do {
+            try markdown.write(to: tempURL, atomically: true, encoding: .utf8)
+            exportShareItems = [tempURL]
+            isShareSheetPresented = true
+        } catch {
+            print("Export failed: \(error)")
+        }
     }
 
     private func handleMoveToFolder(_ conversation: ChatConversation) {

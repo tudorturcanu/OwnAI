@@ -21,22 +21,22 @@ enum MLXStorage {
     }
 
     static func persistentBaseURL() -> URL {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        (FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory()))
             .appendingPathComponent("models", isDirectory: true)
     }
 
     static func legacyModelsBaseURL() -> URL {
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
         return caches.appendingPathComponent("models", isDirectory: true)
     }
 
     static func legacyHubCacheURL() -> URL {
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
         return caches.appendingPathComponent("huggingface/hub", isDirectory: true)
     }
 
     static func legacyDocumentsModelsBaseURL() -> URL {
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first ?? URL(fileURLWithPath: NSTemporaryDirectory())
         return docs.appendingPathComponent("huggingface/models", isDirectory: true)
     }
 

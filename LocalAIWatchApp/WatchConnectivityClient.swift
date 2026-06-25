@@ -136,7 +136,7 @@ final class WatchConnectivityClient: NSObject {
 
     func startDictation(suggestions: [String] = []) {
         guard !isSending else { return }
-        guard let controller = WKExtension.shared().visibleInterfaceController else {
+        guard let controller = WKApplication.shared().visibleInterfaceController else {
             statusMessage = "Open the app, then try again."
             playHaptic(.failure)
             return
@@ -198,7 +198,7 @@ final class WatchConnectivityClient: NSObject {
         }
 
         statusMessage = "Opening on iPhone…"
-        WKExtension.shared().openSystemURL(url)
+        WKApplication.shared().openSystemURL(url)
     }
 
     private func apply(response: WatchPromptResponse) {
@@ -386,7 +386,8 @@ final class WatchConnectivityClient: NSObject {
         let persistedState = PersistedWatchState(
             statusMessage: statusMessage,
             isSending: isSending,
-            isCapturingVoice: isCapturingVoice
+            isCapturingVoice: isCapturingVoice,
+            entries: entries
         )
 
         guard let data = try? JSONEncoder().encode(persistedState) else {
@@ -404,7 +405,7 @@ final class WatchConnectivityClient: NSObject {
         }
 
         isRestoringPersistedState = true
-        entries = []
+        entries = persistedState.entries
         statusMessage = persistedState.statusMessage
         isSending = false
         isCapturingVoice = false
@@ -479,6 +480,7 @@ private struct PersistedWatchState: Codable {
     let statusMessage: String
     let isSending: Bool
     let isCapturingVoice: Bool
+    let entries: [WatchChatEntry]
 }
 
 extension WatchConnectivityClient: WCSessionDelegate {

@@ -69,6 +69,13 @@ struct ChatHistoryStore {
         let conversationsByID = Dictionary(uniqueKeysWithValues: conversations.map { ($0.id, $0) })
         var conversationIDsToDelete = deletedConversationIDs
 
+        let index = ConversationIndex(
+            version: 1,
+            currentConversationID: currentConversationID,
+            orderedConversationIDs: conversations.map(\.id)
+        )
+        try SecureFileStore.save(index, to: indexURL)
+
         if let changedConversationIDs {
             for conversationID in changedConversationIDs {
                 guard let conversation = conversationsByID[conversationID] else { continue }
@@ -94,13 +101,6 @@ struct ChatHistoryStore {
                 try SecureFileStore.save(conversation, to: conversationFileURL(for: conversation.id))
             }
         }
-
-        let index = ConversationIndex(
-            version: 1,
-            currentConversationID: currentConversationID,
-            orderedConversationIDs: conversations.map(\.id)
-        )
-        try SecureFileStore.save(index, to: indexURL)
 
         for conversationID in conversationIDsToDelete {
             try removeConversationFileIfPresent(id: conversationID)
