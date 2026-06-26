@@ -332,7 +332,15 @@ final class ChatHistoryManager {
                             return nil
                         }
                         if !message.content.isEmpty {
-                            return ChatMessage(id: message.id, role: message.role, content: message.content, sourceTitles: message.sourceTitles, isStreaming: false)
+                            return ChatMessage(
+                                id: message.id,
+                                role: message.role,
+                                content: message.content,
+                                sourceTitles: message.sourceTitles,
+                                imageFileName: message.imageFileName,
+                                retryPromptSeed: message.retryPromptSeed,
+                                isStreaming: false
+                            )
                         } else {
                             // If it was streaming and empty (interrupted thinking), remove it
                             return nil
@@ -345,7 +353,15 @@ final class ChatHistoryManager {
                         }
                         return normalized
                     }
-                    return ChatMessage(id: message.id, role: message.role, content: message.content, sourceTitles: message.sourceTitles, isStreaming: false)
+                    return ChatMessage(
+                        id: message.id,
+                        role: message.role,
+                        content: message.content,
+                        sourceTitles: message.sourceTitles,
+                        imageFileName: message.imageFileName,
+                        retryPromptSeed: message.retryPromptSeed,
+                        isStreaming: false
+                    )
                 }
                 
                 var updatedConversation = conversation
@@ -586,7 +602,8 @@ final class ChatHistoryManager {
         content: String,
         isStreaming: Bool,
         sourceTitles: [String]? = nil,
-        imageFileName: String? = nil
+        imageFileName: String? = nil,
+        retryPromptSeed: String? = nil
     ) {
         guard let conversationID,
               let convIndex = conversationIndexMap[conversationID],
@@ -597,13 +614,15 @@ final class ChatHistoryManager {
         let preservedSourceTitles = sourceTitles ?? conversations[convIndex].messages[msgIndex].sourceTitles
         let preservedPinned = conversations[convIndex].messages[msgIndex].isPinned
         let preservedImageFileName = imageFileName ?? conversations[convIndex].messages[msgIndex].imageFileName
+        let preservedRetryPromptSeed = retryPromptSeed ?? conversations[convIndex].messages[msgIndex].retryPromptSeed
         if role == .assistant {
             conversations[convIndex].messages[msgIndex] = assistantMessage(
                 id: id,
                 content: content,
                 isStreaming: isStreaming,
                 sourceTitles: preservedSourceTitles,
-                imageFileName: preservedImageFileName
+                imageFileName: preservedImageFileName,
+                retryPromptSeed: preservedRetryPromptSeed
             )
             conversations[convIndex].messages[msgIndex].isPinned = preservedPinned
         } else {
@@ -613,6 +632,7 @@ final class ChatHistoryManager {
                 content: content,
                 sourceTitles: preservedSourceTitles,
                 imageFileName: preservedImageFileName,
+                retryPromptSeed: preservedRetryPromptSeed,
                 isPinned: preservedPinned,
                 isStreaming: isStreaming
             )
@@ -667,11 +687,20 @@ final class ChatHistoryManager {
             content: AssistantOutputSanitizer.sanitize(message.content),
             thinkingContent: message.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines),
             sourceTitles: message.sourceTitles,
+            imageFileName: message.imageFileName,
+            retryPromptSeed: message.retryPromptSeed,
             isStreaming: message.isStreaming
         )
     }
 
-    private func assistantMessage(id: UUID, content: String, isStreaming: Bool, sourceTitles: [String] = [], imageFileName: String? = nil) -> ChatMessage {
+    private func assistantMessage(
+        id: UUID,
+        content: String,
+        isStreaming: Bool,
+        sourceTitles: [String] = [],
+        imageFileName: String? = nil,
+        retryPromptSeed: String? = nil
+    ) -> ChatMessage {
         // Skip heavy sanitization logic while streaming to avoid O(N^2) overhead
         if isStreaming {
             return ChatMessage(
@@ -681,6 +710,7 @@ final class ChatHistoryManager {
                 thinkingContent: nil,
                 sourceTitles: sourceTitles,
                 imageFileName: imageFileName,
+                retryPromptSeed: retryPromptSeed,
                 isStreaming: true
             )
         }
@@ -693,6 +723,7 @@ final class ChatHistoryManager {
             thinkingContent: parts.thinkingContent,
             sourceTitles: sourceTitles,
             imageFileName: imageFileName,
+            retryPromptSeed: retryPromptSeed,
             isStreaming: false
         )
     }
@@ -706,10 +737,18 @@ final class ChatHistoryManager {
                 thinkingContent: message.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines),
                 sourceTitles: message.sourceTitles,
                 imageFileName: message.imageFileName,
+                retryPromptSeed: message.retryPromptSeed,
                 isStreaming: isStreaming
             )
         }
-        return assistantMessage(id: message.id, content: message.content, isStreaming: isStreaming, sourceTitles: message.sourceTitles, imageFileName: message.imageFileName)
+        return assistantMessage(
+            id: message.id,
+            content: message.content,
+            isStreaming: isStreaming,
+            sourceTitles: message.sourceTitles,
+            imageFileName: message.imageFileName,
+            retryPromptSeed: message.retryPromptSeed
+        )
     }
 
     private func deduplicateEmptyConversations() -> Bool {

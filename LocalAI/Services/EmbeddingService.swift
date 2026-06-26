@@ -25,7 +25,14 @@ actor EmbeddingService {
 
     /// Caps how many chunks are encoded in a single MLTensor pass to keep peak
     /// memory bounded on phones.
-    private static let maxBatchSize = 16
+    private static var maxBatchSize: Int {
+        #if os(iOS)
+        let lowMemoryDeviceCutoff: UInt64 = 8 * 1_024 * 1_024 * 1_024
+        return ProcessInfo.processInfo.physicalMemory <= lowMemoryDeviceCutoff ? 2 : 4
+        #else
+        return 16
+        #endif
+    }
 
     enum EmbeddingKind {
         case document

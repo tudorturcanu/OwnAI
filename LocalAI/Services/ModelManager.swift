@@ -300,6 +300,17 @@ enum DownloadErrorAction {
     }
 }
 
+enum ModelUseCase: String, CaseIterable, Identifiable {
+    case fast
+    case quality
+    case documents
+    case images
+    case coding
+    case offlinePrivacy
+
+    var id: String { rawValue }
+}
+
 /// Manages model downloads and lifecycle
 @MainActor
 @Observable
@@ -337,6 +348,28 @@ final class ModelManager: ObservableObject {
         let actionTitle: String
         let prefersImmediateUse: Bool
         let usesFallback: Bool
+    }
+
+    struct UseCaseRecommendation: Identifiable, Equatable {
+        let useCase: ModelUseCase
+        let modelID: String
+        let title: String
+        let summary: String
+        let detail: String
+        let symbolName: String
+
+        var id: String { useCase.id }
+    }
+
+    struct DownloadReadiness: Equatable {
+        let modelSizeText: String
+        let requiredSpaceText: String
+        let availableSpaceText: String
+        let hasEnoughSpace: Bool
+        let networkText: String
+        let networkIconName: String
+        let isNetworkWarning: Bool
+        let offlineText: String
     }
 
     private enum DownloadFailureReason: Equatable {
@@ -674,6 +707,144 @@ final class ModelManager: ObservableObject {
         case .network, .simulatorUnsupported, .unknown:
             return .retry
         }
+    }
+
+    func downloadReadiness(for model: ModelInfo) -> DownloadReadiness? {
+        guard model.engine == .mlx else { return nil }
+
+        let availableGB = DiskSpace.availableGB()
+        let requiredGB = requiredSpaceGB(for: model)
+        let hasEnoughSpace = availableGB + 0.001 >= requiredGB
+        let isCellularRestricted = DownloadNetworkMonitor.shared.isCellularRestricted
+
+        let networkText: String
+        let networkIconName: String
+        let isNetworkWarning: Bool
+        if allowCellularDownloads {
+            networkText = String(localized: "Wi-Fi or cellular download allowed.")
+            networkIconName = "antenna.radiowaves.left.and.right"
+            isNetworkWarning = false
+        } else if isCellularRestricted {
+            networkText = String(localized: "Connect to Wi-Fi, or enable Cellular Downloads in Settings.")
+            networkIconName = "wifi.exclamationmark"
+            isNetworkWarning = true
+        } else {
+            networkText = String(localized: "Cellular downloads are off; use Wi-Fi if this network changes.")
+            networkIconName = "wifi"
+            isNetworkWarning = false
+        }
+
+        return DownloadReadiness(
+            modelSizeText: model.sizeLabel,
+            requiredSpaceText: String(format: String(localized: "%.1f GB needed", defaultValue: "%.1f GB needed"), requiredGB),
+            availableSpaceText: String(format: String(localized: "%.1f GB free", defaultValue: "%.1f GB free"), availableGB),
+            hasEnoughSpace: hasEnoughSpace,
+            networkText: networkText,
+            networkIconName: networkIconName,
+            isNetworkWarning: isNetworkWarning,
+            offlineText: String(localized: "Works offline after download. Prompts stay on-device for inference.")
+        )
+    }
+
+    func useCaseRecommendations() -> [UseCaseRecommendation] {
+        ModelUseCase.allCases.compactMap { recommendation(for: $0) }
+    }
+
+    func recommendation(for useCase: ModelUseCase) -> UseCaseRecommendation? {
+        let candidateIDs: [String]
+        let title: String
+        let summary: String
+        let detail: String
+        let symbolName: String
+
+        switch useCase {
+        case .fast:
+            candidateIDs = [
+                ModelInfo.appleFoundation.id,
+                ModelInfo.gemma3_270m_qat_4bit.id,
+                ModelInfo.gemma3_1b_qat_4bit.id,
+                ModelInfo.qwen35_0_8b_optiq_4bit.id,
+                ModelInfo.gemma2_2b_4bit.id
+            ]
+            title = String(localized: "Fast")
+            summary = String(localized: "Shortest wait, lightest model.")
+            detail = String(localized: "Good for quick questions, short drafts, and Watch requests.")
+            symbolName = "bolt.fill"
+
+        case .quality:
+            candidateIDs = [
+                ModelInfo.qwen35_4b_optiq_4bit.id,
+                ModelInfo.qwen25_3b_instruct_4bit.id,
+                ModelInfo.gemma2_2b_4bit.id,
+                ModelInfo.gemma3_1b_qat_4bit.id,
+                ModelInfo.appleFoundation.id
+            ]
+            title = String(localized: "Best Quality")
+            summary = String(localized: "Stronger answers when you can wait.")
+            detail = String(localized: "Best for writing, reasoning, and longer responses.")
+            symbolName = "sparkles"
+
+        case .documents:
+            candidateIDs = [
+                ModelInfo.qwen25_3b_instruct_4bit.id,
+                ModelInfo.gemma2_2b_4bit.id,
+                ModelInfo.qwen35_2b_optiq_4bit.id,
+                ModelInfo.gemma3_1b_qat_4bit.id,
+                ModelInfo.appleFoundation.id
+            ]
+            title = String(localized: "Documents")
+            summary = String(localized: "Better for PDFs and source-backed answers.")
+            detail = String(localized: "Prioritizes models that handle longer context and summaries well.")
+            symbolName = "doc.text.magnifyingglass"
+
+        case .images:
+            candidateIDs = [
+                ModelInfo.lfm25_vl_450m_6bit.id,
+                ModelInfo.qwen2VL_2b_4bit.id,
+                ModelInfo.qwen25VL_3b_3bit.id,
+                ModelInfo.smolVLM2_500m_4bit.id,
+                ModelInfo.appleFoundation.id
+            ]
+            title = String(localized: "Images")
+            summary = String(localized: "Inspect photos and screenshots.")
+            detail = String(localized: "Picks a vision-capable model when this device can run one.")
+            symbolName = "photo.on.rectangle.angled"
+
+        case .coding:
+            candidateIDs = [
+                ModelInfo.qwen3_coder_next_4bit.id,
+                ModelInfo.qwen25_7b_instruct_4bit.id,
+                ModelInfo.qwen25_3b_instruct_4bit.id,
+                ModelInfo.gemma2_2b_4bit.id,
+                ModelInfo.appleFoundation.id
+            ]
+            title = String(localized: "Coding")
+            summary = String(localized: "Better for code explanations and fixes.")
+            detail = String(localized: "Chooses a stronger technical model when available.")
+            symbolName = "terminal"
+
+        case .offlinePrivacy:
+            candidateIDs = [
+                ModelInfo.gemma2_2b_4bit.id,
+                ModelInfo.gemma3_1b_qat_4bit.id,
+                ModelInfo.gemma3_270m_qat_4bit.id,
+                ModelInfo.qwen35_0_8b_optiq_4bit.id
+            ]
+            title = String(localized: "Offline Privacy")
+            summary = String(localized: "Fully local after download.")
+            detail = String(localized: "Keeps prompts, documents, and replies on this device for inference.")
+            symbolName = "lock.shield.fill"
+        }
+
+        guard let model = bestUseCaseModel(from: candidateIDs) else { return nil }
+        return UseCaseRecommendation(
+            useCase: useCase,
+            modelID: model.id,
+            title: title,
+            summary: summary,
+            detail: detail,
+            symbolName: symbolName
+        )
     }
 
     @objc
@@ -1383,6 +1554,27 @@ final class ModelManager: ObservableObject {
                 return lhs.name < rhs.name
             }
             .first
+    }
+
+    private func bestUseCaseModel(from candidateIDs: [String]) -> ModelInfo? {
+        let candidates = candidateIDs.compactMap { id in
+            models.first { $0.id == id }
+        }
+        let visibleCandidates = candidates.filter(shouldShowModelInCatalog)
+
+        if let usable = visibleCandidates.first(where: isModelUsable) {
+            return usable
+        }
+
+        if let downloadable = visibleCandidates.first(where: { model in
+            model.engine == .mlx &&
+            model.downloadState == .notDownloaded &&
+            compatibilityMessage(for: model) == nil
+        }) {
+            return downloadable
+        }
+
+        return visibleCandidates.first
     }
 
     func isOnboardingRecommended(_ model: ModelInfo) -> Bool {

@@ -69,6 +69,7 @@ struct AttachedDocument: Identifiable, Equatable {
 enum DocumentError: LocalizedError {
     case fileAccessFailed
     case extractionFailed
+    case extractionTimedOut
     case emptyDocument
     case unsupportedFormat
     
@@ -76,6 +77,7 @@ enum DocumentError: LocalizedError {
         switch self {
         case .fileAccessFailed: return "Could not access the selected file."
         case .extractionFailed: return "Could not extract text from the file."
+        case .extractionTimedOut: return "Document extraction took too long and was cancelled. Try a smaller PDF or switch document processing to Fast in Settings."
         case .emptyDocument: return "No text could be extracted. This may be a scanned document without a text layer."
         case .unsupportedFormat: return "This file format is not supported."
         }
@@ -88,6 +90,7 @@ final class DocumentManager {
     static let shared = DocumentManager()
     private static let maxPersistedCorpusBytes: Int64 = 1_073_741_824
     private static let reclaimBytesOnOverflow: Int64 = 734_003_200
+    private static let extractionTimeout: Duration = .seconds(30)
 
     /// Reserved sentinel scope for documents that belong to the persistent,
     /// cross-chat library rather than a single conversation. Real conversation IDs
@@ -132,6 +135,9 @@ final class DocumentManager {
         defer {
             url.stopAccessingSecurityScopedResource()
         }
+        defer {
+            extractionProgress = 0
+        }
         
         // Get file size
         let fileSize: Int64
@@ -147,44 +153,115 @@ final class DocumentManager {
         let documentProcessingMode = Self.currentDocumentProcessingMode()
         
         let ext = url.pathExtension.lowercased()
-        let attachedDocument = try await MemoryProfiler.measure("DocumentManager.processFile(\(url.lastPathComponent))") {
-            let extraction = try await Task.detached(priority: .userInitiated) {
-                try Self.extractContent(
-                    at: url,
-                    fileExtension: ext,
-                    pdfOCRMode: pdfOCRMode,
-                    documentProcessingMode: documentProcessingMode
+        Self.documentDiagnostic("process start file=\(url.lastPathComponent) ext=\(ext) size=\(fileSize) ocrMode=\(pdfOCRMode.rawValue) processingMode=\(documentProcessingMode.rawValue)")
+
+        do {
+            let attachedDocument = try await MemoryProfiler.measure("DocumentManager.processFile(\(url.lastPathComponent))") {
+                let extractionTask = Task.detached(priority: .userInitiated) {
+                    try Self.extractContent(
+                        at: url,
+                        fileExtension: ext,
+                        pdfOCRMode: pdfOCRMode,
+                        documentProcessingMode: documentProcessingMode
+                    )
+                }
+                Self.documentDiagnostic("extraction started file=\(url.lastPathComponent) timeoutSeconds=30")
+                let extraction = try await Self.valueWithExtractionTimeout(from: extractionTask)
+
+                extractionProgress = 0.9
+                print("""
+                [OCRDEBUG] extracted file=\(url.lastPathComponent) ext=\(ext) chars=\(extraction.text.count) sections=\(extraction.sections.count) pages=\(extraction.extractedPages)/\(extraction.totalPages) origin=\(extraction.textOrigin.rawValue) quality=\(extraction.ocrQuality.rawValue) preview="\(Self.debugPreview(extraction.text))"
+                """)
+
+                // Check for empty content
+                guard !extraction.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    throw DocumentError.emptyDocument
+                }
+
+                extractionProgress = 1.0
+
+                // Small delay so the user sees the completed progress
+                try? await Task.sleep(for: .milliseconds(200))
+
+                return AttachedDocument(
+                    url: url,
+                    content: extraction.text,
+                    sections: extraction.sections,
+                    extractedPages: extraction.extractedPages,
+                    totalPages: extraction.totalPages,
+                    fileSize: fileSize,
+                    isTrimmed: extraction.text.count > documentProcessingMode.maxStoredCharacters,
+                    textOrigin: extraction.textOrigin,
+                    ocrQuality: extraction.ocrQuality
                 )
-            }.value
-            
-            extractionProgress = 0.9
-            
-            // Check for empty content
-            guard !extraction.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                extractionProgress = 0
-                throw DocumentError.emptyDocument
             }
-            
-            extractionProgress = 1.0
-            
-            // Small delay so the user sees the completed progress
-            try? await Task.sleep(for: .milliseconds(200))
-            extractionProgress = 0
-            
-            return AttachedDocument(
-                url: url,
-                content: extraction.text,
-                sections: extraction.sections,
-                extractedPages: extraction.extractedPages,
-                totalPages: extraction.totalPages,
-                fileSize: fileSize,
-                isTrimmed: extraction.text.count > documentProcessingMode.maxStoredCharacters,
-                textOrigin: extraction.textOrigin,
-                ocrQuality: extraction.ocrQuality
-            )
+
+            Self.documentDiagnostic("process success file=\(url.lastPathComponent) chars=\(attachedDocument.content.count) pages=\(attachedDocument.extractedPages)/\(attachedDocument.totalPages)")
+            return attachedDocument
+        } catch {
+            Self.documentDiagnostic("process failed file=\(url.lastPathComponent) error=\(error.localizedDescription)")
+            throw error
         }
-        
-        return attachedDocument
+    }
+
+    nonisolated
+    private static func valueWithExtractionTimeout(
+        from extractionTask: Task<ExtractionResult, Error>
+    ) async throws -> ExtractionResult {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let race = ExtractionTimeoutRace()
+
+                Task {
+                    do {
+                        let result = try await extractionTask.value
+                        race.resumeOnce {
+                            continuation.resume(returning: result)
+                        }
+                    } catch {
+                        race.resumeOnce {
+                            continuation.resume(throwing: error)
+                        }
+                    }
+                }
+
+                Task {
+                    do {
+                        try await Task.sleep(for: extractionTimeout)
+                        extractionTask.cancel()
+                        Self.documentDiagnostic("extraction timed out timeoutSeconds=30")
+                        race.resumeOnce {
+                            continuation.resume(throwing: DocumentError.extractionTimedOut)
+                        }
+                    } catch {
+                        // The timer task can be cancelled after extraction wins the race.
+                    }
+                }
+            }
+        } onCancel: {
+            extractionTask.cancel()
+        }
+    }
+
+    private final class ExtractionTimeoutRace: @unchecked Sendable {
+        private let lock = NSLock()
+        private var didResume = false
+
+        func resumeOnce(_ resume: () -> Void) {
+            lock.lock()
+            guard !didResume else {
+                lock.unlock()
+                return
+            }
+            didResume = true
+            lock.unlock()
+            resume()
+        }
+    }
+
+    nonisolated
+    private static func documentDiagnostic(_ message: String) {
+        print("[ChatDiagnostics] document \(message)")
     }
 
     func documents(for conversationID: UUID?) -> [ConversationDocument] {
@@ -248,38 +325,63 @@ final class DocumentManager {
     func addDocumentToConversation(from attachedDocument: AttachedDocument, conversationID: UUID) async {
         let maxStoredCharacters = Self.currentDocumentProcessingMode().maxStoredCharacters
         let document = ConversationDocument(from: attachedDocument, maxCharacters: maxStoredCharacters)
-        guard !document.content.isEmpty else { return }
+        guard !document.content.isEmpty else {
+            print("[OCRDEBUG] addDocument skipped empty name=\(attachedDocument.name) conversation=\(conversationID)")
+            return
+        }
+
+        print("""
+        [OCRDEBUG] addDocument start name=\(document.name) id=\(document.id) conversation=\(conversationID) chars=\(document.content.count) sections=\(document.sections.count) pages=\(document.extractedPages)/\(document.totalPages) origin=\(document.textOrigin.rawValue) quality=\(document.ocrQuality.rawValue) trimmed=\(document.isTrimmed) preview="\(Self.debugPreview(document.content))"
+        """)
 
         var documents = documentsByConversationID[conversationID] ?? []
+        let keepsSingleChatDocument = conversationID != Self.libraryScopeID
         if let existingIndex = documents.firstIndex(where: {
             $0.name == document.name && $0.content == document.content
         }) {
             let existing = documents.remove(at: existingIndex)
-            documents.insert(existing, at: 0)
+            let replacedDocuments = keepsSingleChatDocument ? documents : []
+            if keepsSingleChatDocument {
+                documents = [existing]
+            } else {
+                documents.insert(existing, at: 0)
+            }
             documentsByConversationID[conversationID] = documents
             let pruned = enforceStorageBudget(keeping: existing.id)
             savePersistedDocuments()
             if pruned {
                 await reindexAllDocuments()
             } else {
+                for replacedDocument in replacedDocuments {
+                    await ragEngine.clear(documentID: replacedDocument.id, conversationID: conversationID)
+                }
                 await ragEngine.clear(documentID: existing.id, conversationID: conversationID)
-            await ragEngine.ingest(
-                text: existing.content,
-                sections: existing.sections,
-                documentID: existing.id,
+                await ragEngine.ingest(
+                    text: existing.content,
+                    sections: existing.sections,
+                    documentID: existing.id,
                     conversationID: conversationID
                 )
             }
+            print("[OCRDEBUG] addDocument reused existing name=\(existing.name) id=\(existing.id) conversation=\(conversationID) docCount=\(documents.count) pruned=\(pruned)")
             return
         }
 
-        documents.insert(document, at: 0)
+        let replacedDocuments = keepsSingleChatDocument ? documents : []
+        if keepsSingleChatDocument {
+            documents = [document]
+        } else {
+            documents.insert(document, at: 0)
+        }
         documentsByConversationID[conversationID] = documents
         let pruned = enforceStorageBudget(keeping: document.id)
         savePersistedDocuments()
         if pruned {
             await reindexAllDocuments()
         } else {
+            for replacedDocument in replacedDocuments {
+                await ragEngine.clear(documentID: replacedDocument.id, conversationID: conversationID)
+            }
             await ragEngine.ingest(
                 text: document.content,
                 sections: document.sections,
@@ -287,6 +389,7 @@ final class DocumentManager {
                 conversationID: conversationID
             )
         }
+        print("[OCRDEBUG] addDocument stored name=\(document.name) id=\(document.id) conversation=\(conversationID) docCount=\(documents.count) pruned=\(pruned)")
     }
 
     func removeDocument(id: UUID, from conversationID: UUID) {
@@ -332,12 +435,18 @@ final class DocumentManager {
         let retrieved = await ragEngine.retrieveDetailed(query: query, limit: limit, conversationIDs: scopes)
         // Resolve each chunk back to its document from the scope it came from.
         let documents = (documentsByConversationID[conversationID] ?? []) + libraryDocuments
-        return retrieved.compactMap { chunk in
+        let resolved: [(document: ConversationDocument, chunk: RetrievedChunk)] = retrieved.compactMap { chunk -> (document: ConversationDocument, chunk: RetrievedChunk)? in
             guard let document = documents.first(where: { $0.id == chunk.documentID }) else {
+                print("[OCRDEBUG] retrieve unresolved chunk documentID=\(chunk.documentID) conversation=\(conversationID) location=\(chunk.sourceLocationLabel ?? "nil") score=\(chunk.score)")
                 return nil
             }
             return (document: document, chunk: chunk)
         }
+        let summary = resolved.map { item in
+            "\(item.document.name)@\(item.chunk.sourceLocationLabel ?? "nil"):score=\(String(format: "%.3f", item.chunk.score)):chars=\(item.chunk.content.count)"
+        }.joined(separator: " | ")
+        print("[OCRDEBUG] retrieve query=\"\(Self.debugPreview(query, maxLength: 80))\" conversation=\(conversationID) scopes=\(scopes.count) raw=\(retrieved.count) resolved=\(resolved.count) results=\(summary)")
+        return resolved
     }
     
     // MARK: - Extractors
@@ -361,6 +470,15 @@ final class DocumentManager {
         }
     }
 
+    private static func debugPreview(_ text: String, maxLength: Int = 180) -> String {
+        let normalized = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\"", with: "'")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.count > maxLength else { return normalized }
+        return String(normalized.prefix(maxLength)) + "..."
+    }
+
     private func savePersistedDocuments() {
         do {
             let entries = documentsByConversationID.map { conversationID, documents in
@@ -382,18 +500,10 @@ final class DocumentManager {
         await reindexAllDocuments()
     }
 
-    /// Switches the embedding backend. When enabling neural embeddings, the model
-    /// is downloaded/loaded first; the index is then rebuilt either way so all
-    /// vectors share one embedder.
-    func setNeuralEmbeddingsEnabled(_ enabled: Bool) async {
-        UserDefaults.standard.set(enabled, forKey: RAGEngine.neuralEmbeddingsDefaultsKey)
-        if enabled {
-            // If the download/load fails, RAGEngine falls back to NLEmbedding,
-            // so we still rebuild to keep the index internally consistent.
-            _ = await EmbeddingService.shared.ensureLoaded(downloadIfNeeded: true)
-        } else {
-            await EmbeddingService.shared.unload()
-        }
+    /// Keeps neural embeddings disabled and rebuilds the index with the lightweight backend.
+    func setNeuralEmbeddingsEnabled(_ _: Bool) async {
+        UserDefaults.standard.set(false, forKey: RAGEngine.neuralEmbeddingsDefaultsKey)
+        await EmbeddingService.shared.unload()
         await reindexAllDocuments()
     }
 
@@ -483,6 +593,7 @@ final class DocumentManager {
         pdfOCRMode: PDFOCRMode,
         documentProcessingMode: DocumentProcessingMode
     ) throws -> ExtractionResult {
+        try Task.checkCancellation()
         return switch fileExtension {
         case "pdf":
             try extractTextFromPDF(
@@ -519,6 +630,7 @@ final class DocumentManager {
         pdfOCRMode: PDFOCRMode,
         maxPages: Int
     ) throws -> ExtractionResult {
+        try Task.checkCancellation()
         guard let pdfDocument = PDFDocument(url: url) else {
             throw DocumentError.extractionFailed
         }
@@ -532,9 +644,11 @@ final class DocumentManager {
         var ocrCharacterCount = 0
         
         for i in 0..<pagesToExtract {
+            try Task.checkCancellation()
             guard let page = pdfDocument.page(at: i) else { continue }
 
             let nativeText = page.string?.trimmingCharacters(in: .whitespacesAndNewlines)
+            try Task.checkCancellation()
             let shouldUseOCR: Bool
             switch pdfOCRMode {
             case .preferNativeText:
@@ -551,6 +665,7 @@ final class DocumentManager {
                 continue
             }
 
+            try Task.checkCancellation()
             guard let renderedPage = renderPDFPage(page),
                   let ocrText = try? recognizeText(from: renderedPage).trimmingCharacters(in: .whitespacesAndNewlines),
                   !ocrText.isEmpty else {
@@ -560,6 +675,7 @@ final class DocumentManager {
                 }
                 continue
             }
+            try Task.checkCancellation()
 
             if shouldUseOCR || nativeText == nil || nativeText?.isEmpty == true {
                 append(pageText: ocrText, title: "Page \(i + 1) (OCR)", to: &fullText, sections: &sections)
@@ -588,7 +704,9 @@ final class DocumentManager {
     
     nonisolated
     private static func extractTextFromImage(at url: URL) throws -> ExtractionResult {
+        try Task.checkCancellation()
         let ocrText = try recognizeText(from: url).trimmingCharacters(in: .whitespacesAndNewlines)
+        try Task.checkCancellation()
         guard !ocrText.isEmpty else {
             throw DocumentError.emptyDocument
         }
@@ -605,7 +723,9 @@ final class DocumentManager {
     
     nonisolated
     private static func extractTextFromRTF(at url: URL) throws -> String {
+        try Task.checkCancellation()
         let data = try Data(contentsOf: url)
+        try Task.checkCancellation()
         
         guard let attributed = try? NSAttributedString(
             data: data,
@@ -628,7 +748,9 @@ final class DocumentManager {
     
     nonisolated
     private static func extractTextFromWord(at url: URL) throws -> String {
+        try Task.checkCancellation()
         let data = try Data(contentsOf: url)
+        try Task.checkCancellation()
         
         // NSAttributedString can handle .docx files via the .docFormat option
         // For .docx (Office Open XML), try reading as HTML-like format
@@ -670,7 +792,9 @@ final class DocumentManager {
 
     nonisolated
     private static func extractTextFile(at url: URL) throws -> String {
+        try Task.checkCancellation()
         let data = try Data(contentsOf: url)
+        try Task.checkCancellation()
         let encodings: [String.Encoding] = [
             .utf8,
             .utf16,
@@ -883,7 +1007,7 @@ final class DocumentManager {
         let bounds = page.bounds(for: .mediaBox)
         guard bounds.width > 0, bounds.height > 0 else { return nil }
 
-        let maxDimension: CGFloat = 1800
+        let maxDimension: CGFloat = 1400
         let longestEdge = max(bounds.width, bounds.height)
         let scale = max(1.0, min(maxDimension / longestEdge, 3.0))
         let outputSize = CGSize(width: bounds.width * scale, height: bounds.height * scale)
@@ -903,9 +1027,11 @@ final class DocumentManager {
 
     nonisolated
     private static func recognizeText(from image: UIImage) throws -> String {
+        try Task.checkCancellation()
         guard let cgImage = preprocessForOCR(from: image) else {
             throw DocumentError.extractionFailed
         }
+        try Task.checkCancellation()
 
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
@@ -918,6 +1044,7 @@ final class DocumentManager {
             options: [:]
         )
         try handler.perform([request])
+        try Task.checkCancellation()
 
         guard let observations = request.results, !observations.isEmpty else {
             return ""
@@ -940,6 +1067,7 @@ final class DocumentManager {
 
     nonisolated
     private static func preprocessForOCR(from image: UIImage) -> CGImage? {
+        guard !Task.isCancelled else { return nil }
         guard image.size.width > 0, image.size.height > 0 else { return nil }
 
         let rendererFormat = UIGraphicsImageRendererFormat.default()
@@ -971,6 +1099,7 @@ final class DocumentManager {
 
     nonisolated
     private static func recognizeText(from url: URL) throws -> String {
+        try Task.checkCancellation()
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = .accurate
         request.usesLanguageCorrection = true
@@ -980,9 +1109,11 @@ final class DocumentManager {
               let cgImage = preprocessForOCR(from: image) else {
             throw DocumentError.extractionFailed
         }
+        try Task.checkCancellation()
 
         let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
         try handler.perform([request])
+        try Task.checkCancellation()
 
         guard let observations = request.results, !observations.isEmpty else {
             return ""

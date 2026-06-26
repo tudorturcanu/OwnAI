@@ -69,6 +69,12 @@ struct AdvancedSettingsView: View {
         .navigationTitle("Advanced")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
+            if neuralEmbeddingsEnabled {
+                neuralEmbeddingsEnabled = false
+                Task {
+                    await DocumentManager.shared.setNeuralEmbeddingsEnabled(false)
+                }
+            }
             embeddingModelPresent = EmbeddingService.shared.isModelDownloaded
             whisperModelPresent = speechManager.isWhisperModelDownloaded
         }
@@ -99,35 +105,24 @@ struct AdvancedSettingsView: View {
         whisperModelPresent = speechManager.isWhisperModelDownloaded
     }
 
-    // MARK: - Document Search (Embeddings)
+    // MARK: - Document Search
 
     private var documentSearchSection: some View {
         advancedSection("Document Search") {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 14) {
-                    rowIcon(systemImage: "sparkle.magnifyingglass", tint: .blue)
+                    rowIcon(systemImage: "magnifyingglass", tint: .blue)
 
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("Smart Document Search")
+                        Text("Standard Document Search")
                             .font(.body)
                             .fontWeight(.medium)
                             .foregroundStyle(.primary)
 
-                        Text("Higher-quality, multilingual search across your documents using an on-device AI model (~470 MB download). When off, a lighter built-in method is used.")
+                        Text("Searches attached documents with the built-in lightweight index.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
-                    }
-
-                    Spacer(minLength: 8)
-
-                    if isEmbeddingBusy {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Toggle("Smart Document Search", isOn: embeddingToggleBinding)
-                            .labelsHidden()
-                            .tint(.blue)
                     }
                 }
 
@@ -141,7 +136,7 @@ struct AdvancedSettingsView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
 
-            if !neuralEmbeddingsEnabled && embeddingModelPresent && !isEmbeddingBusy {
+            if embeddingModelPresent && !isEmbeddingBusy {
                 sectionDivider
 
                 Button(role: .destructive) {
@@ -164,36 +159,6 @@ struct AdvancedSettingsView: View {
                     .padding(.vertical, 14)
                 }
                 .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private var embeddingToggleBinding: Binding<Bool> {
-        Binding(
-            get: { neuralEmbeddingsEnabled },
-            set: { setNeuralEmbeddings($0) }
-        )
-    }
-
-    private func setNeuralEmbeddings(_ enabled: Bool) {
-        guard !isEmbeddingBusy else { return }
-        neuralEmbeddingsEnabled = enabled
-        isEmbeddingBusy = true
-        embeddingStatusMessage = enabled
-            ? String(localized: "Preparing model and indexing documents…")
-            : String(localized: "Switching back to standard search…")
-
-        Task {
-            await DocumentManager.shared.setNeuralEmbeddingsEnabled(enabled)
-            await MainActor.run {
-                isEmbeddingBusy = false
-                embeddingModelPresent = EmbeddingService.shared.isModelDownloaded
-                if enabled && !embeddingModelPresent {
-                    neuralEmbeddingsEnabled = false
-                    embeddingStatusMessage = String(localized: "Couldn’t download the model. Check your connection and try again.")
-                } else {
-                    embeddingStatusMessage = nil
-                }
             }
         }
     }

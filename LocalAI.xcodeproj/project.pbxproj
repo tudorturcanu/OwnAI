@@ -77,24 +77,6 @@
 		};
 /* End PBXCopyFilesBuildPhase section */
 
-/* Begin PBXShellScriptBuildPhase section */
-		8BAA01112FFF0A0100000001 /* Patch onnxruntime MinimumOSVersion */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-			);
-			name = "Patch onnxruntime MinimumOSVersion";
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "# The onnxruntime.framework binary (from piper1-gpl-spm) ships an Info.plist\n# without a MinimumOSVersion key, which App Store validation rejects. Inject it\n# into the embedded copy and re-sign so the signature stays valid.\nset -e\nFRAMEWORK=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/onnxruntime.framework\"\nPLIST=\"$FRAMEWORK/Info.plist\"\n[ -f \"$PLIST\" ] || { echo \"onnxruntime.framework not embedded; skipping.\"; exit 0; }\nVERSION=\"${IPHONEOS_DEPLOYMENT_TARGET:-15.0}\"\n/usr/libexec/PlistBuddy -c \"Add :MinimumOSVersion string $VERSION\" \"$PLIST\" 2>/dev/null || /usr/libexec/PlistBuddy -c \"Set :MinimumOSVersion $VERSION\" \"$PLIST\"\necho \"Set MinimumOSVersion=$VERSION in onnxruntime.framework\"\nif [ -n \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ]; then\n  codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$FRAMEWORK\"\n  echo \"Re-signed onnxruntime.framework\"\nfi\n";
-		};
-/* End PBXShellScriptBuildPhase section */
-
 /* Begin PBXFileReference section */
 		3A8EE3D327FDFFA223930871 /* Assets.xcassets */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = ../LocalAI/Assets.xcassets; sourceTree = "<group>"; };
 		5C48F86F5CC1AACA464AFB06 /* WatchConnectivityModels.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WatchConnectivityModels.swift; sourceTree = "<group>"; };
@@ -377,6 +359,24 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		8BAA01112FFF0A0100000001 /* Patch onnxruntime MinimumOSVersion */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Patch onnxruntime MinimumOSVersion";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# The onnxruntime.framework binary (from piper1-gpl-spm) ships an Info.plist\n# without a MinimumOSVersion key, which App Store validation rejects. Inject it\n# into the embedded copy and re-sign so the signature stays valid.\nset -e\nFRAMEWORK=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/onnxruntime.framework\"\nPLIST=\"$FRAMEWORK/Info.plist\"\n[ -f \"$PLIST\" ] || { echo \"onnxruntime.framework not embedded; skipping.\"; exit 0; }\nVERSION=\"${IPHONEOS_DEPLOYMENT_TARGET:-15.0}\"\n/usr/libexec/PlistBuddy -c \"Add :MinimumOSVersion string $VERSION\" \"$PLIST\" 2>/dev/null || /usr/libexec/PlistBuddy -c \"Set :MinimumOSVersion $VERSION\" \"$PLIST\"\necho \"Set MinimumOSVersion=$VERSION in onnxruntime.framework\"\nif [ -n \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ]; then\n  codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$FRAMEWORK\"\n  echo \"Re-signed onnxruntime.framework\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		0772D29571F58D96BFF73DB4 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -569,7 +569,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = LocalAI/LocalAI.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 41;
+				CURRENT_PROJECT_VERSION = 42;
 				DEVELOPMENT_TEAM = 75YTB67VJZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -588,7 +588,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 3.22;
+				MARKETING_VERSION = 3.23;
 				PRODUCT_BUNDLE_IDENTIFIER = alice.turcanu.LocalAI;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -609,7 +609,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = LocalAI/LocalAI.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 41;
+				CURRENT_PROJECT_VERSION = 42;
 				DEVELOPMENT_TEAM = 75YTB67VJZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -628,7 +628,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 3.22;
+				MARKETING_VERSION = 3.23;
 				PRODUCT_BUNDLE_IDENTIFIER = alice.turcanu.LocalAI;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

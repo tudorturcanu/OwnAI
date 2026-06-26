@@ -20,7 +20,7 @@ struct ContentView: View {
     @State private var exportShareItems: [Any] = []
     @State private var isExportShareSheetPresented = false
     @State private var exportUpgradeFeature: PremiumFeature?
-    
+
     var body: some View {
         NavigationStack {
             ChatView()
@@ -28,40 +28,17 @@ struct ContentView: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     // Left: History & Settings Grouped
-                    ToolbarItemGroup(placement: .topBarLeading) {
-                        HStack(spacing: 0) {
-                            Button {
-                                speechManager.stopSpeaking()
-                                showSettings = true
-                            } label: {
-                                Image(systemName: "gearshape")
-                                    .accessibilityLabel(String(localized: "Settings"))
-                                    .font(.body.weight(.medium))
-                                    .foregroundStyle(Color(white: 0.3))
-                                    .padding(8)
-                            }
-                            .buttonStyle(.plain)
-                            
-                            Divider()
-                                .frame(height: 16)
-                                .padding(.horizontal, 4)
-                            
-                            Button {
-                                speechManager.stopSpeaking()
-                                showHistory = true
-                            } label: {
-                                Image(systemName: "bubble.left")
-                                    .accessibilityLabel(String(localized: "Chat History"))
-                                    .font(.body.weight(.medium))
-                                    .foregroundStyle(Color(white: 0.3))
-                                    .padding(8)
-                            }
-                            .buttonStyle(.plain)
+                    if #available(iOS 26.0, *) {
+                        ToolbarItemGroup(placement: .topBarLeading) {
+                            leadingToolbarButtons
                         }
-                        .background(Color(white: 0.95))
-                        .clipShape(Capsule())
+                        .sharedBackgroundVisibility(.hidden)
+                    } else {
+                        ToolbarItemGroup(placement: .topBarLeading) {
+                            leadingToolbarButtons
+                        }
                     }
-                    
+
                     // Center: Model Selection & Export
                     ToolbarItem(placement: .principal) {
                         HStack(spacing: 12) {
@@ -78,45 +55,20 @@ struct ContentView: View {
                                 .foregroundStyle(Color(white: 0.2))
                             }
                             .buttonStyle(.plain)
-                            
+
 
                         }
                     }
-                    
-                    // Right: Export + New Chat
-                    ToolbarItemGroup(placement: .topBarTrailing) {
-                        HStack(spacing: 8) {
-                            // Export current conversation (Pro)
-                            if !historyManager.currentMessages.isEmpty {
-                                Button {
-                                    handleExportCurrentConversation()
-                                } label: {
-                                    Image(systemName: "square.and.arrow.up")
-                                        .accessibilityLabel(String(localized: "Export Chat"))
-                                        .font(.body.weight(.medium))
-                                        .foregroundStyle(Color(white: 0.3))
-                                        .frame(width: 32, height: 32)
-                                        .background(Color(white: 0.95))
-                                        .clipShape(Circle())
-                                }
-                                .buttonStyle(.plain)
-                            }
 
-                            Button {
-                                speechManager.stopSpeaking()
-                                withAnimation {
-                                    historyManager.newConversation()
-                                }
-                            } label: {
-                                Image(systemName: "square.and.pencil")
-                                    .accessibilityLabel(String(localized: "New Chat"))
-                                    .font(.body.weight(.medium))
-                                    .foregroundStyle(Color(white: 0.3))
-                                    .frame(width: 32, height: 32)
-                                    .background(Color(white: 0.95))
-                                    .clipShape(Circle())
-                            }
-                            .buttonStyle(.plain)
+                    // Right: Export + New Chat
+                    if #available(iOS 26.0, *) {
+                        ToolbarItemGroup(placement: .topBarTrailing) {
+                            trailingToolbarButtons
+                        }
+                        .sharedBackgroundVisibility(.hidden)
+                    } else {
+                        ToolbarItemGroup(placement: .topBarTrailing) {
+                            trailingToolbarButtons
                         }
                     }
                 }
@@ -158,6 +110,75 @@ struct ContentView: View {
         }
         .onOpenURL { url in
             handleIncomingURL(url)
+        }
+    }
+
+    private var leadingToolbarButtons: some View {
+        HStack(spacing: 0) {
+            Button {
+                speechManager.stopSpeaking()
+                showSettings = true
+            } label: {
+                Image(systemName: "gearshape")
+                    .accessibilityLabel(String(localized: "Settings"))
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(Color(white: 0.3))
+                    .padding(8)
+            }
+            .buttonStyle(.plain)
+
+            Divider()
+                .frame(height: 16)
+                .padding(.horizontal, 4)
+
+            Button {
+                speechManager.stopSpeaking()
+                showHistory = true
+            } label: {
+                Image(systemName: "bubble.left")
+                    .accessibilityLabel(String(localized: "Chat History"))
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(Color(white: 0.3))
+                    .padding(8)
+            }
+            .buttonStyle(.plain)
+        }
+        .background(Color(white: 0.95))
+        .clipShape(Capsule())
+    }
+
+    private var trailingToolbarButtons: some View {
+        HStack(spacing: 8) {
+            if !historyManager.currentMessages.isEmpty {
+                Button {
+                    handleExportCurrentConversation()
+                } label: {
+                    Image(systemName: "square.and.arrow.up")
+                        .accessibilityLabel(String(localized: "Export Chat"))
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(Color(white: 0.3))
+                        .frame(width: 32, height: 32)
+                        .background(Color(white: 0.95))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+            }
+
+            Button {
+                speechManager.stopSpeaking()
+                withAnimation {
+                    historyManager.newConversation()
+                }
+            } label: {
+                Image(systemName: "square.and.pencil")
+                    .accessibilityLabel(String(localized: "New Chat"))
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(Color(white: 0.3))
+                    .frame(width: 32, height: 32)
+                    .background(Color(white: 0.95))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
         }
     }
 

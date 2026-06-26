@@ -18,6 +18,17 @@ struct ModelDownloadView: View {
         modelManager.models.filter { modelManager.shouldShowModelInCatalog($0) && $0.engine == .appleFoundation }
     }
 
+    private var downloadedModels: [ModelInfo] {
+        modelManager.models
+            .filter { $0.engine == .mlx && $0.downloadState.isDownloaded }
+            .sorted { lhs, rhs in
+                if lhs.name != rhs.name {
+                    return lhs.name < rhs.name
+                }
+                return lhs.sizeGB < rhs.sizeGB
+            }
+    }
+
     private var familyGroups: [ModelFamilyGroup] {
         let familyOrder = ModelFamily.allCases.filter { $0 != .appleIntelligence }
         return familyOrder.compactMap { family in
@@ -27,6 +38,10 @@ struct ModelDownloadView: View {
             guard !models.isEmpty else { return nil }
             return ModelFamilyGroup(family: family, models: models)
         }
+    }
+
+    private var useCaseRecommendations: [ModelManager.UseCaseRecommendation] {
+        modelManager.useCaseRecommendations()
     }
 
     private var shouldShowHeaderTips: Bool {
@@ -40,6 +55,8 @@ struct ModelDownloadView: View {
                     headerView
                 }
 
+                DownloadedModelsSection(models: downloadedModels)
+
                 ForEach(appleModels) { model in
                     ModelCard(model: model)
                         .transition(.asymmetric(
@@ -48,8 +65,27 @@ struct ModelDownloadView: View {
                         ))
                 }
 
+                if !useCaseRecommendations.isEmpty {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(String(localized: "Choose by Use"))
+                            .font(.headline)
+                            .foregroundStyle(Color(white: 0.2))
+
+                        LazyVGrid(
+                            columns: [
+                                GridItem(.adaptive(minimum: 156), spacing: 12)
+                            ],
+                            spacing: 12
+                        ) {
+                            ForEach(useCaseRecommendations) { recommendation in
+                                ModelUseCaseCard(recommendation: recommendation)
+                            }
+                        }
+                    }
+                }
+
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(String(localized: "Model Families"))
+                    Text(String(localized: "Advanced Model Families"))
                         .font(.headline)
                         .foregroundStyle(Color(white: 0.2))
 
@@ -122,6 +158,417 @@ struct ModelDownloadView: View {
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+    }
+}
+
+struct DownloadedModelsSection: View {
+    let models: [ModelInfo]
+
+    private var storageText: String {
+        let totalGB = models.reduce(0.0) { $0 + $1.sizeGB }
+        guard totalGB > 0 else {
+            return String(localized: "No local downloads")
+        }
+        return String(format: String(localized: "%.1f GB on device", defaultValue: "%.1f GB on device"), totalGB)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(String(localized: "Downloaded Models"))
+                    .font(.headline)
+                    .foregroundStyle(Color(white: 0.2))
+
+                Spacer()
+
+                Text(storageText)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(Color(white: 0.5))
+            }
+
+            if models.isEmpty {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "externaldrive.badge.plus")
+                        .font(.headline)
+                        .foregroundStyle(.blue)
+                        .frame(width: 34, height: 34)
+                        .background(Color.blue.opacity(0.09))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(String(localized: "No models downloaded yet"))
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color(white: 0.18))
+
+                        Text(String(localized: "Download a model below and it will appear here for quick selection or removal."))
+                            .font(.caption)
+                            .foregroundStyle(Color(white: 0.45))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(models.enumerated()), id: \.element.id) { index, model in
+                        DownloadedModelRow(model: model)
+
+                        if index < models.count - 1 {
+                            Divider()
+                                .padding(.leading, 72)
+                        }
+                    }
+                }
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+            }
+        }
+    }
+}
+
+struct DownloadedModelRow: View {
+    let model: ModelInfo
+
+    @Environment(ModelManager.self) private var modelManager
+    @Environment(MonetizationManager.self) private var monetizationManager
+    @State private var showConsentSheet = false
+    @State private var showDeleteConfirmation = false
+    @State private var pendingAction: (() -> Void)?
+    @State private var upgradeFeature: PremiumFeature?
+
+    private var isSelected: Bool {
+        modelManager.selectedModel?.id == model.id
+    }
+
+    private var isLockedPremiumModel: Bool {
+        monetizationManager.isPremiumModel(model) && !monetizationManager.hasPro
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "externaldrive.fill")
+                .font(.headline)
+                .foregroundStyle(isSelected ? .green : .blue)
+                .frame(width: 38, height: 38)
+                .background((isSelected ? Color.green : Color.blue).opacity(0.09))
+                .clipShape(RoundedRectangle(cornerRadius: 11))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(model.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color(white: 0.14))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                HStack(spacing: 6) {
+                    Text("\(model.family.title) • \(model.sizeLabel)")
+                        .font(.caption)
+                        .foregroundStyle(Color(white: 0.45))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    if isSelected {
+                        Text(String(localized: "ACTIVE"))
+                            .font(.caption2.bold())
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.blue)
+                            .clipShape(Capsule())
+                            .fixedSize()
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
+
+            Button {
+                if isLockedPremiumModel {
+                    upgradeFeature = .allModels
+                } else {
+                    requireConsentAndPerform {
+                        modelManager.selectModel(model.id)
+                    }
+                }
+            } label: {
+                Image(systemName: isLockedPremiumModel ? "crown.fill" : (isSelected ? "checkmark" : "circle"))
+                    .font(.body.weight(.bold))
+                .foregroundStyle(isSelected ? .white : .blue)
+                .frame(width: 40, height: 40)
+                .background(isSelected ? Color.blue : Color.blue.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(ActionButtonStyle())
+            .disabled(isSelected && !isLockedPremiumModel)
+            .accessibilityLabel(isLockedPremiumModel ? String(localized: "Unlock model") : (isSelected ? String(localized: "Selected model") : String(localized: "Select model")))
+
+            Button {
+                showDeleteConfirmation = true
+            } label: {
+                Image(systemName: "trash")
+                    .font(.body)
+                    .foregroundStyle(.red.opacity(0.8))
+                    .frame(width: 40, height: 40)
+                    .background(Color.red.opacity(0.06))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(ActionButtonStyle())
+            .accessibilityLabel(String(localized: "Delete model"))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .confirmationDialog(String(localized: "Delete Model?"), isPresented: $showDeleteConfirmation) {
+            Button(String(localized: "Delete"), role: .destructive) {
+                modelManager.deleteModel(model.id)
+            }
+            Button(String(localized: "Cancel"), role: .cancel) {}
+        } message: {
+            Text(String(localized: "This will remove the downloaded model from your device. You can download it again anytime."))
+        }
+        .sheet(isPresented: $showConsentSheet) {
+            ModelConsentSheet(model: model) {
+                UserDefaults.standard.set(true, forKey: consentKey)
+                showConsentSheet = false
+                let action = pendingAction
+                pendingAction = nil
+                action?()
+            } onCancel: {
+                showConsentSheet = false
+                pendingAction = nil
+            }
+        }
+        .sheet(item: $upgradeFeature) { feature in
+            UpgradeView(feature: feature)
+                .environment(monetizationManager)
+        }
+    }
+
+    private var consentKey: String {
+        "modelConsent.\(model.id)"
+    }
+
+    private func requireConsentAndPerform(_ action: @escaping () -> Void) {
+        if UserDefaults.standard.bool(forKey: consentKey) {
+            action()
+            return
+        }
+
+        pendingAction = action
+        showConsentSheet = true
+    }
+}
+
+struct ModelUseCaseCard: View {
+    let recommendation: ModelManager.UseCaseRecommendation
+
+    @Environment(ModelManager.self) private var modelManager
+    @Environment(MonetizationManager.self) private var monetizationManager
+    @Environment(\.openURL) private var openURL
+    @State private var showConsentSheet = false
+    @State private var pendingAction: (() -> Void)?
+    @State private var upgradeFeature: PremiumFeature?
+
+    private var model: ModelInfo? {
+        modelManager.models.first { $0.id == recommendation.modelID }
+    }
+
+    private var isSelected: Bool {
+        modelManager.selectedModel?.id == recommendation.modelID
+    }
+
+    private var isPremiumModel: Bool {
+        guard let model else { return false }
+        return monetizationManager.isPremiumModel(model)
+    }
+
+    private var actionTitle: String {
+        guard let model else { return String(localized: "Unavailable") }
+        if isPremiumModel && !monetizationManager.hasPro {
+            return String(localized: "Unlock Pro")
+        }
+        if isSelected {
+            return String(localized: "Selected")
+        }
+        switch model.downloadState {
+        case .builtin, .downloaded:
+            return String(localized: "Use")
+        case .notDownloaded:
+            return String(format: String(localized: "Download %@", defaultValue: "Download %@"), model.sizeLabel)
+        case .downloading, .validating:
+            return String(localized: "Cancel")
+        case .error:
+            return modelManager.downloadErrorAction(for: model.id).title
+        }
+    }
+
+    private var actionIcon: String {
+        guard let model else { return "exclamationmark.circle" }
+        if isPremiumModel && !monetizationManager.hasPro {
+            return "crown.fill"
+        }
+        if isSelected {
+            return "checkmark.circle.fill"
+        }
+        switch model.downloadState {
+        case .builtin, .downloaded:
+            return "checkmark.circle"
+        case .notDownloaded:
+            return "arrow.down.circle.fill"
+        case .downloading, .validating:
+            return "xmark"
+        case .error:
+            return modelManager.downloadErrorAction(for: model.id).iconName
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: recommendation.symbolName)
+                    .font(.headline)
+                    .foregroundStyle(.blue)
+                    .frame(width: 34, height: 34)
+                    .background(Color.blue.opacity(0.09))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(recommendation.title)
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(Color(white: 0.12))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+
+                    Text(recommendation.summary)
+                        .font(.caption)
+                        .foregroundStyle(Color(white: 0.45))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            Text(recommendation.detail)
+                .font(.caption2)
+                .foregroundStyle(Color(white: 0.48))
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let model {
+                VStack(alignment: .leading, spacing: 8) {
+                    InfoTag(icon: model.isAppleFoundation ? "apple.logo" : "cpu", text: LocalizedStringKey(model.name), isHighlighted: isSelected)
+
+                    if model.isAppleFoundation {
+                        InfoTag(icon: "bolt.shield", text: LocalizedStringKey(String(localized: "No download")))
+                    } else {
+                        InfoTag(icon: "externaldrive", text: LocalizedStringKey(model.sizeLabel))
+                    }
+                }
+            }
+
+            Spacer(minLength: 0)
+
+            Button {
+                performPrimaryAction()
+            } label: {
+                HStack(spacing: 7) {
+                    Image(systemName: actionIcon)
+                        .font(.caption.weight(.bold))
+                    Text(actionTitle)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.78)
+                }
+                .foregroundStyle(isSelected ? .white : .blue)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(isSelected ? Color.blue : Color.blue.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(ActionButtonStyle())
+            .disabled(model == nil)
+        }
+        .frame(maxWidth: .infinity, minHeight: 218, alignment: .topLeading)
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(isSelected ? Color.blue.opacity(0.25) : Color.clear, lineWidth: 1.5)
+        )
+        .shadow(color: .black.opacity(0.035), radius: 7, y: 3)
+        .sheet(isPresented: $showConsentSheet) {
+            if let model {
+                ModelConsentSheet(model: model) {
+                    UserDefaults.standard.set(true, forKey: consentKey(for: model))
+                    showConsentSheet = false
+                    let action = pendingAction
+                    pendingAction = nil
+                    action?()
+                } onCancel: {
+                    showConsentSheet = false
+                    pendingAction = nil
+                }
+            }
+        }
+        .sheet(item: $upgradeFeature) { feature in
+            UpgradeView(feature: feature)
+                .environment(monetizationManager)
+        }
+    }
+
+    private func performPrimaryAction() {
+        guard let model else { return }
+
+        if isPremiumModel && !monetizationManager.hasPro {
+            upgradeFeature = .allModels
+            return
+        }
+
+        switch model.downloadState {
+        case .builtin, .downloaded:
+            requireConsent(for: model) {
+                modelManager.selectModel(model.id)
+            }
+        case .notDownloaded:
+            requireConsent(for: model) {
+                modelManager.downloadModel(model.id, selectWhenFinished: true)
+            }
+        case .downloading, .validating:
+            modelManager.cancelDownload(model.id)
+        case .error:
+            handleDownloadErrorAction(modelManager.downloadErrorAction(for: model.id), model: model)
+        }
+    }
+
+    private func requireConsent(for model: ModelInfo, action: @escaping () -> Void) {
+        if UserDefaults.standard.bool(forKey: consentKey(for: model)) {
+            action()
+            return
+        }
+        pendingAction = action
+        showConsentSheet = true
+    }
+
+    private func consentKey(for model: ModelInfo) -> String {
+        "modelConsent.\(model.id)"
+    }
+
+    private func handleDownloadErrorAction(_ action: DownloadErrorAction, model: ModelInfo) {
+        switch action {
+        case .retry:
+            modelManager.downloadModel(model.id, selectWhenFinished: true)
+        case .freeSpace:
+            if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                openURL(settingsURL)
+            }
+        case .repair:
+            modelManager.repairModel(model.id, selectWhenFinished: true)
+        case .cellularRestricted:
+            break
+        }
     }
 }
 
@@ -538,23 +985,12 @@ struct ModelCard: View {
                             .foregroundStyle(Color(white: 0.5))
                     }
                 }
-                let freeGB = DiskSpace.availableGB()
-                let hasSpace = freeGB >= model.sizeGB * 1.05
-                HStack(spacing: 6) {
-                    Image(systemName: hasSpace ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
-                        .foregroundStyle(hasSpace ? .green : .orange)
-                    Text(String(format: String(localized: "Free space: %.1f GB", defaultValue: "Free space: %.1f GB"), freeGB))
-                        .font(.caption)
-                        .foregroundStyle(Color(white: 0.5))
+                if let readiness = modelManager.downloadReadiness(for: model) {
+                    DownloadReadinessView(
+                        readiness: readiness,
+                        isDownloaded: model.downloadState.isDownloaded
+                    )
                 }
-                if !hasSpace {
-                    Text(String(localized: "Low storage may prevent downloads or slow performance."))
-                        .font(.caption2)
-                        .foregroundStyle(.orange)
-                }
-                Text(String(localized: "Inference privacy: Prompts and document text stay on-device and are not sent to third-party AI services."))
-                    .font(.caption2)
-                    .foregroundStyle(Color(white: 0.45))
             }
 
             if (model.downloadState.isDownloaded || model.isAppleFoundation) && (model.engine != .appleFoundation || modelManager.isAppleIntelligenceAvailable) {
@@ -584,7 +1020,7 @@ struct ModelCard: View {
                 .foregroundStyle(modelManager.isOnboardingRecommended(model) ? Color.green.opacity(0.95) : Color(white: 0.42))
                 .fixedSize(horizontal: false, vertical: true)
 
-            ScrollView(.horizontal, showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     if modelManager.isOnboardingRecommended(model) {
                         InfoTag(icon: "sparkles", text: LocalizedStringKey(String(localized: "Recommended")), isHighlighted: true)
@@ -596,23 +1032,17 @@ struct ModelCard: View {
                         InfoTag(icon: "externaldrive", text: LocalizedStringKey(String(format: String(localized: "%.1f GB", defaultValue: "%.1f GB"), model.sizeGB)))
                     }
 
+                    if model.downloadState.isDownloaded {
+                        InfoTag(icon: "checkmark.circle.fill", text: LocalizedStringKey(String(localized: "Ready")), isHighlighted: true)
+                    }
+                }
+
+                HStack(spacing: 8) {
                     InfoTag(
                         icon: model.isAppleFoundation ? "hand.raised.fill" : "lock.shield",
                         text: LocalizedStringKey(model.privacyLabel),
                         isHighlighted: !model.isAppleFoundation
                     )
-
-                    ForEach(Array(model.badges.prefix(3)), id: \.self) { badge in
-                        InfoTag(
-                            icon: badge.iconName,
-                        text: LocalizedStringKey(badge.title),
-                            isHighlighted: badge.isHighlighted
-                        )
-                    }
-
-                    if model.downloadState.isDownloaded {
-                        InfoTag(icon: "checkmark.circle.fill", text: LocalizedStringKey(String(localized: "Ready")), isHighlighted: true)
-                    }
 
                     if model.currentDeviceFit != .supported {
                         InfoTag(
@@ -621,12 +1051,26 @@ struct ModelCard: View {
                             isHighlighted: model.currentDeviceFit.isHighlighted
                         )
                     }
+                }
 
-                    if model.supportsThinkingToggle {
-                        thinkingPill
+                if !model.badges.isEmpty || model.supportsThinkingToggle {
+                    HStack(spacing: 8) {
+                        ForEach(Array(model.badges.prefix(3)), id: \.self) { badge in
+                            InfoTag(
+                                icon: badge.iconName,
+                                text: LocalizedStringKey(badge.title),
+                                isHighlighted: badge.isHighlighted
+                            )
+                        }
+
+                        if model.supportsThinkingToggle {
+                            thinkingPill
+                        }
                     }
                 }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
         }
     }
 
@@ -1057,6 +1501,102 @@ struct InfoTag: View {
     }
 }
 
+struct DownloadReadinessView: View {
+    let readiness: ModelManager.DownloadReadiness
+    let isDownloaded: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: isDownloaded ? "checkmark.circle.fill" : "arrow.down.circle.fill")
+                    .foregroundStyle(isDownloaded ? .green : .blue)
+                Text(isDownloaded ? String(localized: "Ready offline") : String(localized: "Download plan"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(white: 0.24))
+            }
+
+            if isDownloaded {
+                readinessRow(
+                    icon: "lock.shield.fill",
+                    text: readiness.offlineText,
+                    color: .green
+                )
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        readinessPill(icon: "externaldrive", text: readiness.modelSizeText)
+                        readinessPill(icon: "internaldrive", text: readiness.requiredSpaceText)
+                        readinessPill(
+                            icon: readiness.hasEnoughSpace ? "checkmark.seal.fill" : "exclamationmark.triangle.fill",
+                            text: readiness.availableSpaceText,
+                            isWarning: !readiness.hasEnoughSpace
+                        )
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(spacing: 8) {
+                            readinessPill(icon: "externaldrive", text: readiness.modelSizeText)
+                            readinessPill(icon: "internaldrive", text: readiness.requiredSpaceText)
+                        }
+                        readinessPill(
+                            icon: readiness.hasEnoughSpace ? "checkmark.seal.fill" : "exclamationmark.triangle.fill",
+                            text: readiness.availableSpaceText,
+                            isWarning: !readiness.hasEnoughSpace
+                        )
+                    }
+                }
+
+                readinessRow(
+                    icon: readiness.networkIconName,
+                    text: readiness.networkText,
+                    color: readiness.isNetworkWarning ? .orange : .blue
+                )
+                readinessRow(
+                    icon: "lock.shield.fill",
+                    text: readiness.offlineText,
+                    color: .green
+                )
+            }
+        }
+        .padding(12)
+        .background(Color(white: 0.975))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.black.opacity(0.04), lineWidth: 1)
+        )
+    }
+
+    private func readinessPill(icon: String, text: String, isWarning: Bool = false) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.caption2)
+            Text(text)
+                .font(.caption2.weight(.medium))
+                .lineLimit(1)
+                .minimumScaleFactor(0.82)
+        }
+        .foregroundStyle(isWarning ? .orange : Color(white: 0.45))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(isWarning ? Color.orange.opacity(0.08) : Color.white)
+        .clipShape(Capsule())
+    }
+
+    private func readinessRow(icon: String, text: String, color: Color) -> some View {
+        HStack(alignment: .top, spacing: 7) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundStyle(color)
+                .frame(width: 16)
+            Text(text)
+                .font(.caption2)
+                .foregroundStyle(Color(white: 0.45))
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
 // MARK: - Action Buttons
 
 struct BuiltInButton: View {
@@ -1152,9 +1692,9 @@ struct DownloadButton: View {
                     .font(.body.bold())
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(String(localized: "Download"))
+                    Text(String(localized: "Download & Select"))
                         .font(.subheadline.weight(.semibold))
-                    Text(String(format: String(localized: "%@ • Ready when it finishes", defaultValue: "%@ • Ready when it finishes"), sizeLabel))
+                    Text(String(format: String(localized: "%@ • Works offline after download", defaultValue: "%@ • Works offline after download"), sizeLabel))
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.78))
                         .lineLimit(1)

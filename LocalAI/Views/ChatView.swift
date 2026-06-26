@@ -14,7 +14,7 @@ struct ChatView: View {
     @State private var messageText = ""
     @State private var isFileImporterPresented = false
     @State private var isPhotoPickerPresented = false
-    @State private var isExtractingDocument = false
+    @State private var documentImportState: DocumentImportState = .idle
     @AppStorage("autoRead") private var autoRead = false
     @AppStorage("voiceConversationMode") private var voiceConversationMode = false
     @State private var showExportSheet = false
@@ -60,6 +60,38 @@ struct ChatView: View {
         let modelID: String
         let conversationID: UUID?
         let documentSignature: String
+    }
+
+    private enum DocumentImportState {
+        case idle
+        case extracting(id: UUID, fileName: String, task: Task<Void, Never>)
+        case indexing(id: UUID, fileName: String, task: Task<Void, Never>)
+
+        var isActive: Bool {
+            if case .idle = self { return false }
+            return true
+        }
+
+        var fileName: String? {
+            if case .extracting(_, let fileName, _) = self { return fileName }
+            if case .indexing(_, let fileName, _) = self { return fileName }
+            return nil
+        }
+
+        var statusText: String {
+            switch self {
+            case .idle:
+                return ""
+            case .extracting(_, let fileName, _):
+                if fileName.lowercased().hasSuffix(".pdf") {
+                    return String(localized: "Reading PDF…")
+                }
+                return String(localized: "Reading document…")
+            case .indexing:
+                return String(localized: "Indexing document…")
+            }
+        }
+
     }
     
     var body: some View {
@@ -231,6 +263,7 @@ struct ChatView: View {
             }
             .onDisappear {
                 speechManager.stopSpeaking()
+                cancelDocumentExtraction(showError: false)
             }
             .onChange(of: modelManager.selectedModelID) {
                 invalidateGenerationSessionScope()
@@ -346,18 +379,18 @@ struct ChatView: View {
                     
                     AttachmentOptionsPopup(
                         onPhotoPicker: {
+                            guard guardCanAddAttachment(action: String(localized: "adding a photo")) else { return }
+                            dismissKeyboard()
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                                 showAttachmentOptions = false
                             }
                             isPhotoPickerPresented = true
                         },
                         onDocumentImport: {
+                            guard guardCanAddAttachment(action: String(localized: "adding a document")) else { return }
+                            dismissKeyboard()
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                                 showAttachmentOptions = false
-                            }
-                            guard monetizationManager.canUse(.unlimitedDocuments) || currentConversationDocuments.isEmpty else {
-                                upgradeFeature = .unlimitedDocuments
-                                return
                             }
                             isFileImporterPresented = true
                         },
@@ -370,7 +403,6 @@ struct ChatView: View {
                     .padding(.horizontal, 16)
                     .padding(.bottom, 24)
                 }
-                .ignoresSafeArea(.keyboard, edges: .bottom)
                 .transition(.asymmetric(
                     insertion: .move(edge: .bottom).combined(with: .opacity).combined(with: .scale(scale: 0.92)),
                     removal: .opacity.combined(with: .scale(scale: 0.95))
@@ -490,6 +522,10 @@ struct ChatView: View {
             set: { if !$0 { voiceError = nil } }
         )
     }
+
+    private func dismissKeyboard() {
+        isInputFocused = false
+    }
     
     private func prewarmModel() {
         guard let model = modelManager.selectedModel else { return }
@@ -573,7 +609,7 @@ struct ChatView: View {
                                 showsQuickActions: message.role == .assistant
                                     && historyManager.currentMessages.last?.id == message.id
                                     && !message.isStreaming
-                                    && llmEngine.state != .generating,
+                                    && canStartChatRequest,
                                 liveStreamingContent: liveStreamingContent(for: message)
                             )
                                 .id(message.id)
@@ -591,7 +627,7 @@ struct ChatView: View {
                                 .swipeActions(edge: .leading, allowsFullSwipe: false) {
                                     if message.role == .assistant,
                                        historyManager.currentMessages.last?.id == message.id,
-                                       llmEngine.state != .generating {
+                                       canStartChatRequest {
                                         Button {
                                             Self.mediumHaptic.impactOccurred()
                                             regenerate(message: message, style: .more)
@@ -621,6 +657,7 @@ struct ChatView: View {
                 scrollToBottom(proxy: proxy)
             }
             .onChange(of: llmEngine.state) { oldState, newState in
+                chatDiagnostic("engine state \(diagnosticDescription(for: oldState)) -> \(diagnosticDescription(for: newState))")
                 // Only clear the streaming IDs when generation actually ENDS.
                 // Clearing on every non-generating state wiped them during the
                 // model-load (.loading/.ready) that runs after the IDs are set
@@ -737,14 +774,20 @@ struct ChatView: View {
                 }
 
                 // Documents scoped to the current chat
-                if isExtractingDocument {
+                if documentImportState.isActive {
                     HStack(spacing: 8) {
-                        ProgressView(value: documentManager.extractionProgress)
+                        ProgressView(value: documentImportProgress)
                             .progressViewStyle(.linear)
                             .tint(.blue)
-                        Text(String(localized: "Extracting…"))
+                        Text(documentImportState.statusText)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
+                        Button(String(localized: "Cancel")) {
+                            cancelDocumentExtraction(showError: false)
+                        }
+                        .font(.caption2.weight(.semibold))
+                        .buttonStyle(.plain)
+                        .foregroundStyle(.blue)
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 12)
@@ -760,6 +803,8 @@ struct ChatView: View {
 
                 HStack(spacing: 10) {
                     Button {
+                        guard guardCanAddAttachment(action: String(localized: "adding an attachment")) else { return }
+                        dismissKeyboard()
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                             showAttachmentOptions = true
                         }
@@ -771,7 +816,7 @@ struct ChatView: View {
                             .background(Color(white: 0.95))
                             .clipShape(Circle())
                     }
-                    .disabled(isExtractingDocument || speechManager.isListening)
+                    .disabled(!canStartAttachment)
                     .accessibilityLabel(String(localized: "Add to chat"))
                     .accessibilityHint(String(localized: "Opens options for adding a photo, screenshot, or document."))
                     
@@ -878,11 +923,65 @@ struct ChatView: View {
     private var canSend: Bool {
         let hasInput = !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !currentConversationDocuments.isEmpty || selectedImage != nil
         let hasModel = modelManager.selectedModel != nil
-        return hasInput && hasModel && llmEngine.state != .generating && llmEngine.state != .loading && !monetizationManager.hasReachedFreeDailyMessageLimit
+        return hasInput && hasModel && canStartChatRequest && !monetizationManager.hasReachedFreeDailyMessageLimit
+    }
+
+    private var canStartChatRequest: Bool {
+        !documentImportState.isActive && llmEngine.state != .generating && llmEngine.state != .loading
+    }
+
+    private var canStartAttachment: Bool {
+        canStartChatRequest && !speechManager.isListening
+    }
+
+    private var currentChatHasAttachment: Bool {
+        selectedImage != nil || !currentConversationDocuments.isEmpty || currentChatHasSentImageAttachment
+    }
+
+    private var currentChatHasSentImageAttachment: Bool {
+        historyManager.messages(in: historyManager.currentConversationID).contains { message in
+            message.imageFileName != nil
+        }
+    }
+
+    private func guardCanStartChatRequest(action: String) -> Bool {
+        if documentImportState.isActive {
+            showExtractionNotice(String(format: String(localized: "Finish or cancel document import before %@."), action))
+            return false
+        }
+        guard llmEngine.state != .loading else { return false }
+        guard llmEngine.state != .generating else { return false }
+        return true
+    }
+
+    private func guardCanStartAttachment(action: String) -> Bool {
+        guard guardCanStartChatRequest(action: action) else { return false }
+        guard !speechManager.isListening else { return false }
+        return true
+    }
+
+    private func guardCanAddAttachment(action: String) -> Bool {
+        guard guardCanStartAttachment(action: action) else { return false }
+        guard !currentChatHasAttachment else {
+            showExtractionNotice(String(format: String(localized: "Remove the current attachment before %@."), action))
+            return false
+        }
+        return true
     }
 
     private var currentConversationDocuments: [ConversationDocument] {
         documentManager.documents(for: historyManager.currentConversationID)
+    }
+
+    private var documentImportProgress: Double {
+        switch documentImportState {
+        case .idle:
+            return 0
+        case .extracting:
+            return documentManager.extractionProgress
+        case .indexing:
+            return 0.95
+        }
     }
 
     private var imageAttachmentLabel: String {
@@ -992,11 +1091,6 @@ struct ChatView: View {
                 .font(.caption2)
                 .foregroundStyle(Color(white: 0.45))
                 .lineLimit(1)
-        } else if let pageInfo = document.pageInfo {
-            Text(pageInfo)
-                .font(.caption2)
-                .foregroundStyle(Color(white: 0.45))
-                .lineLimit(1)
         }
     }
 
@@ -1086,7 +1180,7 @@ struct ChatView: View {
     private func followUpSuggestions(for message: ChatMessage) -> [String] {
         guard message.role == .assistant else { return [] }
         guard !message.isStreaming else { return [] }
-        guard llmEngine.state != .generating else { return [] }
+        guard canStartChatRequest else { return [] }
         guard historyManager.currentMessages.last?.id == message.id else { return [] }
         guard !isInChatSearchActive else { return [] }
         guard smartReplyStylesEnabled else { return [] }
@@ -1180,29 +1274,80 @@ struct ChatView: View {
     private func handleFileImport(result: Result<[URL], Error>) {
         guard case .success(let urls) = result, let url = urls.first else { return }
         guard let conversationID = historyManager.currentConversationID else { return }
-        guard monetizationManager.canUse(.unlimitedDocuments) || currentConversationDocuments.isEmpty else {
-            upgradeFeature = .unlimitedDocuments
-            return
-        }
+        guard guardCanAddAttachment(action: String(localized: "adding a document")) else { return }
+
+        cancelDocumentExtraction(showError: false)
         
-        withAnimation(.spring(response: 0.3)) {
-            isExtractingDocument = true
-        }
-        
-        Task {
+        let extractionID = UUID()
+        let fileName = url.lastPathComponent.removingPercentEncoding ?? url.lastPathComponent
+        chatDiagnostic("document import selected id=\(extractionID) file=\(fileName) conversation=\(conversationID)")
+        let extractionTask = Task {
             do {
+                chatDiagnostic("document import reading id=\(extractionID) file=\(fileName)")
                 let document = try await documentManager.processFile(at: url)
+                try Task.checkCancellation()
+                transitionDocumentImportToIndexing(extractionID)
                 await documentManager.addDocumentToConversation(from: document, conversationID: conversationID)
+                try Task.checkCancellation()
+                chatDiagnostic("document import stored id=\(extractionID) file=\(fileName) chars=\(document.content.count)")
                 if let warning = document.ocrWarningText {
                     showExtractionNotice(warning)
                 }
+            } catch is CancellationError {
+                chatDiagnostic("document import cancelled id=\(extractionID) file=\(fileName)")
+                // User-initiated cancellation should quietly restore the composer.
             } catch {
+                chatDiagnostic("document import failed id=\(extractionID) file=\(fileName) error=\(error.localizedDescription)")
                 print("Error processing file: \(error)")
                 documentError = error.localizedDescription
             }
-            withAnimation(.spring(response: 0.3)) {
-                isExtractingDocument = false
+            if isCurrentDocumentExtraction(extractionID) {
+                chatDiagnostic("document import idle id=\(extractionID) file=\(fileName)")
+                withAnimation(.spring(response: 0.3)) {
+                    documentImportState = .idle
+                }
             }
+        }
+        withAnimation(.spring(response: 0.3)) {
+            documentImportState = .extracting(id: extractionID, fileName: fileName, task: extractionTask)
+        }
+    }
+
+    private func cancelDocumentExtraction(showError: Bool) {
+        switch documentImportState {
+        case .extracting(let id, let fileName, let task), .indexing(let id, let fileName, let task):
+            chatDiagnostic("document import cancel requested id=\(id) file=\(fileName) showError=\(showError)")
+            task.cancel()
+        case .idle:
+            break
+        }
+        documentManager.extractionProgress = 0
+        if showError {
+            documentError = String(localized: "Document extraction was cancelled.")
+        }
+        withAnimation(.spring(response: 0.3)) {
+            documentImportState = .idle
+        }
+    }
+
+    private func isCurrentDocumentExtraction(_ extractionID: UUID) -> Bool {
+        if case .extracting(let activeID, _, _) = documentImportState {
+            return activeID == extractionID
+        }
+        if case .indexing(let activeID, _, _) = documentImportState {
+            return activeID == extractionID
+        }
+        return false
+    }
+
+    private func transitionDocumentImportToIndexing(_ extractionID: UUID) {
+        guard case .extracting(let activeID, let fileName, let task) = documentImportState,
+              activeID == extractionID else {
+            return
+        }
+        chatDiagnostic("document import indexing id=\(activeID) file=\(fileName)")
+        withAnimation(.spring(response: 0.3)) {
+            documentImportState = .indexing(id: activeID, fileName: fileName, task: task)
         }
     }
     
@@ -1247,6 +1392,7 @@ struct ChatView: View {
             showUsageLimitToast()
             return
         }
+        guard guardCanStartChatRequest(action: String(localized: "sending")) else { return }
         guard canSend else { return }
         Self.lightHaptic.impactOccurred()
 
@@ -1261,13 +1407,9 @@ struct ChatView: View {
     }
     
     private func performSendMessage() {
+        guard guardCanStartChatRequest(action: String(localized: "sending")) else { return }
         if speechManager.isListening {
             speechManager.stopListening()
-        }
-        
-        if llmEngine.state == .generating {
-            stopGeneration()
-            return
         }
         
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1344,9 +1486,10 @@ struct ChatView: View {
             await runAssistantResponse(
                 prompt: effectivePrompt,
                 conversationID: conversationID,
-                resetSession: false,
+                resetSession: promptContext.hasDocumentContext,
                 image: model.supportsVision ? imageToSend : nil,
                 assistantSourceTitles: promptContext.sourceTitles,
+                retryPromptSeed: promptContext.retryPromptSeed,
                 shouldChargeUsage: true
             )
         }
@@ -1408,6 +1551,25 @@ struct ChatView: View {
         }
     }
 
+    private func chatDiagnostic(_ message: String) {
+        print("[ChatDiagnostics] chat \(message)")
+    }
+
+    private func diagnosticDescription(for state: LLMEngineState) -> String {
+        switch state {
+        case .idle:
+            return "idle"
+        case .loading:
+            return "loading"
+        case .ready:
+            return "ready"
+        case .generating:
+            return "generating"
+        case .error(let message):
+            return "error(\(message))"
+        }
+    }
+
     private func runAssistantResponse(
         prompt: String,
         conversationID: UUID?,
@@ -1418,15 +1580,26 @@ struct ChatView: View {
         missingAnswerRetryCount: Int = 0,
         image: UIImage? = nil,
         assistantSourceTitles: [String] = [],
+        retryPromptSeed: String? = nil,
         shouldChargeUsage: Bool = false
     ) async {
+        defer {
+            finalizeStreamingMessageIfNeeded(
+                assistantID: assistantID,
+                conversationID: conversationID,
+                assistantSourceTitles: assistantSourceTitles
+            )
+        }
+
         do {
             guard let model = modelManager.selectedModel else {
+                chatDiagnostic("response blocked no-model assistantID=\(assistantID) conversation=\(conversationID?.uuidString ?? "nil")")
                 let errorMessage = ChatMessage(role: .assistant, content: String(localized: "Please select or download a model first (Settings > Models)."))
                 historyManager.addMessage(errorMessage, to: conversationID)
                 return
             }
 
+            chatDiagnostic("response start assistantID=\(assistantID) conversation=\(conversationID?.uuidString ?? "nil") model=\(model.id) engine=\(model.engine.rawValue) promptChars=\(prompt.count) retry=\(missingAnswerRetryCount)")
             streamingPrefix = existingPrefix
             speechStreamingSpokenCharCount = AssistantOutputSanitizer.sanitize(existingPrefix)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1441,7 +1614,8 @@ struct ChatView: View {
                     in: conversationID,
                     content: placeholderContent,
                     isStreaming: true,
-                    sourceTitles: assistantSourceTitles
+                    sourceTitles: assistantSourceTitles,
+                    retryPromptSeed: retryPromptSeed
                 )
             } else {
                 let assistantPlaceholder = ChatMessage(
@@ -1449,12 +1623,15 @@ struct ChatView: View {
                     role: .assistant,
                     content: placeholderContent,
                     sourceTitles: assistantSourceTitles,
+                    retryPromptSeed: retryPromptSeed,
                     isStreaming: true
                 )
                 historyManager.addMessage(assistantPlaceholder, to: conversationID)
             }
+            chatDiagnostic("response placeholder streaming assistantID=\(assistantID) existingPrefixChars=\(existingPrefix.count)")
 
             try await llmEngine.loadModel(model)
+            chatDiagnostic("response model loaded assistantID=\(assistantID) state=\(diagnosticDescription(for: llmEngine.state))")
 
             let nextSessionScope = generationSessionScope(for: model, conversationID: conversationID)
             let mlxVisionImageKey = model.engine == .mlx && model.supportsVision
@@ -1473,6 +1650,7 @@ struct ChatView: View {
                 isNewMlxVisionImage
 
             if shouldResetSession {
+                chatDiagnostic("response reset session assistantID=\(assistantID) resetRequested=\(resetSession)")
                 llmEngine.resetSession()
             }
 
@@ -1489,6 +1667,7 @@ struct ChatView: View {
                 )
                 : prompt
 
+            chatDiagnostic("response generate begin assistantID=\(assistantID) shouldReset=\(shouldResetSession)")
             try await llmEngine.generate(
                 prompt: budgetedGenerationPrompt(
                     promptWithResponseLimit(continuityPrompt, existingPrefix: existingPrefix),
@@ -1496,9 +1675,11 @@ struct ChatView: View {
                 ),
                 image: image
             )
+            chatDiagnostic("response generate end assistantID=\(assistantID) state=\(diagnosticDescription(for: llmEngine.state)) streamedChars=\(llmEngine.currentResponse.count)")
 
             if case .error(let message) = llmEngine.state {
                 let errorText = userFacingErrorText(from: message)
+                chatDiagnostic("response engine error assistantID=\(assistantID) error=\(message)")
                 let fallbackContent = failureContent(
                     assistantID: assistantID,
                     conversationID: conversationID,
@@ -1519,12 +1700,14 @@ struct ChatView: View {
             }
 
             let finalizedContent = enforcedResponseLimit(
-                for: combinedStreamingContent(for: llmEngine.currentResponse)
+                for: combinedStreamingContent(for: llmEngine.currentResponse),
+                existingPrefix: existingPrefix
             )
             let finalizedParts = AssistantOutputSanitizer.parts(from: finalizedContent)
             if finalizedParts.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                finalizedParts.thinkingContent != nil,
                missingAnswerRetryCount == 0 {
+                chatDiagnostic("response missing final answer retry assistantID=\(assistantID)")
                 llmEngine.currentResponse = ""
                 streamingPrefix = ""
                 await runAssistantResponse(
@@ -1538,7 +1721,8 @@ struct ChatView: View {
                     existingPrefix: "",
                     placeholderContent: finalizedContent,
                     missingAnswerRetryCount: 1,
-                    assistantSourceTitles: assistantSourceTitles
+                    assistantSourceTitles: assistantSourceTitles,
+                    retryPromptSeed: retryPromptSeed
                 )
                 return
             }
@@ -1550,6 +1734,7 @@ struct ChatView: View {
                 isStreaming: false,
                 sourceTitles: assistantSourceTitles
             )
+            chatDiagnostic("response finalized assistantID=\(assistantID) contentChars=\(finalizedContent.count)")
             activeGenerationSessionScope = nextSessionScope
             lastGenerationWasEphemeral = isEphemeral
             if let mlxVisionImageKey {
@@ -1576,6 +1761,7 @@ struct ChatView: View {
                 startListeningIfPossible()
             }
         } catch {
+            chatDiagnostic("response failed assistantID=\(assistantID) error=\(error.localizedDescription)")
             let errorText = userFacingErrorText(from: error.localizedDescription)
             if historyManager.containsMessage(assistantID, in: conversationID) {
                 let fallbackContent = failureContent(
@@ -1604,6 +1790,40 @@ struct ChatView: View {
                 speechManager.speak(errorText)
             }
         }
+    }
+
+    private func finalizeStreamingMessageIfNeeded(
+        assistantID: UUID,
+        conversationID: UUID?,
+        assistantSourceTitles: [String]
+    ) {
+        guard let message = historyManager.message(id: assistantID, in: conversationID),
+              message.role == .assistant,
+              message.isStreaming else {
+            return
+        }
+
+        let streamedContent = combinedStreamingContent(for: llmEngine.currentResponse)
+        let fallbackContent = rawAssistantContent(for: message)
+        let finalContent = streamedContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? fallbackContent
+            : streamedContent
+
+        chatDiagnostic("response finalizer closed streaming assistantID=\(assistantID) contentChars=\(finalContent.count) streamedChars=\(streamedContent.count)")
+        historyManager.updateMessage(
+            id: assistantID,
+            in: conversationID,
+            content: enforcedResponseLimit(for: finalContent, existingPrefix: streamingPrefix),
+            isStreaming: false,
+            sourceTitles: assistantSourceTitles
+        )
+
+        if activeStreamingAssistantID == assistantID {
+            activeStreamingConversationID = nil
+            activeStreamingAssistantID = nil
+        }
+        llmEngine.currentResponse = ""
+        streamingPrefix = ""
     }
 
     private func refineConversationInsightsIfNeeded(
@@ -1716,6 +1936,10 @@ struct ChatView: View {
 
     private func handlePhotoSelection() {
         guard let item = selectedPhotoItem else { return }
+        guard guardCanAddAttachment(action: String(localized: "adding a photo")) else {
+            selectedPhotoItem = nil
+            return
+        }
 
         // Pro gate
         guard monetizationManager.canUse(.imageInput) else {
@@ -1836,7 +2060,7 @@ struct ChatView: View {
     }
 
     private func continueResponse(for message: ChatMessage) {
-        guard llmEngine.state != .generating else { return }
+        guard guardCanStartChatRequest(action: String(localized: "continuing")) else { return }
         guard let lastMessage = historyManager.currentMessages.last, lastMessage.id == message.id else { return }
         guard hasRecoverableConversationContext else { return }
 
@@ -1860,9 +2084,22 @@ struct ChatView: View {
 
         let separator = message.content.hasSuffix("\n") ? "" : "\n\n"
         let prefix = message.content + separator
+        let sourceMap = message.sourceTitles.enumerated().map { index, title in
+            "[Source \(index + 1): \(title)]"
+        }.joined(separator: "\n")
+        let sourceContext = sourceMap.isEmpty ? "" : """
+
+        Available source labels:
+        \(sourceMap)
+        """
         let prompt = """
-        Continue exactly where you stopped.
-        Do not repeat the earlier text.
+        Previous visible answer:
+        \(message.content)
+        \(sourceContext)
+
+        Continue the previous visible answer exactly where it stopped.
+        Do not repeat the previous answer.
+        Start with the next missing words only.
         Finish the same answer naturally and concisely.
         """
 
@@ -2008,7 +2245,7 @@ struct ChatView: View {
 
     private func applyEditedMessageAndRerun() {
         guard let editingMessage else { return }
-        guard llmEngine.state != .generating else { return }
+        guard guardCanStartChatRequest(action: String(localized: "rerunning")) else { return }
 
         if monetizationManager.hasReachedFreeDailyMessageLimit {
             showUsageLimitToast()
@@ -2074,7 +2311,7 @@ struct ChatView: View {
         guard smartReplyStylesEnabled else { return [] }
         guard message.role == .assistant else { return [] }
         guard !message.isStreaming else { return [] }
-        guard llmEngine.state != .generating else { return [] }
+        guard canStartChatRequest else { return [] }
         guard historyManager.currentMessages.last?.id == message.id else { return [] }
         guard !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
 
@@ -2135,7 +2372,7 @@ struct ChatView: View {
 
     private func regenerate(message: ChatMessage, style: SmartReplyStyle) {
         guard message.role == .assistant else { return }
-        guard llmEngine.state != .generating else { return }
+        guard guardCanStartChatRequest(action: String(localized: "regenerating")) else { return }
         guard historyManager.currentMessages.last?.id == message.id else { return }
 
         Self.lightHaptic.impactOccurred()
@@ -2155,7 +2392,7 @@ struct ChatView: View {
 
     private func translateReply(_ message: ChatMessage) {
         guard message.role == .assistant else { return }
-        guard llmEngine.state != .generating else { return }
+        guard guardCanStartChatRequest(action: String(localized: "translating")) else { return }
         guard historyManager.currentMessages.last?.id == message.id else { return }
 
         // Use the system locale as the default target language, or "English" if unknown
@@ -2190,7 +2427,7 @@ struct ChatView: View {
     }
 
     private func retryResponseAfterReset(for message: ChatMessage) {
-        guard llmEngine.state != .generating else { return }
+        guard guardCanStartChatRequest(action: String(localized: "retrying")) else { return }
         guard historyManager.currentMessages.last?.id == message.id else { return }
         guard let promptSeed = retryPromptSeed(for: message) else { return }
 
@@ -2207,7 +2444,8 @@ struct ChatView: View {
                 assistantID: message.id,
                 existingPrefix: "",
                 placeholderContent: "",
-                assistantSourceTitles: promptContext.sourceTitles
+                assistantSourceTitles: promptContext.sourceTitles,
+                retryPromptSeed: promptSeed
             )
         }
     }
@@ -2215,16 +2453,19 @@ struct ChatView: View {
     private func canContinue(_ message: ChatMessage) -> Bool {
         guard message.role == .assistant else { return false }
         guard !message.isStreaming else { return false }
-        guard llmEngine.state != .generating else { return false }
+        guard canStartChatRequest else { return false }
         guard historyManager.currentMessages.last?.id == message.id else { return false }
         guard hasRecoverableConversationContext else { return false }
         if missingFinalAnswer(message) { return true }
-        return looksTruncated(message.content) && likelyHitResponseLimit(message.content)
+        return looksTruncated(message.content) ||
+            likelyHitResponseLimit(message.content) ||
+            likelyHitResponseCharacterLimit(message.content)
     }
 
     private func canRetryAfterReset(_ message: ChatMessage) -> Bool {
         guard message.role == .assistant else { return false }
         guard !message.isStreaming else { return false }
+        guard canStartChatRequest else { return false }
         guard historyManager.currentMessages.last?.id == message.id else { return false }
         guard retryPromptSeed(for: message) != nil else { return false }
 
@@ -2244,6 +2485,11 @@ struct ChatView: View {
     }
 
     private func retryPromptSeed(for message: ChatMessage) -> String? {
+        if let retryPromptSeed = message.retryPromptSeed?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !retryPromptSeed.isEmpty {
+            return retryPromptSeed
+        }
+
         guard let messageIndex = historyManager.currentMessages.firstIndex(where: { $0.id == message.id }) else {
             return nil
         }
@@ -2357,7 +2603,7 @@ struct ChatView: View {
 
     private func looksTruncated(_ content: String) -> Bool {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count >= 80 else { return false }
+        guard !trimmed.isEmpty else { return false }
         if trimmed.hasSuffix("```") { return false }
 
         if let lastScalar = trimmed.unicodeScalars.last {
@@ -2381,12 +2627,26 @@ struct ChatView: View {
             " then",
             " of",
             " in",
-            " for"
+            " for",
+            " from",
+            " as",
+            " like",
+            " such as",
+            " including",
+            " possibly",
+            " probably",
+            " likely",
+            " maybe",
+            " about",
+            " around",
+            " between"
         ]
 
         if trailingFragments.contains(where: { lowercased.hasSuffix($0) }) {
             return true
         }
+
+        guard trimmed.count >= 80 else { return false }
 
         if let lastScalar = trimmed.unicodeScalars.last {
             let inconclusiveCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ",:;-("))
@@ -2410,13 +2670,24 @@ struct ChatView: View {
         return estimatedTokens >= Double(configuredMaxTokens) * 0.8
     }
 
+    private func likelyHitResponseCharacterLimit(_ content: String) -> Bool {
+        guard responseCharacterLimit > 0 else { return false }
+
+        let visibleContent = AssistantOutputSanitizer
+            .sanitize(content)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !visibleContent.isEmpty else { return false }
+        return visibleContent.count >= max(responseCharacterLimit - 8, 1)
+    }
+
     private func promptWithResponseLimit(_ prompt: String, existingPrefix: String) -> String {
-        guard let remainingCharacters = remainingResponseCharacters(after: existingPrefix) else {
+        guard let additionalCharacterLimit = additionalResponseCharacterLimit() else {
             return prompt
         }
 
         return """
-        Keep the final visible answer under \(remainingCharacters) additional characters.
+        Keep the final visible answer under \(additionalCharacterLimit) additional characters.
         Prioritize a complete answer over extra detail.
         If needed, shorten the wording instead of trailing off.
 
@@ -2424,22 +2695,24 @@ struct ChatView: View {
         """
     }
 
-    private func remainingResponseCharacters(after existingPrefix: String) -> Int? {
+    private func additionalResponseCharacterLimit() -> Int? {
         guard responseCharacterLimit > 0 else { return nil }
-
-        let usedCharacters = AssistantOutputSanitizer
-            .sanitize(existingPrefix)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .count
-
-        return max(responseCharacterLimit - usedCharacters, 0)
+        return responseCharacterLimit
     }
 
-    private func enforcedResponseLimit(for rawContent: String) -> String {
+    private func visibleCharacterCount(in rawContent: String) -> Int {
+        AssistantOutputSanitizer
+            .sanitize(rawContent)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .count
+    }
+
+    private func enforcedResponseLimit(for rawContent: String, existingPrefix: String = "") -> String {
         guard responseCharacterLimit > 0 else { return rawContent }
 
+        let limit = visibleCharacterCount(in: existingPrefix) + responseCharacterLimit
         let parts = AssistantOutputSanitizer.parts(from: rawContent)
-        let limitedVisibleContent = trimmedResponseContent(parts.content, limit: responseCharacterLimit)
+        let limitedVisibleContent = trimmedResponseContent(parts.content, limit: limit)
         guard limitedVisibleContent != parts.content else { return rawContent }
 
         return reconstructedAssistantContent(
@@ -2556,34 +2829,68 @@ struct ChatView: View {
         userText: String,
         conversationID: UUID?,
         model: ModelInfo?
-    ) async -> (prompt: String, sourceTitles: [String]) {
+    ) async -> (prompt: String, sourceTitles: [String], hasDocumentContext: Bool, retryPromptSeed: String) {
         let trimmedText = userText.trimmingCharacters(in: .whitespacesAndNewlines)
         let effectiveRequest = trimmedText.isEmpty ? String(localized: "Summarize the documents in this chat.") : trimmedText
 
         guard let conversationID, documentManager.shouldSearchDocuments(in: conversationID) else {
-            return (budgetedGenerationPrompt(trimmedText, model: model), [])
+            print("[OCRDEBUG] prompt no-doc-context conversation=\(conversationID?.uuidString ?? "nil") request=\"\(debugPromptPreview(effectiveRequest))\"")
+            return (budgetedGenerationPrompt(trimmedText, model: model), [], false, effectiveRequest)
         }
 
         let configuration = promptBudgetConfiguration(for: model)
+        let attachedDocuments = documentManager.documents(for: conversationID)
+        let prefersNewestAttachment = requestPrefersNewestAttachment(effectiveRequest)
+        let latestAttachedDocumentSnippet = prefersNewestAttachment
+            ? latestAttachedDocumentSnippet(for: conversationID)
+            : nil
+        let documentInventory = attachedDocuments.map { document in
+            "\(document.name):chars=\(document.content.count):sections=\(document.sections.count):origin=\(document.textOrigin.rawValue):preview='\(debugPromptPreview(document.content, maxLength: 80))'"
+        }.joined(separator: " | ")
+        print("[OCRDEBUG] prompt start conversation=\(conversationID) request=\"\(debugPromptPreview(effectiveRequest))\" docs=\(attachedDocuments.count) latest=\(attachedDocuments.first?.name ?? "nil") inventory=\(documentInventory)")
 
         let snippets = await documentManager.retrieveRelevantSnippets(
             for: effectiveRequest,
             conversationID: conversationID,
             limit: 4
         )
+        let retrievedSummary = snippets.map { item in
+            "\(item.document.name)@\(item.chunk.sourceLocationLabel ?? "nil"):score=\(String(format: "%.3f", item.chunk.score)):chars=\(item.chunk.content.count):preview='\(debugPromptPreview(item.chunk.content, maxLength: 80))'"
+        }.joined(separator: " | ")
+        print("[OCRDEBUG] prompt retrieved count=\(snippets.count) results=\(retrievedSummary)")
+
+        let strongSnippets = snippets.filter { item in
+            item.document.id == attachedDocuments.first?.id || item.chunk.score >= 0.22
+        }
+        print("[OCRDEBUG] prompt retrieval-filter prefersNewest=\(prefersNewestAttachment) strongCount=\(strongSnippets.count) threshold=0.220")
 
         if !snippets.isEmpty {
-            let documentSnippets = snippets.map { item in
+            var documentSnippets = snippets.map { item in
                 PromptBudgeter.DocumentSnippet(
                     title: item.document.name,
                     location: item.chunk.sourceLocationLabel,
                     content: item.chunk.content
                 )
             }
+            if let latestAttachedDocumentSnippet {
+                let retainedSnippets = prefersNewestAttachment ? [] : strongSnippets
+                documentSnippets = retainedSnippets.map { item in
+                    PromptBudgeter.DocumentSnippet(
+                        title: item.document.name,
+                        location: item.chunk.sourceLocationLabel,
+                        content: item.chunk.content
+                    )
+                }
+                documentSnippets.removeAll { snippet in
+                    snippet.title == latestAttachedDocumentSnippet.title &&
+                    snippet.location == latestAttachedDocumentSnippet.location
+                }
+                documentSnippets.insert(latestAttachedDocumentSnippet, at: 0)
+            }
+            print("[OCRDEBUG] prompt retrieved-branch newestInjected=\(latestAttachedDocumentSnippet != nil) snippetOrder=\(debugSnippetSummary(documentSnippets))")
             let instructions = """
-            You have access to documents that belong only to this chat.
+            \(documentAnsweringInstructions)
             The retrieved passages are ranked by relevance. Use higher-ranked passages and exact matches first.
-            If the snippets are insufficient, say that briefly instead of guessing.
             Cite sources inline as [Source n] when you rely on them.
             """
             let reservedTokens = PromptBudgeter.estimatedTokenCount(instructions + "\n\nUser request: \(effectiveRequest)")
@@ -2592,29 +2899,35 @@ struct ChatView: View {
                 configuration: configuration,
                 reservedTokens: reservedTokens
             )
+            let finalPrompt = PromptBudgeter.budgetedPrompt(
+                instructions: instructions,
+                context: contextWithOmissionNote(package.context, omittedCount: package.omittedCount),
+                userRequest: effectiveRequest,
+                configuration: configuration
+            )
+            print("[OCRDEBUG] prompt package branch=retrieved contextChars=\(package.context.count) omitted=\(package.omittedCount) sourceTitles=\(package.sourceTitles) finalChars=\(finalPrompt.count) finalTokensApprox=\(PromptBudgeter.estimatedTokenCount(finalPrompt)) preview=\"\(debugPromptPreview(finalPrompt, maxLength: 220))\"")
 
             return (
-                PromptBudgeter.budgetedPrompt(
-                    instructions: instructions,
-                    context: contextWithOmissionNote(package.context, omittedCount: package.omittedCount),
-                    userRequest: effectiveRequest,
-                    configuration: configuration
-                ),
-                package.sourceTitles
+                finalPrompt,
+                package.sourceTitles,
+                true,
+                effectiveRequest
             )
         }
 
         let fallbackDocuments = documentManager.documents(for: conversationID).prefix(2)
-        let documentSnippets = fallbackDocuments.map { document in
+        let fallbackSourceDocuments = latestAttachedDocumentSnippet != nil
+            ? fallbackDocuments.prefix(1)
+            : fallbackDocuments
+        let documentSnippets = fallbackSourceDocuments.map { document in
             PromptBudgeter.DocumentSnippet(
                 title: document.name,
                 location: nil,
-                content: document.content
+                content: PromptBudgeter.snippetSizedText(document.content)
             )
         }
         let instructions = """
-        You have access to documents that belong only to this chat.
-        Use them when they help answer the request, and say briefly if the available text is limited.
+        \(documentAnsweringInstructions)
         """
         let reservedTokens = PromptBudgeter.estimatedTokenCount(instructions + "\n\nUser request: \(effectiveRequest)")
         let package = PromptBudgeter.documentPackage(
@@ -2622,16 +2935,97 @@ struct ChatView: View {
             configuration: configuration,
             reservedTokens: reservedTokens
         )
+        let finalPrompt = PromptBudgeter.budgetedPrompt(
+            instructions: instructions,
+            context: contextWithOmissionNote(package.context, omittedCount: package.omittedCount),
+            userRequest: effectiveRequest,
+            configuration: configuration
+        )
+        print("[OCRDEBUG] prompt package branch=fallback snippetOrder=\(debugSnippetSummary(Array(documentSnippets))) contextChars=\(package.context.count) omitted=\(package.omittedCount) sourceTitles=\(package.sourceTitles) finalChars=\(finalPrompt.count) finalTokensApprox=\(PromptBudgeter.estimatedTokenCount(finalPrompt)) preview=\"\(debugPromptPreview(finalPrompt, maxLength: 220))\"")
 
         return (
-            PromptBudgeter.budgetedPrompt(
-                instructions: instructions,
-                context: contextWithOmissionNote(package.context, omittedCount: package.omittedCount),
-                userRequest: effectiveRequest,
-                configuration: configuration
-            ),
-            package.sourceTitles
+            finalPrompt,
+            package.sourceTitles,
+            true,
+            effectiveRequest
         )
+    }
+
+    private func latestAttachedDocumentSnippet(for conversationID: UUID) -> PromptBudgeter.DocumentSnippet? {
+        guard let document = documentManager.documents(for: conversationID).first else {
+            return nil
+        }
+
+        return PromptBudgeter.DocumentSnippet(
+            title: document.name,
+            location: String(localized: "Newest attached document"),
+            content: PromptBudgeter.snippetSizedText(document.content)
+        )
+    }
+
+    private var documentAnsweringInstructions: String {
+        """
+        You have access to documents that belong only to this chat.
+        Treat document text shown below as readable extracted text from the user's attachment, not as an external file.
+        When the user asks whether you can see, read, inspect, or describe a document, answer from the extracted text instead of saying you cannot provide a visual receipt or asking the user to provide details already present in the source.
+        Source 1 is the newest attached chat document when present; prefer it for references to "this", "that", "there", "the receipt", "the OCR", or the current attachment.
+        If useful text is present, summarize the concrete contents directly. If it is limited, say what is available and what is missing.
+        """
+    }
+
+    private func requestPrefersNewestAttachment(_ request: String) -> Bool {
+        let normalized = request.lowercased()
+        let attachmentPhrases = [
+            "current attachment",
+            "attached document",
+            "attached file",
+            "the attachment",
+            "this attachment",
+            "this document",
+            "that document",
+            "the receipt",
+            "the ocr"
+        ]
+        if attachmentPhrases.contains(where: { normalized.contains($0) }) {
+            return true
+        }
+
+        let tokens = Set(
+            normalized
+                .split { !$0.isLetter && !$0.isNumber }
+                .map(String.init)
+        )
+        let currentAttachmentTerms: Set<String> = [
+            "receipt",
+            "this",
+            "that",
+            "there",
+            "it",
+            "see",
+            "read",
+            "inspect",
+            "describe",
+            "current",
+            "attached",
+            "attachment",
+            "ocr"
+        ]
+        return !tokens.isDisjoint(with: currentAttachmentTerms)
+    }
+
+    private func debugSnippetSummary(_ snippets: [PromptBudgeter.DocumentSnippet]) -> String {
+        snippets.enumerated().map { index, snippet in
+            "#\(index + 1):\(snippet.title)@\(snippet.location ?? "nil"):chars=\(snippet.content.count):preview='\(debugPromptPreview(snippet.content, maxLength: 80))'"
+        }.joined(separator: " | ")
+    }
+
+    private func debugPromptPreview(_ text: String, maxLength: Int = 180) -> String {
+        let normalized = text
+            .replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\"", with: "'")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard normalized.count > maxLength else { return normalized }
+        return String(normalized.prefix(maxLength)) + "..."
     }
 
     private func budgetedGenerationPrompt(_ prompt: String, model: ModelInfo?) -> String {

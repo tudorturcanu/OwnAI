@@ -689,7 +689,7 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         }
         
         do {
-            try EspeakLib.ensureBundleInstalled(inRoot: docsURL)
+            try ensureEspeakDataInstalled(inRoot: docsURL)
         } catch {
             publishError("Failed to install espeak-ng data: \(error.localizedDescription)")
             return
@@ -703,6 +703,43 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         } else {
             piperSynthesizer = synth
             speechBackendStatus = statusMessage(for: backend)
+        }
+    }
+
+    private func ensureEspeakDataInstalled(inRoot rootURL: URL) throws {
+        let dataURL = rootURL.appendingPathComponent("espeak-ng-data", isDirectory: true)
+        let requiredFiles = [
+            "en_dict",
+            "phondata",
+            "phonindex",
+            "phontab"
+        ]
+        let fileManager = FileManager.default
+
+        if fileManager.fileExists(atPath: dataURL.path) {
+            let hasRequiredFiles = requiredFiles.allSatisfy { fileName in
+                fileManager.fileExists(atPath: dataURL.appendingPathComponent(fileName).path)
+            }
+            if !hasRequiredFiles {
+                print("[PIPERDEBUG] Removing incomplete espeak-ng data at \(dataURL.path)")
+                try? fileManager.removeItem(at: dataURL)
+            }
+        }
+
+        try EspeakLib.ensureBundleInstalled(inRoot: rootURL)
+
+        let missingFiles = requiredFiles.filter { fileName in
+            !fileManager.fileExists(atPath: dataURL.appendingPathComponent(fileName).path)
+        }
+        if missingFiles.isEmpty {
+            print("[PIPERDEBUG] espeak-ng data ready at \(dataURL.path)")
+        } else {
+            print("[PIPERDEBUG] espeak-ng data missing compiled files: \(missingFiles)")
+            throw NSError(
+                domain: "SpeechManager",
+                code: -2,
+                userInfo: [NSLocalizedDescriptionKey: "Missing compiled espeak-ng files: \(missingFiles.joined(separator: ", "))"]
+            )
         }
     }
     

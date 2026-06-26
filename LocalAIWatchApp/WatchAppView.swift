@@ -235,6 +235,8 @@ private struct WatchWaveformView: View {
 
 private struct WatchThinkingDots: View {
     @State private var activeIndex = 0
+
+    var body: some View {
         HStack(spacing: 5) {
             ForEach(0..<3, id: \.self) { index in
                 Circle()

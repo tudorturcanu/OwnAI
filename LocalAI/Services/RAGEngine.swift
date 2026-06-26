@@ -86,6 +86,12 @@ actor RAGEngine {
         }
     }
 
+    private struct LexicalSearchSummary {
+        let bestLexicalScore: Double
+        let bestPhraseScore: Double
+        let strongMatchCount: Int
+    }
+
     struct IndexedDocumentSnapshot: Sendable {
         let conversationID: UUID
         let documentID: UUID
@@ -145,6 +151,7 @@ actor RAGEngine {
             documentFingerprints[DocumentKey(conversationID: conversationID, documentID: documentID)] = contentHash(for: text)
             schedulePersistState()
         }
+        await releaseNeuralEmbedderIfNeeded()
     }
 
     func clear(documentID: UUID, conversationID: UUID) {
@@ -230,42 +237,47 @@ actor RAGEngine {
             documentFingerprints = rebuiltFingerprints
             persistStateImmediately()
         }
+        await releaseNeuralEmbedderIfNeeded()
     }
 
     /// Retrieves the most relevant chunks across one or more scopes. Passing both a
     /// conversation's ID and the shared library scope lets a chat search its own
     /// attached documents and the persistent library in a single ranked pass.
     func retrieveDetailed(query: String, limit: Int = 3, conversationIDs: Set<UUID>) async -> [RetrievedChunk] {
+        let scopedChunks = chunks.filter { conversationIDs.contains($0.conversationID) }
+        guard !scopedChunks.isEmpty else { return [] }
+
         let queryLanguage = dominantLanguage(for: query)
-        let queryEmbedding = await embedQuery(query, language: queryLanguage)
         let normalizedQuery = normalizedSearchText(query)
         let queryTerms = searchTerms(in: query)
+        let lexicalSummary = lexicalSearchSummary(
+            scopedChunks,
+            queryTerms: queryTerms,
+            normalizedQuery: normalizedQuery
+        )
+        let shouldUseSemanticSearch = shouldUseSemanticSearch(
+            lexicalSummary: lexicalSummary,
+            queryTerms: queryTerms
+        )
+        let hasNeuralChunks = scopedChunks.contains { $0.embedderID == EmbeddingService.embedderIdentifier }
+        let queryEmbedding = shouldUseSemanticSearch
+            ? await embedQuery(query, language: queryLanguage, allowNeural: hasNeuralChunks)
+            : nil
+
+        if queryEmbedding?.embedderID == EmbeddingService.embedderIdentifier {
+            await EmbeddingService.shared.unload()
+        }
 
         guard queryEmbedding != nil || !queryTerms.isEmpty else { return [] }
 
-        let ranked = chunks
-            .filter { conversationIDs.contains($0.conversationID) }
-            .map { chunk in
-                // Only compare vectors from the same embedder; otherwise rely on
-                // lexical/phrase signals so mixed-embedder indexes still work.
-                let semanticScore: Double
-                if let queryEmbedding, queryEmbedding.embedderID == chunk.embedderID {
-                    semanticScore = max(0, cosineSimilarity(queryEmbedding.vector, chunk.embedding))
-                } else {
-                    semanticScore = 0
-                }
-                let lexicalScore = lexicalSimilarity(queryTerms: queryTerms, candidateText: chunk.content)
-                let phraseScore = phraseMatchScore(normalizedQuery: normalizedQuery, candidateText: chunk.content)
-                let languageMultiplier = languageCompatibilityMultiplier(queryLanguage: queryLanguage, chunkLanguage: chunk.language)
-                let candidate = RetrievalCandidate(
-                    chunk: chunk,
-                    semanticScore: semanticScore * languageMultiplier,
-                    lexicalScore: lexicalScore,
-                    phraseScore: phraseScore
-                )
-                return (chunk: chunk, score: candidate.score, lexicalScore: lexicalScore)
-            }
-            .sorted { $0.score > $1.score }
+        let ranked = rankedCandidates(
+            scopedChunks,
+            queryEmbedding: queryEmbedding,
+            queryLanguage: queryLanguage,
+            queryTerms: queryTerms,
+            normalizedQuery: normalizedQuery,
+            limit: limit
+        )
 
         guard let topScore = ranked.first?.score else { return [] }
 
@@ -383,7 +395,104 @@ actor RAGEngine {
     }
 
     private var neuralEmbeddingsEnabled: Bool {
-        UserDefaults.standard.bool(forKey: Self.neuralEmbeddingsDefaultsKey)
+        false
+    }
+
+    private func releaseNeuralEmbedderIfNeeded() async {
+        if neuralEmbeddingsEnabled {
+            await EmbeddingService.shared.unload()
+        }
+    }
+
+    private func lexicalSearchSummary(
+        _ scopedChunks: [TextChunk],
+        queryTerms: [String],
+        normalizedQuery: String
+    ) -> LexicalSearchSummary? {
+        guard !scopedChunks.isEmpty else { return nil }
+
+        var bestScore = 0.0
+        var bestLexicalScore = 0.0
+        var bestPhraseScore = 0.0
+        var strongMatchCount = 0
+
+        for chunk in scopedChunks {
+            let lexicalScore = lexicalSimilarity(queryTerms: queryTerms, candidateText: chunk.content)
+            let phraseScore = phraseMatchScore(normalizedQuery: normalizedQuery, candidateText: chunk.content)
+            let combinedScore = lexicalScore * 0.27 + phraseScore * 0.05
+
+            if combinedScore > bestScore {
+                bestScore = combinedScore
+                bestLexicalScore = lexicalScore
+                bestPhraseScore = phraseScore
+            }
+
+            if phraseScore >= 0.65 || lexicalScore >= 0.55 {
+                strongMatchCount += 1
+            }
+        }
+
+        return LexicalSearchSummary(
+            bestLexicalScore: bestLexicalScore,
+            bestPhraseScore: bestPhraseScore,
+            strongMatchCount: strongMatchCount
+        )
+    }
+
+    private func shouldUseSemanticSearch(
+        lexicalSummary: LexicalSearchSummary?,
+        queryTerms: [String]
+    ) -> Bool {
+        guard neuralEmbeddingsEnabled else { return true }
+        guard !queryTerms.isEmpty else { return true }
+        guard let lexicalSummary else { return true }
+
+        if lexicalSummary.bestPhraseScore >= 1 || lexicalSummary.bestLexicalScore >= 0.72 {
+            return false
+        }
+
+        return lexicalSummary.strongMatchCount < 3
+    }
+
+    private func rankedCandidates(
+        _ scopedChunks: [TextChunk],
+        queryEmbedding: (vector: [Float], embedderID: String)?,
+        queryLanguage: NLLanguage?,
+        queryTerms: [String],
+        normalizedQuery: String,
+        limit: Int
+    ) -> [(chunk: TextChunk, score: Double, lexicalScore: Double)] {
+        let rankingPoolSize = max(limit * 16, 64)
+        var ranked: [(chunk: TextChunk, score: Double, lexicalScore: Double)] = []
+        ranked.reserveCapacity(rankingPoolSize)
+
+        for chunk in scopedChunks {
+            // Only compare vectors from the same embedder; otherwise rely on
+            // lexical/phrase signals so mixed-embedder indexes still work.
+            let semanticScore: Double
+            if let queryEmbedding, queryEmbedding.embedderID == chunk.embedderID {
+                semanticScore = max(0, cosineSimilarity(queryEmbedding.vector, chunk.embedding))
+            } else {
+                semanticScore = 0
+            }
+            let lexicalScore = lexicalSimilarity(queryTerms: queryTerms, candidateText: chunk.content)
+            let phraseScore = phraseMatchScore(normalizedQuery: normalizedQuery, candidateText: chunk.content)
+            let languageMultiplier = languageCompatibilityMultiplier(queryLanguage: queryLanguage, chunkLanguage: chunk.language)
+            let candidate = RetrievalCandidate(
+                chunk: chunk,
+                semanticScore: semanticScore * languageMultiplier,
+                lexicalScore: lexicalScore,
+                phraseScore: phraseScore
+            )
+
+            ranked.append((chunk: chunk, score: candidate.score, lexicalScore: lexicalScore))
+            ranked.sort { $0.score > $1.score }
+            if ranked.count > rankingPoolSize {
+                ranked.removeLast()
+            }
+        }
+
+        return ranked
     }
 
     /// Embeds document chunks, aligned 1:1 with `texts` (nil entries are skipped
@@ -406,9 +515,11 @@ actor RAGEngine {
 
     private func embedQuery(
         _ text: String,
-        language: NLLanguage?
+        language: NLLanguage?,
+        allowNeural: Bool
     ) async -> (vector: [Float], embedderID: String)? {
-        if neuralEmbeddingsEnabled,
+        if allowNeural,
+           neuralEmbeddingsEnabled,
            let vectors = await EmbeddingService.shared.embed([text], kind: .query),
            let vector = vectors.first {
             return (vector, EmbeddingService.embedderIdentifier)

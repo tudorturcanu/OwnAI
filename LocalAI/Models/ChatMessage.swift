@@ -7,6 +7,7 @@ struct ChatMessage: Identifiable, Equatable, Codable {
     let thinkingContent: String?
     let sourceTitles: [String]
     let imageFileName: String?
+    let retryPromptSeed: String?
     var isPinned: Bool = false
     var isStreaming: Bool = false
 
@@ -17,6 +18,7 @@ struct ChatMessage: Identifiable, Equatable, Codable {
         thinkingContent: String? = nil,
         sourceTitles: [String] = [],
         imageFileName: String? = nil,
+        retryPromptSeed: String? = nil,
         isPinned: Bool = false,
         isStreaming: Bool = false
     ) {
@@ -26,6 +28,7 @@ struct ChatMessage: Identifiable, Equatable, Codable {
         self.thinkingContent = thinkingContent
         self.sourceTitles = sourceTitles
         self.imageFileName = imageFileName
+        self.retryPromptSeed = retryPromptSeed
         self.isPinned = isPinned
         self.isStreaming = isStreaming
     }
@@ -37,6 +40,7 @@ struct ChatMessage: Identifiable, Equatable, Codable {
         case thinkingContent
         case sourceTitles
         case imageFileName
+        case retryPromptSeed
         case isPinned
         case isStreaming
     }
@@ -49,6 +53,7 @@ struct ChatMessage: Identifiable, Equatable, Codable {
         thinkingContent = try container.decodeIfPresent(String.self, forKey: .thinkingContent)
         sourceTitles = try container.decodeIfPresent([String].self, forKey: .sourceTitles) ?? []
         imageFileName = try container.decodeIfPresent(String.self, forKey: .imageFileName)
+        retryPromptSeed = try container.decodeIfPresent(String.self, forKey: .retryPromptSeed)
         isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
         isStreaming = try container.decodeIfPresent(Bool.self, forKey: .isStreaming) ?? false
     }

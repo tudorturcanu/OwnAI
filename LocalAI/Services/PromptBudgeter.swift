@@ -79,7 +79,7 @@ enum PromptBudgeter {
                 break
             }
 
-            let content = clippedText(snippet.content, maxTokens: min(availableForContent, 850))
+            let content = clippedText(snippet.content, maxTokens: min(availableForContent, maxTokensPerSnippet))
             let block = """
             \(header)
             \(locationLine)\(content)
@@ -156,6 +156,23 @@ enum PromptBudgeter {
         let wordEstimate = Double(trimmed.split { $0.isWhitespace || $0.isNewline }.count) * 1.35
         let characterEstimate = Double(trimmed.count) / 4.0
         return Int(max(wordEstimate, characterEstimate).rounded(.up))
+    }
+
+    nonisolated static var maxTokensPerSnippet: Int {
+        700
+    }
+
+    nonisolated static func snippetSizedText(_ text: String, maxTokens: Int = maxTokensPerSnippet) -> String {
+        let maxCharacters = max(80, maxTokens * 4)
+        let start = text.firstIndex { !$0.isWhitespace && !$0.isNewline } ?? text.endIndex
+        guard start < text.endIndex else { return "" }
+
+        if let end = text.index(start, offsetBy: maxCharacters, limitedBy: text.endIndex) {
+            return String(text[start..<end]).trimmingCharacters(in: .whitespacesAndNewlines) +
+                "\n[Context clipped to fit the model.]"
+        }
+
+        return String(text[start..<text.endIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     nonisolated private static func clippedText(_ text: String, maxTokens: Int) -> String {

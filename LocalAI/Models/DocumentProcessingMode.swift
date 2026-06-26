@@ -31,7 +31,7 @@ enum DocumentProcessingMode: String, CaseIterable, Identifiable, Sendable {
         case .fast:
             return 5
         case .highQuality:
-            return 50
+            return 20
         }
     }
 

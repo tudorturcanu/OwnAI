@@ -288,8 +288,65 @@ private struct DocumentSourceTextView: View {
     let text: String
     let isOCR: Bool
 
+    @State private var isReflowed: Bool
+
+    init(title: String, subtitle: String?, text: String, isOCR: Bool) {
+        self.title = title
+        self.subtitle = subtitle
+        self.text = text
+        self.isOCR = isOCR
+        self._isReflowed = State(initialValue: isOCR)
+    }
+
     private var displayText: String {
-        text.isEmpty ? String(localized: "No readable text was extracted from this page.") : text
+        let rawText = text.isEmpty ? String(localized: "No readable text was extracted from this page.") : text
+        if isReflowed {
+            return reflowText(rawText)
+        } else {
+            return rawText
+        }
+    }
+
+    private func reflowText(_ text: String) -> String {
+        let normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
+
+        let paragraphNormalizedRegex = try? NSRegularExpression(pattern: "\\n[ \\t]*\\n", options: [])
+        let cleanedText = paragraphNormalizedRegex?.stringByReplacingMatches(
+            in: normalized,
+            options: [],
+            range: NSRange(normalized.startIndex..., in: normalized),
+            withTemplate: "\n\n"
+        ) ?? normalized
+
+        let paragraphs = cleanedText.components(separatedBy: "\n\n")
+
+        let processedParagraphs = paragraphs.map { paragraph -> String in
+            let hyphenatedRegex = try? NSRegularExpression(
+                pattern: "(\\p{L})-\\s*\\n\\s*(\\p{L})",
+                options: []
+            )
+            let paragraphWithNoHyphens = hyphenatedRegex?.stringByReplacingMatches(
+                in: paragraph,
+                options: [],
+                range: NSRange(paragraph.startIndex..., in: paragraph),
+                withTemplate: "$1$2"
+            ) ?? paragraph
+
+            let newlineRegex = try? NSRegularExpression(
+                pattern: "\\s*\\n\\s*",
+                options: []
+            )
+            let reflowedParagraph = newlineRegex?.stringByReplacingMatches(
+                in: paragraphWithNoHyphens,
+                options: [],
+                range: NSRange(paragraphWithNoHyphens.startIndex..., in: paragraphWithNoHyphens),
+                withTemplate: " "
+            ) ?? paragraphWithNoHyphens
+
+            return reflowedParagraph.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return processedParagraphs.joined(separator: "\n\n")
     }
 
     var body: some View {
@@ -331,12 +388,23 @@ private struct DocumentSourceTextView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    UIPasteboard.general.string = text
-                } label: {
-                    Label(String(localized: "Copy All"), systemImage: "doc.on.doc")
+                HStack(spacing: 16) {
+                    Button {
+                        isReflowed.toggle()
+                    } label: {
+                        Label(
+                            isReflowed ? String(localized: "Original Layout") : String(localized: "Reflow Text"),
+                            systemImage: isReflowed ? "text.alignleft" : "text.justify"
+                        )
+                    }
+
+                    Button {
+                        UIPasteboard.general.string = displayText
+                    } label: {
+                        Label(String(localized: "Copy All"), systemImage: "doc.on.doc")
+                    }
+                    .disabled(text.isEmpty)
                 }
-                .disabled(text.isEmpty)
             }
         }
     }
