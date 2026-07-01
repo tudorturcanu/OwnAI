@@ -17,13 +17,13 @@ struct ContentView: View {
     @State private var showSettings = false
     @AppStorage("hasShownOnboarding") private var hasShownOnboarding = false
     @State private var showOnboarding = false
-    @State private var exportShareItems: [Any] = []
-    @State private var isExportShareSheetPresented = false
-    @State private var exportUpgradeFeature: PremiumFeature?
+    /// Populated by the Siri App Intent; ChatView observes this to auto-send.
+    @State private var siriPendingQuery: String?
+    @State private var showCellularRestrictionAlert = false
 
     var body: some View {
         NavigationStack {
-            ChatView()
+            ChatView(siriPendingQuery: $siriPendingQuery)
                 .navigationTitle("")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
@@ -41,23 +41,39 @@ struct ContentView: View {
 
                     // Center: Model Selection & Export
                     ToolbarItem(placement: .principal) {
-                        HStack(spacing: 12) {
+                        Menu {
+                            ForEach(downloadedModels) { model in
+                                Button {
+                                    speechManager.stopSpeaking()
+                                    modelManager.selectModel(model.id)
+                                } label: {
+                                    if modelManager.selectedModelID == model.id {
+                                        Label(model.name, systemImage: "checkmark")
+                                    } else {
+                                        Text(model.name)
+                                    }
+                                }
+                            }
+
+                            Divider()
+
                             Button {
                                 speechManager.stopSpeaking()
                                 showSettings = true
                             } label: {
-                                HStack(spacing: 4) {
-                                    Text(modelManager.selectedModel?.name ?? String(localized: "Select Model"))
-                                        .font(.subheadline.weight(.semibold))
-                                    Image(systemName: "chevron.right")
-                                        .font(.caption2.weight(.bold))
-                                }
-                                .foregroundStyle(Color(white: 0.2))
+                                Label(String(localized: "Manage Models"), systemImage: "gearshape")
                             }
-                            .buttonStyle(.plain)
-
-
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(modelManager.selectedModel?.name ?? String(localized: "Own AI"))
+                                    .font(.subheadline.weight(.semibold))
+                                    .lineLimit(1)
+                                Image(systemName: "chevron.down")
+                                    .font(.caption2.weight(.bold))
+                            }
+                            .foregroundStyle(Color(white: 0.2))
                         }
+                        .accessibilityLabel(String(localized: "Select Model"))
                     }
 
                     // Right: Export + New Chat
@@ -96,13 +112,6 @@ struct ContentView: View {
                 .environmentObject(modelManager)
                 .interactiveDismissDisabled()
         }
-        .sheet(isPresented: $isExportShareSheetPresented, onDismiss: { exportShareItems = [] }) {
-            ShareSheet(items: exportShareItems)
-        }
-        .sheet(item: $exportUpgradeFeature) { feature in
-            UpgradeView(feature: feature)
-                .environment(monetizationManager)
-        }
         .onAppear {
             if !hasShownOnboarding {
                 showOnboarding = true
@@ -111,6 +120,31 @@ struct ContentView: View {
         .onOpenURL { url in
             handleIncomingURL(url)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .ownAISiriQuery)) { notification in
+            guard let query = notification.userInfo?[OwnAISiriQueryKey.query] as? String,
+                  !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return }
+            // Dismiss any open sheets so the chat is visible.
+            showHistory = false
+            showSettings = false
+            showOnboarding = false
+            // Small delay to let sheet dismissal animate before auto-sending.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                siriPendingQuery = query
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .cellularDownloadRestricted)) { _ in
+            showCellularRestrictionAlert = true
+        }
+        .alert(String(localized: "Cellular Downloads Off"), isPresented: $showCellularRestrictionAlert) {
+            Button(String(localized: "OK"), role: .cancel) { }
+        } message: {
+            Text(String(localized: "Connect to Wi-Fi, or enable Cellular Downloads in Settings."))
+        }
+    }
+
+    private var downloadedModels: [ModelInfo] {
+        modelManager.models.filter { $0.downloadState.isDownloaded }
     }
 
     private var leadingToolbarButtons: some View {
@@ -123,7 +157,8 @@ struct ContentView: View {
                     .accessibilityLabel(String(localized: "Settings"))
                     .font(.body.weight(.medium))
                     .foregroundStyle(Color(white: 0.3))
-                    .padding(8)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
 
@@ -139,31 +174,18 @@ struct ContentView: View {
                     .accessibilityLabel(String(localized: "Chat History"))
                     .font(.body.weight(.medium))
                     .foregroundStyle(Color(white: 0.3))
-                    .padding(8)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
+        .fixedSize()
         .background(Color(white: 0.95))
         .clipShape(Capsule())
     }
 
     private var trailingToolbarButtons: some View {
         HStack(spacing: 8) {
-            if !historyManager.currentMessages.isEmpty {
-                Button {
-                    handleExportCurrentConversation()
-                } label: {
-                    Image(systemName: "square.and.arrow.up")
-                        .accessibilityLabel(String(localized: "Export Chat"))
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(Color(white: 0.3))
-                        .frame(width: 32, height: 32)
-                        .background(Color(white: 0.95))
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-            }
-
             Button {
                 speechManager.stopSpeaking()
                 withAnimation {
@@ -177,36 +199,12 @@ struct ContentView: View {
                     .frame(width: 32, height: 32)
                     .background(Color(white: 0.95))
                     .clipShape(Circle())
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
-    }
-
-    private func handleExportCurrentConversation() {
-        guard monetizationManager.canUse(.conversationExport) else {
-            exportUpgradeFeature = .conversationExport
-            return
-        }
-        guard let conversation = historyManager.conversations.first(where: {
-            $0.id == historyManager.currentConversationID
-        }) else { return }
-
-        let markdown = ConversationExporter.export(
-            messages: conversation.messages,
-            title: conversation.title,
-            format: .markdown
-        )
-        let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(
-                ConversationExporter.fileName(title: conversation.title, format: .markdown)
-            )
-        do {
-            try markdown.write(to: tempURL, atomically: true, encoding: .utf8)
-            exportShareItems = [tempURL]
-            isExportShareSheetPresented = true
-        } catch {
-            print("Export failed: \(error)")
-        }
+        .fixedSize()
     }
 
     private func handleIncomingURL(_ url: URL) {

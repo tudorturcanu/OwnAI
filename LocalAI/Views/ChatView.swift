@@ -10,7 +10,15 @@ struct ChatView: View {
     @Environment(SpeechManager.self) private var speechManager
     @Environment(MonetizationManager.self) private var monetizationManager
     @State private var documentManager = DocumentManager.shared
-    
+
+    /// Binding populated by Siri via ContentView. When non-nil, the query is
+    /// auto-filled in the text field and sent. Reset to nil after handling.
+    @Binding var siriPendingQuery: String?
+
+    init(siriPendingQuery: Binding<String?> = .constant(nil)) {
+        _siriPendingQuery = siriPendingQuery
+    }
+
     @State private var messageText = ""
     @State private var isFileImporterPresented = false
     @State private var isPhotoPickerPresented = false
@@ -40,6 +48,15 @@ struct ChatView: View {
     @State private var activeMlxVisionImageKey: String?
     @State private var selectedDocumentForSources: ConversationDocument?
     @State private var generatedFollowUpSuggestions: [UUID: [String]] = [:]
+    // Scroll state: a single pending auto-scroll task (coalesced so rapid
+    // triggers, e.g. one per streamed token, collapse into one scroll per
+    // frame instead of stacking up) and whether the view is currently
+    // "pinned" to the bottom. Auto-scroll only fires while pinned, so a user
+    // who scrolls up to re-read history during generation isn't yanked back
+    // down — that fight between the user's scroll and a forced scrollTo was
+    // the main source of the visible jitter.
+    @State private var pendingAutoScrollTask: Task<Void, Never>?
+    @State private var isPinnedToBottom = true
     @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
     @AppStorage("responseCharacterLimit") private var responseCharacterLimit = AIResponseDefaults.responseCharacterLimit
     @AppStorage("smartReplyStylesEnabled") private var smartReplyStylesEnabled = false
@@ -122,6 +139,14 @@ struct ChatView: View {
                     speechManager.stopListening()
                     speechManager.stopSpeaking()
                 }
+            }
+            .onChange(of: siriPendingQuery) {
+                guard let query = siriPendingQuery,
+                      !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                else { return }
+                siriPendingQuery = nil
+                messageText = query
+                sendMessage()
             }
     }
 
@@ -314,23 +339,7 @@ struct ChatView: View {
     }
 
     private func migrateFullResponseDefaultsIfNeeded() {
-        let migrationKey = "didMigrateFullResponseDefaults"
-        let defaults = UserDefaults.standard
-        guard !defaults.bool(forKey: migrationKey) else { return }
-
-        if defaults.object(forKey: "maxTokens") == nil || defaults.integer(forKey: "maxTokens") <= 512 {
-            defaults.set(AIResponseDefaults.maxTokens, forKey: "maxTokens")
-        }
-
-        if defaults.object(forKey: "responseCharacterLimit") == nil || defaults.integer(forKey: "responseCharacterLimit") == 1000 {
-            defaults.set(AIResponseDefaults.responseCharacterLimit, forKey: "responseCharacterLimit")
-        }
-
-        if defaults.string(forKey: "systemPrompt") == "You are a helpful AI assistant." {
-            defaults.set(AIResponseDefaults.defaultSystemPrompt, forKey: "systemPrompt")
-        }
-
-        defaults.set(true, forKey: migrationKey)
+        AIResponseSettingsMigration.migrateIfNeeded()
     }
 
     private var baseContent: some View {
@@ -430,6 +439,7 @@ struct ChatView: View {
                     }
                     .buttonStyle(.plain)
                     .keyboardShortcut("f", modifiers: [.command])
+                    .accessibilityLabel(String(localized: "Search in conversation"))
                 }
             }
         }
@@ -491,6 +501,7 @@ struct ChatView: View {
                     .foregroundStyle(Color(white: 0.5))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(String(localized: "Close search"))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -587,9 +598,6 @@ struct ChatView: View {
                                 onTogglePin: { message in
                                     historyManager.togglePinned(messageID: message.id, in: historyManager.currentConversationID)
                                 },
-                                onTranslate: { message in
-                                    translateReply(message)
-                                },
                                 onSpeak: { message in
                                     if speechManager.isSpeaking && speechManager.currentlySpeakingMessageID == message.id {
                                         speechManager.stopSpeaking()
@@ -598,7 +606,7 @@ struct ChatView: View {
                                     }
                                 },
                                 onSearchWeb: { message in
-                                    if let url = URL(string: "https://duckduckgo.com/?q=\(message.content.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
+                                    if let url = URL(string: "https://www.google.com/search?q=\(message.content.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
                                         UIApplication.shared.open(url)
                                     }
                                 },
@@ -653,8 +661,43 @@ struct ChatView: View {
                 .padding(.vertical, 20)
             }
             .scrollDismissesKeyboard(.interactively)
+            // Re-pin when the user scrolls (or is auto-scrolled) back near
+            // the bottom. This direction only sets isPinnedToBottom = true —
+            // never false. Driving "false" from geometry too was the bug:
+            // while streaming, each new line wraps and grows contentSize
+            // before contentOffset catches up, so distanceFromBottom spikes
+            // for a frame even though the user did nothing. That false
+            // unpin skipped the next auto-scroll, the content kept growing
+            // underneath, and the eventual catch-up jump was the jitter.
+            .onScrollGeometryChange(for: Bool.self) { geometry in
+                let distanceFromBottom = geometry.contentSize.height
+                    - geometry.containerSize.height
+                    - geometry.contentOffset.y
+                return distanceFromBottom < 48
+            } action: { _, isNearBottom in
+                guard isNearBottom, !isPinnedToBottom else { return }
+                chatDiagnostic("scroll pinnedToBottom false -> true (reached bottom)")
+                isPinnedToBottom = true
+            }
+            // The only thing that should unpin auto-scroll is the user
+            // deliberately dragging the list (revealing earlier messages).
+            // Tied to an actual touch gesture instead of geometry so it
+            // can't be confused with content growing under a stationary
+            // viewport.
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 12)
+                    .onChanged { value in
+                        guard value.translation.height > 12, isPinnedToBottom else { return }
+                        chatDiagnostic("scroll pinnedToBottom true -> false (user dragged)")
+                        isPinnedToBottom = false
+                    }
+            )
             .onChange(of: historyManager.currentMessages.count) {
-                scrollToBottom(proxy: proxy)
+                // A new message (the user's own send, or the assistant
+                // placeholder that follows it) always re-pins and jumps to
+                // bottom — this is a deliberate, discrete event, not a
+                // continuous stream, so a single animated scroll is correct.
+                scrollToBottomForced(proxy: proxy)
             }
             .onChange(of: llmEngine.state) { oldState, newState in
                 chatDiagnostic("engine state \(diagnosticDescription(for: oldState)) -> \(diagnosticDescription(for: newState))")
@@ -672,9 +715,14 @@ struct ChatView: View {
                     llmEngine.resetSession()
                     invalidateGenerationSessionScope()
                 }
-                scrollToBottom(proxy: proxy)
+                // No scroll call here: the `currentMessages.count` and
+                // `currentResponse` handlers already cover every moment the
+                // content actually changes. A scroll tied to engine state
+                // too used to race those with a different animation curve,
+                // which is what produced the visible bounce.
             }
             .onChange(of: historyManager.currentConversationID) {
+                isPinnedToBottom = true
                 scrollToTop(proxy: proxy)
             }
             .onChange(of: llmEngine.currentResponse) {
@@ -691,41 +739,65 @@ struct ChatView: View {
                         isStreaming: true
                     )
                 }
-                scrollToBottom(proxy: proxy, delay: 0.02, animated: false)
+                requestAutoScroll(proxy: proxy)
             }
         }
     }
 
     private func scrollToTop(proxy: ScrollViewProxy) {
+        pendingAutoScrollTask?.cancel()
+        pendingAutoScrollTask = nil
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
             proxy.scrollTo("top", anchor: .top)
         }
     }
-    
-    private func scrollToBottom(proxy: ScrollViewProxy, delay: Double = 0, animated: Bool = true) {
-        let performScroll = {
-            let scrollAction = {
-                proxy.scrollTo("bottom", anchor: .bottom)
-            }
-            if animated {
-                withAnimation(.easeInOut(duration: 0.25)) { // Gentler scroll to match liquid text
-                    scrollAction()
-                }
-            } else {
+
+    /// Discrete, user-driven jump to bottom (new message sent/received,
+    /// conversation switched). Always runs, re-pins, and cancels any
+    /// in-flight streaming auto-scroll so the two never fight.
+    private func scrollToBottomForced(proxy: ScrollViewProxy, animated: Bool = true) {
+        chatDiagnostic("scroll forced bottom (animated=\(animated))")
+        pendingAutoScrollTask?.cancel()
+        pendingAutoScrollTask = nil
+        isPinnedToBottom = true
+        let scrollAction = { proxy.scrollTo("bottom", anchor: .bottom) }
+        if animated {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                 scrollAction()
             }
-        }
-        
-        if delay > 0 {
-            Task { @MainActor in
-                try? await Task.sleep(for: .seconds(delay))
-                performScroll()
-            }
         } else {
-            performScroll()
+            scrollAction()
         }
     }
-    
+
+    /// Continuous, content-driven follow during streaming. Only acts while
+    /// the user is pinned to the bottom, and coalesces rapid-fire calls
+    /// (one per streamed token) into a single scroll per frame instead of
+    /// queuing one delayed scroll per token — the prior queuing is what let
+    /// several scrollTo calls land out of order while the content was still
+    /// reflowing, producing visible jitter.
+    private func requestAutoScroll(proxy: ScrollViewProxy) {
+        guard isPinnedToBottom else {
+            chatDiagnostic("scroll auto-scroll skipped (not pinned to bottom)")
+            return
+        }
+        pendingAutoScrollTask?.cancel()
+        pendingAutoScrollTask = Task { @MainActor in
+            // One frame's worth of coalescing window, not a fixed artificial delay.
+            try? await Task.sleep(for: .milliseconds(16))
+            guard !Task.isCancelled else {
+                chatDiagnostic("scroll auto-scroll coalesced (superseded by a newer request)")
+                return
+            }
+            // No animation: an animated scrollTo competing with the content
+            // above it growing every token is exactly what produced the
+            // bounce. Snapping keeps the bottom anchor glued in place while
+            // streaming; the discrete jumps above stay animated.
+            chatDiagnostic("scroll auto-scroll fired")
+            proxy.scrollTo("bottom", anchor: .bottom)
+        }
+    }
+
     // MARK: - Empty State
     
     private var emptyStateView: some View {
@@ -846,6 +918,7 @@ struct ChatView: View {
                                 .background(Color.black)
                                 .clipShape(Circle())
                         }
+                        .accessibilityLabel(String(localized: "Stop generating"))
                     } else if speechManager.isListening {
                         // Stop listening button
                         Button {
@@ -868,6 +941,7 @@ struct ChatView: View {
                                         )
                                 )
                         }
+                        .accessibilityLabel(String(localized: "Stop listening"))
                     } else if messageText.isEmpty && currentConversationDocuments.isEmpty {
                         microphoneControls
                     } else {
@@ -884,6 +958,7 @@ struct ChatView: View {
                         .disabled(!canSend)
                         .scaleEffect(canSend ? 1.0 : 0.9)
                         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: canSend)
+                        .accessibilityLabel(String(localized: "Send message"))
                     }
                 }
                 .padding(.horizontal, 16)
@@ -1042,6 +1117,7 @@ struct ChatView: View {
                                 .foregroundStyle(Color(white: 0.6))
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel(String(localized: "Remove document"))
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -1250,6 +1326,7 @@ struct ChatView: View {
                         .background(Color.white.opacity(0.9))
                         .clipShape(Circle())
                 }
+                .accessibilityLabel(String(localized: "Turn off conversation mode"))
             }
 
             Button {
@@ -1266,6 +1343,7 @@ struct ChatView: View {
                     .background(Color.black)
                     .clipShape(Circle())
             }
+            .accessibilityLabel(String(localized: "Start voice input"))
         }
     }
     
@@ -1555,6 +1633,10 @@ struct ChatView: View {
         print("[ChatDiagnostics] chat \(message)")
     }
 
+    private func wordCount(in content: String) -> Int {
+        content.split { $0.isWhitespace }.count
+    }
+
     private func diagnosticDescription(for state: LLMEngineState) -> String {
         switch state {
         case .idle:
@@ -1581,7 +1663,9 @@ struct ChatView: View {
         image: UIImage? = nil,
         assistantSourceTitles: [String] = [],
         retryPromptSeed: String? = nil,
-        shouldChargeUsage: Bool = false
+        shouldChargeUsage: Bool = false,
+        autoContinuationCount: Int = 0,
+        generationOverrides: LLMEngine.GenerationOverrides? = nil
     ) async {
         defer {
             finalizeStreamingMessageIfNeeded(
@@ -1667,15 +1751,32 @@ struct ChatView: View {
                 )
                 : prompt
 
+            let effectiveOverrides = generationOverrides ?? adaptiveGenerationOverrides(
+                prompt: continuityPrompt,
+                model: model,
+                autoContinuationCount: autoContinuationCount,
+                image: image
+            )
             chatDiagnostic("response generate begin assistantID=\(assistantID) shouldReset=\(shouldResetSession)")
             try await llmEngine.generate(
                 prompt: budgetedGenerationPrompt(
                     promptWithResponseLimit(continuityPrompt, existingPrefix: existingPrefix),
                     model: model
                 ),
+                overrides: effectiveOverrides,
                 image: image
             )
-            chatDiagnostic("response generate end assistantID=\(assistantID) state=\(diagnosticDescription(for: llmEngine.state)) streamedChars=\(llmEngine.currentResponse.count)")
+            chatDiagnostic("response generate end assistantID=\(assistantID) state=\(diagnosticDescription(for: llmEngine.state)) streamedChars=\(llmEngine.currentResponse.count) streamedWords=\(wordCount(in: llmEngine.currentResponse))")
+
+            if generationOverrides == nil, case .ready = llmEngine.state, let maxTokensUsed = effectiveOverrides.maxTokens {
+                AdaptiveTokenBudget.recordOutcome(
+                    modelID: model.id,
+                    hitLimit: passLikelyHitTokenLimit(
+                        rawResponse: llmEngine.currentResponse,
+                        maxTokensUsed: maxTokensUsed
+                    )
+                )
+            }
 
             if case .error(let message) = llmEngine.state {
                 let errorText = userFacingErrorText(from: message)
@@ -1727,6 +1828,29 @@ struct ChatView: View {
                 return
             }
 
+            if shouldAutoContinueResponse(
+                visibleContent: finalizedParts.content,
+                autoContinuationCount: autoContinuationCount
+            ) {
+                chatDiagnostic("response auto-continue assistantID=\(assistantID) count=\(autoContinuationCount + 1)")
+                llmEngine.currentResponse = ""
+                streamingPrefix = ""
+                await runAssistantResponse(
+                    prompt: continuationPrompt(
+                        for: finalizedParts.content,
+                        sourceTitles: assistantSourceTitles
+                    ),
+                    conversationID: conversationID,
+                    assistantID: assistantID,
+                    existingPrefix: continuationPrefix(for: finalizedContent),
+                    placeholderContent: finalizedContent,
+                    assistantSourceTitles: assistantSourceTitles,
+                    retryPromptSeed: retryPromptSeed,
+                    autoContinuationCount: autoContinuationCount + 1
+                )
+                return
+            }
+
             historyManager.updateMessage(
                 id: assistantID,
                 in: conversationID,
@@ -1734,7 +1858,7 @@ struct ChatView: View {
                 isStreaming: false,
                 sourceTitles: assistantSourceTitles
             )
-            chatDiagnostic("response finalized assistantID=\(assistantID) contentChars=\(finalizedContent.count)")
+            chatDiagnostic("response finalized assistantID=\(assistantID) contentChars=\(finalizedContent.count) contentWords=\(wordCount(in: finalizedContent))")
             activeGenerationSessionScope = nextSessionScope
             lastGenerationWasEphemeral = isEphemeral
             if let mlxVisionImageKey {
@@ -1809,7 +1933,7 @@ struct ChatView: View {
             ? fallbackContent
             : streamedContent
 
-        chatDiagnostic("response finalizer closed streaming assistantID=\(assistantID) contentChars=\(finalContent.count) streamedChars=\(streamedContent.count)")
+        chatDiagnostic("response finalizer closed streaming assistantID=\(assistantID) contentChars=\(finalContent.count) contentWords=\(wordCount(in: finalContent)) streamedChars=\(streamedContent.count)")
         historyManager.updateMessage(
             id: assistantID,
             in: conversationID,
@@ -1824,6 +1948,7 @@ struct ChatView: View {
         }
         llmEngine.currentResponse = ""
         streamingPrefix = ""
+        ReviewPromptManager.noteSuccessfulResponse()
     }
 
     private func refineConversationInsightsIfNeeded(
@@ -2082,9 +2207,22 @@ struct ChatView: View {
             return
         }
 
-        let separator = message.content.hasSuffix("\n") ? "" : "\n\n"
-        let prefix = message.content + separator
-        let sourceMap = message.sourceTitles.enumerated().map { index, title in
+        let prompt = continuationPrompt(for: message.content, sourceTitles: message.sourceTitles)
+
+        Task {
+            await runAssistantResponse(
+                prompt: prompt,
+                conversationID: historyManager.currentConversationID,
+                assistantID: message.id,
+                existingPrefix: continuationPrefix(for: message.content),
+                placeholderContent: message.content,
+                assistantSourceTitles: message.sourceTitles
+            )
+        }
+    }
+
+    private func continuationPrompt(for content: String, sourceTitles: [String]) -> String {
+        let sourceMap = sourceTitles.enumerated().map { index, title in
             "[Source \(index + 1): \(title)]"
         }.joined(separator: "\n")
         let sourceContext = sourceMap.isEmpty ? "" : """
@@ -2092,9 +2230,10 @@ struct ChatView: View {
         Available source labels:
         \(sourceMap)
         """
-        let prompt = """
+
+        return """
         Previous visible answer:
-        \(message.content)
+        \(content)
         \(sourceContext)
 
         Continue the previous visible answer exactly where it stopped.
@@ -2102,17 +2241,18 @@ struct ChatView: View {
         Start with the next missing words only.
         Finish the same answer naturally and concisely.
         """
+    }
 
-        Task {
-            await runAssistantResponse(
-                prompt: prompt,
-                conversationID: historyManager.currentConversationID,
-                assistantID: message.id,
-                existingPrefix: prefix,
-                placeholderContent: prefix,
-                assistantSourceTitles: message.sourceTitles
-            )
+    private func continuationPrefix(for content: String) -> String {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let lastScalar = trimmed.unicodeScalars.last else { return content }
+
+        let terminalCharacters = CharacterSet(charactersIn: ".!?\"')]}”")
+        if terminalCharacters.contains(lastScalar) {
+            return content.hasSuffix("\n") ? content : content + "\n\n"
         }
+
+        return content
     }
 
     private func startEdit(_ message: ChatMessage) {
@@ -2390,31 +2530,12 @@ struct ChatView: View {
         }
     }
 
-    private func translateReply(_ message: ChatMessage) {
-        guard message.role == .assistant else { return }
-        guard guardCanStartChatRequest(action: String(localized: "translating")) else { return }
-        guard historyManager.currentMessages.last?.id == message.id else { return }
-
-        // Use the system locale as the default target language, or "English" if unknown
-        let targetLanguage = Locale.current.localizedString(forLanguageCode: Locale.current.language.languageCode?.identifier ?? "en") ?? "English"
-
-        Task {
-            await runAssistantResponse(
-                prompt: "Please translate your previous response into \(targetLanguage). Provide ONLY the translation without any introduction or commentary.",
-                conversationID: historyManager.currentConversationID,
-                assistantID: message.id, // This will edit the existing assistant message
-                existingPrefix: "",
-                placeholderContent: "Translating to \(targetLanguage)…",
-                assistantSourceTitles: message.sourceTitles,
-                shouldChargeUsage: false
-            )
-        }
-    }
-
     private func branchConversation(from message: ChatMessage) {
         guard llmEngine.state != .generating else { return }
         historyManager.branchConversation(from: message.id)
         llmEngine.resetSession()
+        Self.mediumHaptic.impactOccurred()
+        showUsageToast(String(localized: "Branched to a new conversation"))
     }
 
     private func retryAction(for message: ChatMessage) -> MessageBubble.RecoveryAction? {
@@ -2649,11 +2770,20 @@ struct ChatView: View {
         guard trimmed.count >= 80 else { return false }
 
         if let lastScalar = trimmed.unicodeScalars.last {
-            let inconclusiveCharacters = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ",:;-("))
+            let inconclusiveCharacters = CharacterSet(charactersIn: ",:;-(")
             return inconclusiveCharacters.contains(lastScalar)
         }
 
         return false
+    }
+
+    private func missingTerminalPunctuation(_ content: String) -> Bool {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 40 else { return false }
+        guard let lastScalar = trimmed.unicodeScalars.last else { return false }
+
+        let terminalCharacters = CharacterSet(charactersIn: ".!?\"')]}”`")
+        return !terminalCharacters.contains(lastScalar)
     }
 
     private func likelyHitResponseLimit(_ content: String) -> Bool {
@@ -2679,6 +2809,66 @@ struct ChatView: View {
 
         guard !visibleContent.isEmpty else { return false }
         return visibleContent.count >= max(responseCharacterLimit - 8, 1)
+    }
+
+    private func shouldAutoContinueResponse(
+        visibleContent: String,
+        autoContinuationCount: Int
+    ) -> Bool {
+        guard autoContinuationCount < 3 else { return false }
+        guard responseCharacterLimit == 0 else { return false }
+
+        let trimmed = visibleContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        return looksTruncated(trimmed) ||
+            likelyHitResponseLimit(trimmed) ||
+            missingTerminalPunctuation(trimmed)
+    }
+
+    private func adaptiveGenerationOverrides(
+        prompt: String,
+        model: ModelInfo,
+        autoContinuationCount: Int,
+        image: UIImage?
+    ) -> LLMEngine.GenerationOverrides {
+        let configuredMaxTokens = max(llmEngine.maxTokens, AIResponseDefaults.maxTokens)
+        let estimatedPromptTokens = PromptBudgeter.estimatedTokenCount(prompt)
+
+        let minimumOutputTokens: Int
+        if autoContinuationCount > 0 {
+            minimumOutputTokens = 768
+        } else if image != nil {
+            minimumOutputTokens = 384
+        } else if estimatedPromptTokens < 300 {
+            minimumOutputTokens = 1536
+        } else if estimatedPromptTokens < 900 {
+            minimumOutputTokens = 2048
+        } else {
+            minimumOutputTokens = 1024
+        }
+
+        let learnedBoost = AdaptiveTokenBudget.boost(for: model.id)
+        let maxTokens = min(max(configuredMaxTokens, minimumOutputTokens) + learnedBoost, 4096)
+        return LLMEngine.GenerationOverrides(
+            temperature: nil,
+            topP: nil,
+            maxTokens: maxTokens
+        )
+    }
+
+    /// Whether this pass's raw streamed output looks like it ran out of room
+    /// rather than finishing naturally, so the learned budget can adapt.
+    private func passLikelyHitTokenLimit(rawResponse: String, maxTokensUsed: Int) -> Bool {
+        guard maxTokensUsed > 0 else { return false }
+        let trimmed = rawResponse.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+
+        let wordEstimate = Double(trimmed.split { $0.isWhitespace }.count) * 1.35
+        let characterEstimate = Double(trimmed.count) / 4.0
+        let estimatedTokens = max(wordEstimate, characterEstimate)
+
+        return estimatedTokens >= Double(maxTokensUsed) * 0.85
     }
 
     private func promptWithResponseLimit(_ prompt: String, existingPrefix: String) -> String {

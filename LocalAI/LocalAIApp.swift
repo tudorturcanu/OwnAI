@@ -5,7 +5,9 @@
 //  Created by Tudor on 29.01.2026.
 //
 
+import AppIntents
 import SwiftUI
+import UIKit
 
 @main
 struct LocalAIApp: App {
@@ -19,6 +21,10 @@ struct LocalAIApp: App {
     
     init() {
         NotificationManager.shared.incrementLaunchCount()
+        // Donate App Shortcuts to Siri so phrases like "Ask Own AI" are
+        // available immediately after install, without requiring user setup.
+        OwnAIShortcuts.updateAppShortcutParameters()
+        CrashReportingManager.shared.start()
     }
     
     var body: some Scene {
@@ -48,6 +54,10 @@ struct LocalAIApp: App {
                         historyManager.applyRetentionPolicy()
                     }
                 }
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                    llmEngine.handleMemoryWarning()
+                }
+                .preferredColorScheme(.light)
         }
     }
 }

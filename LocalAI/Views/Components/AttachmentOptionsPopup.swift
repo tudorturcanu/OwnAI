@@ -17,6 +17,7 @@ struct AttachmentOptionsPopup: View {
                     Image(systemName: "paperclip")
                         .font(.headline)
                         .foregroundStyle(.blue)
+                        .accessibilityHidden(true)
                     
                     Text(String(localized: "Add to Chat"))
                         .font(.headline.bold())
@@ -53,6 +54,7 @@ struct AttachmentOptionsPopup: View {
                                 Image(systemName: "photo.on.rectangle.angled")
                                     .font(.title3.weight(.bold))
                                     .foregroundStyle(.white)
+                                    .accessibilityHidden(true)
                             )
                             .shadow(color: Color.blue.opacity(0.3), radius: 6, x: 0, y: 3)
                         
@@ -72,6 +74,7 @@ struct AttachmentOptionsPopup: View {
                         Image(systemName: "chevron.right")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
@@ -106,6 +109,7 @@ struct AttachmentOptionsPopup: View {
                                 Image(systemName: "doc.text.fill")
                                     .font(.title3.weight(.bold))
                                     .foregroundStyle(.white)
+                                    .accessibilityHidden(true)
                             )
                             .shadow(color: Color.indigo.opacity(0.3), radius: 6, x: 0, y: 3)
                         
@@ -125,6 +129,7 @@ struct AttachmentOptionsPopup: View {
                         Image(systemName: "chevron.right")
                             .font(.subheadline.weight(.semibold))
                             .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
                     }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)

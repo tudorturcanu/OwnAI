@@ -373,7 +373,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# The onnxruntime.framework binary (from piper1-gpl-spm) ships an Info.plist\n# without a MinimumOSVersion key, which App Store validation rejects. Inject it\n# into the embedded copy and re-sign so the signature stays valid.\nset -e\nFRAMEWORK=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/onnxruntime.framework\"\nPLIST=\"$FRAMEWORK/Info.plist\"\n[ -f \"$PLIST\" ] || { echo \"onnxruntime.framework not embedded; skipping.\"; exit 0; }\nVERSION=\"${IPHONEOS_DEPLOYMENT_TARGET:-15.0}\"\n/usr/libexec/PlistBuddy -c \"Add :MinimumOSVersion string $VERSION\" \"$PLIST\" 2>/dev/null || /usr/libexec/PlistBuddy -c \"Set :MinimumOSVersion $VERSION\" \"$PLIST\"\necho \"Set MinimumOSVersion=$VERSION in onnxruntime.framework\"\nif [ -n \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ]; then\n  codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$FRAMEWORK\"\n  echo \"Re-signed onnxruntime.framework\"\nfi\n";
+			shellScript = "# The onnxruntime.framework binary (from piper1-gpl-spm) ships an Info.plist\n# without a MinimumOSVersion key, which App Store validation rejects. Inject it\n# into the embedded copy and re-sign so the signature stays valid.\nset -e\nFRAMEWORK=\"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/onnxruntime.framework\"\nPLIST=\"$FRAMEWORK/Info.plist\"\n[ -f \"$PLIST\" ] || { echo \"onnxruntime.framework not embedded; skipping.\"; exit 0; }\nVERSION=\"${IPHONEOS_DEPLOYMENT_TARGET:-15.0}\"\n/usr/libexec/PlistBuddy -c \"Add :MinimumOSVersion string $VERSION\" \"$PLIST\" 2>/dev/null || /usr/libexec/PlistBuddy -c \"Set :MinimumOSVersion $VERSION\" \"$PLIST\"\necho \"Set MinimumOSVersion=$VERSION in onnxruntime.framework\"\n\n# Generate dSYM to satisfy App Store Connect which expects one for the framework UUID\nif [ -n \"$DWARF_DSYM_FOLDER_PATH\" ]; then\n  echo \"Generating dSYM for onnxruntime...\"\n  mkdir -p \"$DWARF_DSYM_FOLDER_PATH\"\n  dsymutil \"$FRAMEWORK/onnxruntime\" -o \"${DWARF_DSYM_FOLDER_PATH}/onnxruntime.framework.dSYM\"\nfi\n\nif [ -n \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ]; then\n  codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$FRAMEWORK\"\n  echo \"Re-signed onnxruntime.framework\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -569,7 +569,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = LocalAI/LocalAI.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 42;
+				CURRENT_PROJECT_VERSION = 46;
 				DEVELOPMENT_TEAM = 75YTB67VJZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -588,7 +588,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 3.23;
+				MARKETING_VERSION = 3.24;
 				PRODUCT_BUNDLE_IDENTIFIER = alice.turcanu.LocalAI;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -609,7 +609,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = LocalAI/LocalAI.entitlements;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 42;
+				CURRENT_PROJECT_VERSION = 46;
 				DEVELOPMENT_TEAM = 75YTB67VJZ;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -628,7 +628,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 3.23;
+				MARKETING_VERSION = 3.24;
 				PRODUCT_BUNDLE_IDENTIFIER = alice.turcanu.LocalAI;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

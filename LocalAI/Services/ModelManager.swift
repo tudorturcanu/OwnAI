@@ -406,6 +406,7 @@ final class ModelManager: ObservableObject {
         UserDefaults.standard.bool(forKey: "downloads.allowCellular")
     }
     
+    
     private var downloadTasks: [String: Task<Void, Never>] = [:]
     private var backgroundTaskIDs: [String: UIBackgroundTaskIdentifier] = [:]
     private var downloadFailures: [String: DownloadFailure] = [:]
@@ -477,6 +478,9 @@ final class ModelManager: ObservableObject {
             await checkAvailability()
         }
         
+        // Initialize network monitor early so path is more likely to be resolved before user taps download
+        _ = DownloadNetworkMonitor.shared
+        
         // Warn user when app goes to background during an active download
         NotificationCenter.default.addObserver(
             self,
@@ -484,10 +488,16 @@ final class ModelManager: ObservableObject {
             name: UIApplication.willResignActiveNotification,
             object: nil
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleNetworkRestrictionChange),
+            name: .downloadNetworkRestrictionDidChange,
+            object: nil
+        )
     }
 
     deinit {
-        NotificationCenter.default.removeObserver(self, name: UIApplication.willResignActiveNotification, object: nil)
+        NotificationCenter.default.removeObserver(self)
     }
     
     // MARK: - Public Methods
@@ -582,9 +592,6 @@ final class ModelManager: ObservableObject {
         } else if availableStorage >= requiredSpaceGB(for: .gemma3_1b_qat_4bit),
                   let gemma3_1b = freeLocalModel(.gemma3_1b_qat_4bit) {
             preferredLocalModel = gemma3_1b
-        } else if availableStorage >= requiredSpaceGB(for: .gemma3_270m_qat_4bit),
-                  let gemma3_270m = freeLocalModel(.gemma3_270m_qat_4bit) {
-            preferredLocalModel = gemma3_270m
         } else {
             preferredLocalModel = smallestFreeLocalModel
         }
@@ -761,9 +768,7 @@ final class ModelManager: ObservableObject {
         case .fast:
             candidateIDs = [
                 ModelInfo.appleFoundation.id,
-                ModelInfo.gemma3_270m_qat_4bit.id,
                 ModelInfo.gemma3_1b_qat_4bit.id,
-                ModelInfo.qwen35_0_8b_optiq_4bit.id,
                 ModelInfo.gemma2_2b_4bit.id
             ]
             title = String(localized: "Fast")
@@ -826,9 +831,7 @@ final class ModelManager: ObservableObject {
         case .offlinePrivacy:
             candidateIDs = [
                 ModelInfo.gemma2_2b_4bit.id,
-                ModelInfo.gemma3_1b_qat_4bit.id,
-                ModelInfo.gemma3_270m_qat_4bit.id,
-                ModelInfo.qwen35_0_8b_optiq_4bit.id
+                ModelInfo.gemma3_1b_qat_4bit.id
             ]
             title = String(localized: "Offline Privacy")
             summary = String(localized: "Fully local after download.")
@@ -853,6 +856,17 @@ final class ModelManager: ObservableObject {
         guard let activeModelID = downloadTasks.keys.first,
               let model = models.first(where: { $0.id == activeModelID }) else { return }
         NotificationManager.shared.postDownloadBackgroundWarning(modelName: model.name)
+    }
+
+    @objc
+    private func handleNetworkRestrictionChange() {
+        if !allowCellularDownloads, DownloadNetworkMonitor.shared.isCellularRestricted {
+            let activeIDs = Array(downloadTasks.keys)
+            for modelID in activeIDs {
+                cancelDownload(modelID)
+                applyDownloadFailure(cellularRestrictedFailure(), for: modelID)
+            }
+        }
     }
 
     func repairModel(_ modelID: String, selectWhenFinished: Bool = false) {
@@ -883,8 +897,8 @@ final class ModelManager: ObservableObject {
             return
         }
 
-        if let failure = cellularRestrictionFailureIfNeeded(allowCellular: allowCellularDownloads) {
-            applyDownloadFailure(failure, for: modelID)
+        if let _ = cellularRestrictionFailureIfNeeded(allowCellular: allowCellularDownloads) {
+            NotificationCenter.default.post(name: .cellularDownloadRestricted, object: nil)
             return
         }
         
@@ -1646,4 +1660,8 @@ final class ModelManager: ObservableObject {
             usesFallback: usesFallback
         )
     }
+}
+
+extension Notification.Name {
+    static let cellularDownloadRestricted = Notification.Name("cellularDownloadRestricted")
 }

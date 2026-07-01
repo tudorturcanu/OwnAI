@@ -29,6 +29,7 @@ struct SuggestionCard: View {
                                 )
                             )
                     )
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)

@@ -58,6 +58,7 @@ struct PinnedMessagesView: View {
                 Image(systemName: "pin.fill")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
 
                 Text(conversation.title)
                     .font(.caption.weight(.semibold))
@@ -138,6 +139,7 @@ struct PinnedMessagesView: View {
             Image(systemName: "pin.slash")
                 .font(.system(size: 48, weight: .light))
                 .foregroundStyle(Color(white: 0.65))
+                .accessibilityHidden(true)
 
             Text(String(localized: "No Pinned Messages"))
                 .font(.headline)

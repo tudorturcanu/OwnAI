@@ -26,3 +26,6 @@ Packages/*/.build/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .vscode/
 .idea/
+
+# Logs
+*.log

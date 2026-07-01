@@ -15,16 +15,13 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
     case qwen
     case granite
     case lfm
-    case bonsai
     case exaone
     case glm
     case holo
     case deepSeek
-    case tinyLlama
     case llama
     case phi
-    case smolLM
-    case smolVLM
+    case smol
 
     var id: String { rawValue }
 
@@ -40,8 +37,6 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return String(localized: "Granite")
         case .lfm:
             return String(localized: "LFM 2.5")
-        case .bonsai:
-            return String(localized: "Bonsai")
         case .exaone:
             return String(localized: "EXAONE")
         case .glm:
@@ -50,16 +45,12 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return String(localized: "Holo")
         case .deepSeek:
             return String(localized: "DeepSeek")
-        case .tinyLlama:
-            return String(localized: "TinyLlama")
         case .llama:
             return String(localized: "Llama")
         case .phi:
             return String(localized: "Phi")
-        case .smolLM:
-            return String(localized: "SmolLM")
-        case .smolVLM:
-            return String(localized: "SmolVLM")
+        case .smol:
+            return String(localized: "Smol")
         }
     }
 
@@ -75,8 +66,6 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return String(localized: "IBM's efficient hybrid edge models")
         case .lfm:
             return String(localized: "Liquid AI's on-device family")
-        case .bonsai:
-            return String(localized: "Prism ML's compact Apple Silicon model")
         case .exaone:
             return String(localized: "LG AI Research's compact instruction models")
         case .glm:
@@ -85,16 +74,12 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return String(localized: "H Company's computer-use models")
         case .deepSeek:
             return String(localized: "Compact reasoning-style models")
-        case .tinyLlama:
-            return String(localized: "Ultra-small chat models")
         case .llama:
             return String(localized: "Meta's local instruction models")
         case .phi:
             return String(localized: "Microsoft's efficient reasoning models")
-        case .smolLM:
-            return String(localized: "HuggingFace's ultra-compact models")
-        case .smolVLM:
-            return String(localized: "Hugging Face's compact vision-language models")
+        case .smol:
+            return String(localized: "Hugging Face's compact models")
         }
     }
 
@@ -110,8 +95,6 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "cube.fill"
         case .lfm:
             return "drop.fill"
-        case .bonsai:
-            return "leaf.fill"
         case .exaone:
             return "sparkles"
         case .glm:
@@ -120,16 +103,41 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "cursorarrow.motionlines"
         case .deepSeek:
             return "brain.head.profile"
-        case .tinyLlama:
-            return "hare.fill"
         case .llama:
             return "bubble.left.and.bubble.right.fill"
         case .phi:
             return "function"
-        case .smolLM:
+        case .smol:
             return "smallcircle.filled.circle"
-        case .smolVLM:
-            return "photo.on.rectangle.angled"
+        }
+    }
+
+    var logoAssetName: String? {
+        switch self {
+        case .appleIntelligence:
+            return nil
+        case .gemma:
+            return "ModelLogoGemma"
+        case .qwen:
+            return "ModelLogoQwen"
+        case .granite:
+            return "ModelLogoIBM"
+        case .lfm:
+            return "ModelLogoLiquid"
+        case .exaone:
+            return "ModelLogoLG"
+        case .glm:
+            return "ModelLogoZAI"
+        case .holo:
+            return "ModelLogoHCompany"
+        case .deepSeek:
+            return "ModelLogoDeepSeek"
+        case .llama:
+            return "ModelLogoMeta"
+        case .phi:
+            return "ModelLogoMicrosoft"
+        case .smol:
+            return "ModelLogoHuggingFace"
         }
     }
 }
@@ -351,7 +359,7 @@ struct ModelInfo: Identifiable, Equatable {
     }
 
     var requiresUnsupportedMLXQuantization: Bool {
-        id == "prism-ml/Bonsai-4B-mlx-1bit"
+        false
     }
 
     var currentDeviceFit: ModelDeviceFit {
@@ -430,8 +438,8 @@ struct ModelInfo: Identifiable, Equatable {
         if lowercasedID.contains("phi") {
             return "Microsoft (Phi)"
         }
-        if lowercasedID.contains("smollm") {
-            return "HuggingFace (SmolLM)"
+        if lowercasedID.contains("smol") {
+            return "HuggingFace (Smol)"
         }
         return "Model publisher"
     }
@@ -540,38 +548,6 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
-    /// Gemma 3 270M Instruct QAT (4-bit MLX)
-    static let gemma3_270m_qat_4bit = ModelInfo(
-        id: "mlx-community/gemma-3-270m-it-qat-4bit",
-        name: "Gemma 3 270M",
-        description: "An extremely small Gemma variant tuned for very fast startup and minimal storage on iPhone.",
-        family: .gemma,
-        sizeGB: 0.28,
-        engine: .mlx,
-        termsURL: URL(string: "https://ai.google.dev/gemma/terms"),
-        privacyURL: nil,
-        shortDescription: "Ultra-light Gemma option for the smallest local install.",
-        recommendedFor: "Best when you want a tiny iPhone-friendly model for short everyday prompts.",
-        badges: [.fastest, .smallDownload, .fullyOnDevice],
-        downloadState: .notDownloaded
-    )
-
-    /// LFM2.5 350M MLX (4-bit)
-    static let lfm25_350m_4bit = ModelInfo(
-        id: "LiquidAI/LFM2.5-350M-MLX-4bit",
-        name: "LFM 2.5 350M",
-        description: "Liquid AI's smallest LFM 2.5 model. It is built for Apple Silicon and is a very light, iPhone-friendly general-purpose option.",
-        family: .lfm,
-        sizeGB: 0.21,
-        engine: .mlx,
-        termsURL: URL(string: "https://huggingface.co/LiquidAI/LFM2.5-350M-MLX-4bit"),
-        privacyURL: nil,
-        shortDescription: "Tiny, fast, and the lightest general-purpose LFM 2.5 option.",
-        recommendedFor: "Best when you want the smallest LFM 2.5 download for basic local chat.",
-        badges: [.fastest, .smallDownload, .fullyOnDevice],
-        downloadState: .notDownloaded
-    )
-
     /// LFM2.5 VL 450M MLX (6-bit)
     static let lfm25_vl_450m_6bit = ModelInfo(
         id: "LiquidAI/LFM2.5-VL-450M-MLX-6bit",
@@ -652,6 +628,38 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// LFM2.5 230M MLX (4-bit)
+    static let lfm25_230m_4bit = ModelInfo(
+        id: "LiquidAI/LFM2.5-230M-MLX-4bit",
+        name: "LFM 2.5 230M",
+        description: "Liquid AI's smallest LFM 2.5 chat model, built for extremely fast fully local replies with a tiny download.",
+        family: .lfm,
+        sizeGB: 0.14,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/LiquidAI/LFM2.5-230M-MLX-4bit"),
+        privacyURL: nil,
+        shortDescription: "Tiny LFM model for the fastest local replies.",
+        recommendedFor: "Best when storage, download size, and startup speed matter most.",
+        badges: [.fastest, .smallDownload, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// LFM2.5 350M MLX (4-bit)
+    static let lfm25_350m_4bit = ModelInfo(
+        id: "LiquidAI/LFM2.5-350M-MLX-4bit",
+        name: "LFM 2.5 350M",
+        description: "Liquid AI's ultra-light LFM 2.5 model, offering a little more capability than the 230M tier while keeping the download very small.",
+        family: .lfm,
+        sizeGB: 0.21,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/LiquidAI/LFM2.5-350M-MLX-4bit"),
+        privacyURL: nil,
+        shortDescription: "Very small LFM model with a bit more headroom.",
+        recommendedFor: "Best when you want a tiny on-device assistant with slightly richer answers.",
+        badges: [.fastest, .smallDownload, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// LFM2.5 1.2B Instruct MLX (4-bit)
     static let lfm25_1_2b_instruct_4bit = ModelInfo(
         id: "LiquidAI/LFM2.5-1.2B-Instruct-MLX-4bit",
@@ -665,6 +673,22 @@ extension ModelInfo {
         shortDescription: "Balanced compact model for everyday local use.",
         recommendedFor: "Best when you want the main everyday LFM 2.5 model on iPhone.",
         badges: [.recommended, .everydayChat, .higherQuality, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// LFM2.5 1.2B JP 202606 MLX (4-bit)
+    static let lfm25_1_2b_jp_202606_4bit = ModelInfo(
+        id: "LiquidAI/LFM2.5-1.2B-JP-202606-MLX-4bit",
+        name: "LFM 2.5 JP 1.2B",
+        description: "Liquid AI's Japanese-focused LFM 2.5 model with English support, tuned for compact multilingual chat on Apple devices.",
+        family: .lfm,
+        sizeGB: 0.65,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/LiquidAI/LFM2.5-1.2B-JP-202606-MLX-4bit"),
+        privacyURL: nil,
+        shortDescription: "Compact Japanese and English LFM model.",
+        recommendedFor: "Best when you want stronger Japanese local chat in a small download.",
+        badges: [.multilingual, .smallDownload, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -684,6 +708,22 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// LFM2.5 8B-A1B MLX (4-bit)
+    static let lfm25_8b_a1b_4bit = ModelInfo(
+        id: "LiquidAI/LFM2.5-8B-A1B-MLX-4bit",
+        name: "LFM 2.5 8B-A1B",
+        description: "Liquid AI's mixture-of-experts LFM 2.5 model, aimed at stronger local quality on iPad Pro and Mac-class Apple Silicon.",
+        family: .lfm,
+        sizeGB: 4.52,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/LiquidAI/LFM2.5-8B-A1B-MLX-4bit"),
+        privacyURL: nil,
+        shortDescription: "High-end LFM 2.5 MoE model for larger devices.",
+        recommendedFor: "Best when you want stronger LFM 2.5 output and have iPad Pro or Mac headroom.",
+        badges: [.higherQuality, .reasoning, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// LFM2.5 VL 1.6B MLX (4-bit)
     static let lfm25_vl_1_6b_4bit = ModelInfo(
         id: "mlx-community/LFM2.5-VL-1.6B-4bit",
@@ -697,54 +737,6 @@ extension ModelInfo {
         shortDescription: "Vision-language LFM 2.5 for images, screenshots, and documents.",
         recommendedFor: "Best when you want LFM 2.5 with image input on a newer device.",
         badges: [.images, .vision, .higherQuality, .newerDevices, .fullyOnDevice],
-        downloadState: .notDownloaded
-    )
-
-    /// Bonsai 4B (1-bit MLX)
-    static let bonsai4b_1bit = ModelInfo(
-        id: "prism-ml/Bonsai-4B-mlx-1bit",
-        name: "Bonsai 4B",
-        description: "Prism ML's compact Apple Silicon model. It is tuned for very small local downloads on iPhone and iPad, but it relies on the newer 1-bit MLX path and is still more experimental than the mainstream catalog entries.",
-        family: .bonsai,
-        sizeGB: 0.63,
-        engine: .mlx,
-        termsURL: URL(string: "https://huggingface.co/prism-ml/Bonsai-4B-mlx-1bit"),
-        privacyURL: nil,
-        shortDescription: "Very compact and iPhone-oriented, but more experimental.",
-        recommendedFor: "Best if you want the smallest Bonsai build and are comfortable with a more experimental MLX model.",
-        badges: [.smallDownload, .fullyOnDevice],
-        downloadState: .notDownloaded
-    )
-
-    /// Qwen3 0.6B MLX (4-bit)
-    static let qwen3_0_6b_4bit = ModelInfo(
-        id: "Qwen/Qwen3-0.6B-MLX-4bit",
-        name: "Qwen3 0.6B",
-        description: "Qwen's smallest current-generation chat model, optimized for very light local use while keeping broad multilingual support.",
-        family: .qwen,
-        sizeGB: 0.32,
-        engine: .mlx,
-        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen3-0.6B-MLX-4bit"),
-        privacyURL: nil,
-        shortDescription: "Extremely small and fast with multilingual support.",
-        recommendedFor: "Best for the smallest possible download and basic multilingual chat.",
-        badges: [.smallDownload, .multilingual, .fullyOnDevice],
-        downloadState: .notDownloaded
-    )
-
-    /// Qwen3.5 0.8B OptiQ (4-bit MLX)
-    static let qwen35_0_8b_optiq_4bit = ModelInfo(
-        id: "mlx-community/Qwen3.5-0.8B-OptiQ-4bit",
-        name: "Qwen3.5 0.8B OptiQ",
-        description: "A compact Qwen3.5 text model with OptiQ mixed-precision MLX quantization. It is small, multilingual, and tuned for responsive local chat on iPhone.",
-        family: .qwen,
-        sizeGB: 0.60,
-        engine: .mlx,
-        termsURL: URL(string: "https://huggingface.co/mlx-community/Qwen3.5-0.8B-OptiQ-4bit"),
-        privacyURL: nil,
-        shortDescription: "Small Qwen3.5 model with a strong size-to-quality tradeoff.",
-        recommendedFor: "Best when you want a newer multilingual chat model with a light download.",
-        badges: [.recommended, .smallDownload, .multilingual, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -780,67 +772,19 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
-    /// Qwen2.5 0.5B Instruct (4-bit MLX)
-    static let qwen25_0_5b_instruct_4bit = ModelInfo(
-        id: "mlx-community/Qwen2.5-0.5B-Instruct-4bit",
-        name: "Qwen2.5 0.5B",
-        description: "An ultra-light Qwen2.5 variant for the smallest downloads and fastest local startup on older or storage-constrained devices.",
+    /// Qwen3 0.6B MLX (4-bit)
+    static let qwen3_0_6b_4bit = ModelInfo(
+        id: "Qwen/Qwen3-0.6B-MLX-4bit",
+        name: "Qwen3 0.6B",
+        description: "Qwen's smallest official MLX Qwen3 model, tuned for quick multilingual local chat with a very small footprint.",
         family: .qwen,
-        sizeGB: 0.28,
+        sizeGB: 0.31,
         engine: .mlx,
-        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct"),
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen3-0.6B-MLX-4bit"),
         privacyURL: nil,
-        shortDescription: "Tiny multilingual model with a very small local footprint.",
-        recommendedFor: "Best when you want the lightest possible install for simple chats.",
+        shortDescription: "Tiny official Qwen3 model for quick local chat.",
+        recommendedFor: "Best when you want Qwen-style multilingual replies in a tiny download.",
         badges: [.fastest, .smallDownload, .multilingual, .fullyOnDevice],
-        downloadState: .notDownloaded
-    )
-
-    /// Granite 4.0 350M (4-bit MLX)
-    static let granite4_0_350m_4bit = ModelInfo(
-        id: "mlx-community/granite-4.0-350m-4bit",
-        name: "Granite 4.0 350M",
-        description: "IBM's smallest Granite 4.0 option, tuned for very light on-device use and fast startup on iPhone.",
-        family: .granite,
-        sizeGB: 0.21,
-        engine: .mlx,
-        termsURL: URL(string: "https://huggingface.co/mlx-community/granite-4.0-350m-4bit"),
-        privacyURL: nil,
-        shortDescription: "Tiny Granite model for the lightest local installs.",
-        recommendedFor: "Best when you want the smallest Granite 4.0 download.",
-        badges: [.fastest, .smallDownload, .fullyOnDevice],
-        downloadState: .notDownloaded
-    )
-
-    /// SmolLM2 360M Instruct (4-bit MLX)
-    static let smolLM2_360m_4bit = ModelInfo(
-        id: "Irfanuruchi/SmolLM2-360M-Instruct-MLX-4bit",
-        name: "SmolLM2 360M",
-        description: "Hugging Face's tiny instruction model, tuned for very fast local replies and an extremely small download on iPhone.",
-        family: .smolLM,
-        sizeGB: 0.20,
-        engine: .mlx,
-        termsURL: URL(string: "https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct"),
-        privacyURL: nil,
-        shortDescription: "Tiny, fast, and light on storage.",
-        recommendedFor: "Best when you want the smallest practical local assistant on iPhone.",
-        badges: [.fastest, .smallDownload, .fullyOnDevice],
-        downloadState: .notDownloaded
-    )
-
-    /// TinyLlama 1.1B Chat v1.0 (4-bit MLX)
-    static let tinyllama11b_chat_4bit = ModelInfo(
-        id: "mlx-community/TinyLlama-1.1B-Chat-v1.0-4bit",
-        name: "TinyLlama 1.1B",
-        description: "A very small chat model that prioritizes low storage and quick downloads over output quality.",
-        family: .tinyLlama,
-        sizeGB: 0.72,
-        engine: .mlx,
-        termsURL: URL(string: "https://huggingface.co/TinyLlama/TinyLlama-1.1B-Chat-v1.0"),
-        privacyURL: nil,
-        shortDescription: "Fast to install, but output quality is more limited.",
-        recommendedFor: "Useful when storage matters more than answer quality.",
-        badges: [.smallDownload, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -857,6 +801,22 @@ extension ModelInfo {
         shortDescription: "Strong compact model for chat, writing, and languages.",
         recommendedFor: "Great all-around local option for multilingual everyday use.",
         badges: [.recommended, .multilingual, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Qwen3.5 0.8B OptiQ (4-bit MLX)
+    static let qwen35_0_8b_optiq_4bit = ModelInfo(
+        id: "mlx-community/Qwen3.5-0.8B-OptiQ-4bit",
+        name: "Qwen3.5 0.8B OptiQ",
+        description: "A compact Qwen3.5 model using OptiQ mixed-precision MLX quantization for stronger quality than tiny models while staying iPhone-friendly.",
+        family: .qwen,
+        sizeGB: 0.83,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/Qwen3.5-0.8B-OptiQ-4bit"),
+        privacyURL: nil,
+        shortDescription: "Small Qwen3.5 model with modern OptiQ quantization.",
+        recommendedFor: "Best when you want a newer small Qwen model with stronger everyday quality.",
+        badges: [.recommended, .multilingual, .smallDownload, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -985,22 +945,6 @@ extension ModelInfo {
         shortDescription: "Compact translation model with image text support.",
         recommendedFor: "Best when translation quality matters more than general chat.",
         badges: [.images, .multilingual, .higherQuality, .newerDevices, .fullyOnDevice],
-        downloadState: .notDownloaded
-    )
-
-    /// FunctionGemma 270M Instruct (4-bit MLX)
-    static let functiongemma270m_it_4bit = ModelInfo(
-        id: "mlx-community/functiongemma-270m-it-4bit",
-        name: "FunctionGemma",
-        description: "Google's tiny function-calling Gemma variant, tuned for lightweight structured tool use and fast local responses.",
-        family: .gemma,
-        sizeGB: 0.15,
-        engine: .mlx,
-        termsURL: URL(string: "https://huggingface.co/mlx-community/functiongemma-270m-it-4bit"),
-        privacyURL: nil,
-        shortDescription: "Tiny Gemma variant for function calling and tools.",
-        recommendedFor: "Best when you want a very small tool-calling model.",
-        badges: [.chat, .smallDownload, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -1185,7 +1129,7 @@ extension ModelInfo {
         id: "Irfanuruchi/SmolLM2-1.7B-Instruct-MLX-4bit",
         name: "SmolLM2 1.7B",
         description: "HuggingFace's compact SmolLM2, designed for fast on-device chat with surprisingly strong performance for its tiny footprint.",
-        family: .smolLM,
+        family: .smol,
         sizeGB: 1.04,
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct"),
@@ -1265,7 +1209,7 @@ extension ModelInfo {
         id: "mlx-community/SmolLM3-3B-4bit",
         name: "SmolLM3 3B",
         description: "A newer SmolLM option that gives you better local quality than the tiny models while staying lighter than the bigger 7B and 8B choices.",
-        family: .smolLM,
+        family: .smol,
         sizeGB: 1.8,
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/HuggingFaceTB/SmolLM3-3B"),
@@ -1281,7 +1225,7 @@ extension ModelInfo {
         id: "mlx-community/SmolVLM2-256M-Video-Instruct-mlx",
         name: "SmolVLM2 256M",
         description: "Hugging Face's tiniest SmolVLM2 vision-language model for very light image and video understanding on device.",
-        family: .smolVLM,
+        family: .smol,
         sizeGB: 0.52,
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/mlx-community/SmolVLM2-256M-Video-Instruct-mlx"),
@@ -1297,7 +1241,7 @@ extension ModelInfo {
         id: "mlx-community/SmolVLM2-500M-Video-Instruct-mlx",
         name: "SmolVLM2 500M",
         description: "A compact SmolVLM2 model for fast image and video understanding, with a light enough footprint for iPhone-friendly local use.",
-        family: .smolVLM,
+        family: .smol,
         sizeGB: 1.02,
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/mlx-community/SmolVLM2-500M-Video-Instruct-mlx"),
@@ -1313,7 +1257,7 @@ extension ModelInfo {
         id: "mlx-community/SmolVLM2-2.2B-Instruct-mlx",
         name: "SmolVLM2 2.2B",
         description: "The strongest SmolVLM2 option here, tuned for better image, multi-image, and video understanding on newer iPhones and iPads.",
-        family: .smolVLM,
+        family: .smol,
         sizeGB: 4.49,
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/mlx-community/SmolVLM2-2.2B-Instruct-mlx"),
@@ -1390,17 +1334,12 @@ extension ModelInfo {
 
     static let allModels: [ModelInfo] = [
         .appleFoundation,  // Default - first in list
-        // Small / ultra-light
-        .gemma3_270m_qat_4bit,
-        .granite4_0_350m_4bit,
+        // Ultra-light and compact (0.1–1.1 GB)
+        .lfm25_230m_4bit,
         .lfm25_350m_4bit,
-        .bonsai4b_1bit,
-        .smolLM2_360m_4bit,
-        .functiongemma270m_it_4bit,
         .qwen3_0_6b_4bit,
+        .lfm25_1_2b_jp_202606_4bit,
         .qwen35_0_8b_optiq_4bit,
-        .qwen25_0_5b_instruct_4bit,
-        // Compact (0.7–1.1 GB)
         .llama32_1b_4bit,
         .gemma3_1b_qat_4bit,
         .granite4_0_h_1b_4bit,
@@ -1442,6 +1381,7 @@ extension ModelInfo {
         .qwen3_4b_4bit,
         // Large (4+ GB) — iPad Pro / Mac
         .deepseek_r1_distill_qwen_7b_4bit,
+        .lfm25_8b_a1b_4bit,
         .glm51_4bit,
         .qwen25_7b_instruct_4bit,
         .llama31_8b_4bit,

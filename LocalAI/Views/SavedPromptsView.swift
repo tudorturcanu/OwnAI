@@ -36,6 +36,7 @@ struct SavedPromptsView: View {
                         Image(systemName: "plus")
                     }
                     .disabled(promptStore.prompts.count >= SavedPromptStore.maxPrompts)
+                    .accessibilityLabel(String(localized: "Add prompt"))
                 }
             }
         }
@@ -98,6 +99,7 @@ struct SavedPromptsView: View {
                 Image(systemName: isActive ? "checkmark.circle.fill" : "books.vertical.fill")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(isActive ? .orange : .secondary)
+                    .accessibilityHidden(true)
             }
 
             VStack(alignment: .leading, spacing: 3) {
@@ -144,6 +146,7 @@ struct SavedPromptsView: View {
             Image(systemName: "books.vertical.fill")
                 .font(.system(size: 48))
                 .foregroundStyle(.orange.opacity(0.7))
+                .accessibilityHidden(true)
 
             VStack(spacing: 8) {
                 Text(String(localized: "No Saved Prompts"))
@@ -179,6 +182,7 @@ struct SavedPromptsView: View {
                 .foregroundStyle(
                     LinearGradient(colors: [.orange, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)
                 )
+                .accessibilityHidden(true)
 
             VStack(spacing: 10) {
                 Text(String(localized: "Prompt Library"))

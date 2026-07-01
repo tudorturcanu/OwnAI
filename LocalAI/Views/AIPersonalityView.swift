@@ -6,15 +6,21 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct AIPersonalityView: View {
     @Environment(MonetizationManager.self) private var monetizationManager
-    @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
-    @AppStorage("temperature") private var temperature = 0.7
-    @AppStorage("topP") private var topP = 1.0
-    @AppStorage("maxTokens") private var maxTokens = AIResponseDefaults.maxTokens
-    @AppStorage("responseCharacterLimit") private var responseCharacterLimit = AIResponseDefaults.responseCharacterLimit
+    @AppStorage("systemPrompt") private var storedSystemPrompt = AIResponseDefaults.defaultSystemPrompt
+    @AppStorage("temperature") private var storedTemperature = 0.7
+    @AppStorage("topP") private var storedTopP = 1.0
+    @AppStorage("maxTokens") private var storedMaxTokens = AIResponseDefaults.maxTokens
+    @AppStorage("responseCharacterLimit") private var storedResponseCharacterLimit = AIResponseDefaults.responseCharacterLimit
     @AppStorage("customPersonalityPresetsJSON") private var customPresetsJSON = "[]"
+    @State private var draftSystemPrompt = AIResponseDefaults.defaultSystemPrompt
+    @State private var draftTemperature = 0.7
+    @State private var draftTopP = 1.0
+    @State private var draftMaxTokens = AIResponseDefaults.maxTokens
+    @State private var draftResponseCharacterLimit = AIResponseDefaults.responseCharacterLimit
     @State private var showUpgradeSheet = false
     @State private var isEditorPresented = false
     @State private var isImportPresented = false
@@ -33,444 +39,86 @@ struct AIPersonalityView: View {
     @State private var sharePayload: String?
     @State private var isSavePromptAlertPresented = false
     @State private var savePromptName = ""
+    @State private var promptSaveErrorMessage: String?
     @State private var savedPromptsUpgradeFeature: PremiumFeature?
+    @State private var hasLoadedDrafts = false
 
     private var promptStore: SavedPromptStore { SavedPromptStore.shared }
 
     private let responseLengthOptions = [0, 500, 1000, 1500, 2000]
+    private let cardCornerRadius: CGFloat = 18
 
     private var selectedPresetID: String? {
         PersonalityPreset.presets.first { preset in
-            preset.systemPrompt == systemPrompt &&
-            abs(preset.temperature - temperature) < 0.0001 &&
-            abs(preset.topP - topP) < 0.0001 &&
-            preset.maxTokens == maxTokens
+            preset.systemPrompt == draftSystemPrompt &&
+            abs(preset.temperature - draftTemperature) < 0.0001 &&
+            abs(preset.topP - draftTopP) < 0.0001 &&
+            preset.maxTokens == draftMaxTokens &&
+            draftResponseCharacterLimit == AIResponseDefaults.responseCharacterLimit
         }?.id
+    }
+
+    private var basePresetName: String? {
+        PersonalityPreset.presets.first { preset in
+            preset.systemPrompt == draftSystemPrompt &&
+            abs(preset.temperature - draftTemperature) < 0.0001 &&
+            abs(preset.topP - draftTopP) < 0.0001 &&
+            preset.maxTokens == draftMaxTokens
+        }?.name
     }
 
     private var userPresets: [UserPersonalityPreset] {
         (try? UserPersonalityPreset.decodeList(from: customPresetsJSON)) ?? []
     }
+
+    private var activePresetName: String {
+        if let selectedPresetID,
+           let preset = PersonalityPreset.presets.first(where: { $0.id == selectedPresetID }) {
+            return preset.name
+        }
+
+        if let basePresetName {
+            return String(format: String(localized: "Modified %@", defaultValue: "Modified %@"), basePresetName)
+        }
+
+        return String(localized: "Custom")
+    }
+
+    private var savedPromptCountText: String {
+        let count = promptStore.prompts.count
+        return count == 1
+            ? String(localized: "1 saved prompt")
+            : String(format: String(localized: "%lld saved prompts", defaultValue: "%lld saved prompts"), Int64(count))
+    }
+
+    private var hasPendingChanges: Bool {
+        draftSystemPrompt != storedSystemPrompt ||
+        abs(draftTemperature - storedTemperature) > 0.0001 ||
+        abs(draftTopP - storedTopP) > 0.0001 ||
+        draftMaxTokens != storedMaxTokens ||
+        draftResponseCharacterLimit != storedResponseCharacterLimit
+    }
+
+    private var draftPromptIsEmpty: Bool {
+        draftSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
     
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                // Description
-                Text(String(localized: "Customize how the AI behaves and responds to you."))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 20)
-
-                // Prompt Library NavigationLink
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(String(localized: "Saved Prompts"))
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 20)
-
-                    NavigationLink {
-                        SavedPromptsView()
-                            .environment(monetizationManager)
-                    } label: {
-                        HStack(spacing: 14) {
-                            Image(systemName: "books.vertical.fill")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(.orange)
-                                .frame(width: 34, height: 34)
-                                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
-
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(String(localized: "Prompt Library"))
-                                    .font(.body.weight(.medium))
-                                    .foregroundStyle(.primary)
-                                Text(String(localized: "\(promptStore.prompts.count) saved prompt\(promptStore.prompts.count == 1 ? "" : "s")"))
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Spacer()
-
-                            if !monetizationManager.canUse(.savedPrompts) {
-                                Image(systemName: "crown.fill")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(.orange)
-                            }
-
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(.tertiary)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 14)
-                        .background(Color.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
-                        .padding(.horizontal, 20)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                // Personality Presets
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(String(localized: "Presets"))
-                        .font(.headline)
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 20)
-                    
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
-                            ForEach(PersonalityPreset.presets) { preset in
-                                Button {
-                                    withAnimation {
-                                        applyPreset(preset)
-                                    }
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: preset.icon)
-                                            .font(.footnote)
-                                        Text(LocalizedStringKey(preset.name))
-                                            .font(.subheadline.weight(.medium))
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 10)
-                                    .background(selectedPresetID == preset.id ? Color.blue : Color.white)
-                                    .foregroundStyle(selectedPresetID == preset.id ? .white : .primary)
-                                    .clipShape(Capsule())
-                                    .overlay(
-                                        Capsule()
-                                            .stroke(Color.black.opacity(0.05), lineWidth: 1)
-                                    )
-                                }
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                    }
-                }
-
-                // Custom Presets
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text(String(localized: "Your Presets"))
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-
-                        Spacer()
-
-                        Button {
-                            guard monetizationManager.canUse(.advancedPersonality) else {
-                                showUpgradeSheet = true
-                                return
-                            }
-                            editingPresetID = nil
-                            draftPreset = UserPersonalityPreset(
-                                name: "",
-                                icon: "sparkles",
-                                systemPrompt: systemPrompt,
-                                temperature: temperature,
-                                topP: topP,
-                                maxTokens: maxTokens,
-                                responseCharacterLimit: responseCharacterLimit
-                            )
-                            isEditorPresented = true
-                        } label: {
-                            Image(systemName: "plus")
-                                .font(.subheadline.weight(.semibold))
-                                .padding(8)
-                                .background(Color.black.opacity(0.05), in: Circle())
-                        }
-                        .buttonStyle(.plain)
-
-                        Button(String(localized: "Import")) {
-                            guard monetizationManager.canUse(.advancedPersonality) else {
-                                showUpgradeSheet = true
-                                return
-                            }
-                            importText = ""
-                            importErrorMessage = nil
-                            isImportPresented = true
-                        }
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.blue)
-                    }
-                    .padding(.horizontal, 20)
-
-                    VStack(spacing: 10) {
-                        if userPresets.isEmpty {
-                            HStack(spacing: 10) {
-                                Image(systemName: "tray")
-                                    .foregroundStyle(.secondary)
-                                Text(String(localized: "Create a preset to save your favorite prompt and tuning."))
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 14)
-                        } else {
-                            ForEach(userPresets) { preset in
-                                Button {
-                                    withAnimation {
-                                        applyUserPreset(preset)
-                                    }
-                                } label: {
-                                    HStack(spacing: 12) {
-                                        Image(systemName: preset.icon)
-                                            .font(.subheadline)
-                                            .foregroundStyle(.secondary)
-                                            .frame(width: 28)
-                                            .accessibilityHidden(true)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(preset.name)
-                                                .font(.subheadline.weight(.medium))
-                                                .foregroundStyle(.primary)
-                                            Text(preset.systemPrompt)
-                                                .font(.caption)
-                                                .foregroundStyle(.secondary)
-                                                .lineLimit(1)
-                                        }
-                                        Spacer()
-                                        Image(systemName: "chevron.right")
-                                            .font(.caption.weight(.semibold))
-                                            .foregroundStyle(.tertiary)
-                                    }
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 14)
-                                    .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                                .contextMenu {
-                                    Button(String(localized: "Edit")) {
-                                        guard monetizationManager.canUse(.advancedPersonality) else {
-                                            showUpgradeSheet = true
-                                            return
-                                        }
-                                        editingPresetID = preset.id
-                                        draftPreset = preset
-                                        isEditorPresented = true
-                                    }
-
-                                    Button(String(localized: "Export")) {
-                                        if let json = try? UserPersonalityPreset.encode([preset]) {
-                                            sharePayload = json
-                                        }
-                                    }
-
-                                    Button(role: .destructive) {
-                                        deleteUserPreset(id: preset.id)
-                                    } label: {
-                                        Text(String(localized: "Delete"))
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    .background(Color.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                    .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
-                    .padding(.horizontal, 20)
-                    .overlay {
-                        if !monetizationManager.canUse(.advancedPersonality) {
-                            lockedOverlay
-                        }
-                    }
-                }
-                
-                // System Prompt Section
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(String(localized: "System Prompt"))
-                        .font(.headline)
-                        .foregroundStyle(Color(white: 0.2))
-                        .padding(.horizontal, 20)
-                    
-                    VStack(alignment: .leading, spacing: 0) {
-                        // Header with Save / Reset
-                        HStack {
-                            Spacer()
-
-                            Button(String(localized: "Save to Library")) {
-                                guard monetizationManager.canUse(.savedPrompts) else {
-                                    savedPromptsUpgradeFeature = .savedPrompts
-                                    return
-                                }
-                                savePromptName = ""
-                                isSavePromptAlertPresented = true
-                            }
-                            .font(.caption.weight(.medium))
-                            .foregroundStyle(.orange)
-
-                            if systemPrompt != AIResponseDefaults.defaultSystemPrompt {
-                                Button(String(localized: "Reset Default")) {
-                                    withAnimation {
-                                        systemPrompt = AIResponseDefaults.defaultSystemPrompt
-                                    }
-                                }
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.blue)
-                                .padding(.leading, 8)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 10)
-                        
-                        // Text Editor
-                        TextEditor(text: $systemPrompt)
-                            .font(.body)
-                            .foregroundStyle(Color(white: 0.1))
-                            .frame(height: 120)
-                            .padding(12)
-                            .scrollContentBackground(.hidden)
-                            .background(Color(white: 0.96))
-                            .clipShape(RoundedRectangle(cornerRadius: 12))
-                            .padding(.horizontal, 16)
-                            .padding(.bottom, 16)
-                    }
-                    .background(Color.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                    .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
-                    .padding(.horizontal, 20)
-                    .overlay {
-                        if !monetizationManager.canUse(.advancedPersonality) {
-                            lockedOverlay
-                        }
-                    }
-                }
-                
-                // Creativity & Parameters Section
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Text(String(localized: "Parameters"))
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-                        
-                        Spacer()
-                        
-                        Button(String(localized: "Reset")) {
-                            withAnimation {
-                                temperature = 0.7
-                                topP = 1.0
-                                maxTokens = AIResponseDefaults.maxTokens
-                                responseCharacterLimit = AIResponseDefaults.responseCharacterLimit
-                            }
-                        }
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.blue)
-                    }
-                    .padding(.horizontal, 20)
-                    
-                    VStack(alignment: .leading, spacing: 20) {
-                        // Temperature
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text(String(localized: "Temperature"))
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Text(String(format: "%.1f", temperature))
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                            
-                            Slider(value: $temperature, in: 0.0...1.0)
-                                .tint(Gradient(colors: [.orange, .pink]))
-                                
-                            HStack {
-                                Text(String(localized: "Precise"))
-                                Spacer()
-                                Text(String(localized: "Creative"))
-                            }
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
-                        }
-                        
-                        Divider()
-                        
-                        // Top-P
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text(String(localized: "Top-P"))
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Text(String(format: "%.1f", topP))
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                            
-                            Slider(value: $topP, in: 0.0...1.0)
-                                .tint(Gradient(colors: [.purple, .blue]))
-                                
-                            Text(String(localized: "Limits the AI to only consider the most likely words whose cumulative probability reaches P."))
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-                        
-                        Divider()
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text(String(localized: "Response Size"))
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Text(responseLengthLabel(for: responseCharacterLimit))
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-
-                            Picker(String(localized: "Response Size"), selection: $responseCharacterLimit) {
-                                ForEach(responseLengthOptions, id: \.self) { option in
-                                    Text(LocalizedStringKey(responseLengthLabel(for: option))).tag(option)
-                                }
-                            }
-                            .pickerStyle(.menu)
-
-                            Text(String(localized: "Adds a strict visible-character cap to assistant replies. Useful if you want short answers that do not keep going."))
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-
-                        Divider()
-                        
-                        // Max Tokens
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                Text(String(localized: "Max Length"))
-                                    .font(.subheadline)
-                                    .foregroundStyle(.secondary)
-                                Spacer()
-                                Text(String(format: String(localized: "%lld tokens", defaultValue: "%lld tokens"), Int64(maxTokens)))
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
-                            }
-                            
-                            Slider(value: Binding(
-                                get: { Float(maxTokens) },
-                                set: { maxTokens = Int($0) }
-                            ), in: 64...4096, step: 64)
-                                .tint(Gradient(colors: [.green, .teal]))
-                                
-                            Text(String(localized: "Sets the maximum number of tokens the AI will generate in a single response."))
-                                .font(.caption2)
-                                .foregroundStyle(.tertiary)
-                        }
-                    }
-                    .padding(20)
-                    .background(Color.white)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                    .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
-                    .padding(.horizontal, 20)
-                    .overlay {
-                        if !monetizationManager.canUse(.advancedPersonality) {
-                            lockedOverlay
-                        }
-                    }
-                }
-                
-                Spacer()
+            VStack(alignment: .leading, spacing: 26) {
+                headerSection
+                savedPromptsSection
+                builtInPresetsSection
+                customPresetsSection
+                systemPromptSection
+                parametersSection
+                applyChangesSection
             }
-            .padding(.top, 20)
+            .padding(.horizontal, 20)
+            .padding(.top, 14)
+            .padding(.bottom, 40)
         }
-        .background(Color(white: 0.98))
+        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle(String(localized: "AI Personality"))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showUpgradeSheet) {
@@ -485,14 +133,32 @@ struct AIPersonalityView: View {
             TextField(String(localized: "Prompt name"), text: $savePromptName)
             Button(String(localized: "Save")) {
                 let name = savePromptName.trimmingCharacters(in: .whitespacesAndNewlines)
-                promptStore.add(
+                let didSave = promptStore.add(
                     name: name.isEmpty ? String(localized: "Untitled Prompt") : name,
-                    prompt: systemPrompt
+                    prompt: draftSystemPrompt
                 )
+
+                if !didSave {
+                    promptSaveErrorMessage = promptStore.prompts.count >= SavedPromptStore.maxPrompts
+                        ? String(localized: "The prompt library is full. Delete a prompt before saving another one.")
+                        : String(localized: "Add a system prompt before saving it to the library.")
+                }
             }
+            .disabled(promptStore.prompts.count >= SavedPromptStore.maxPrompts || draftPromptIsEmpty)
             Button(String(localized: "Cancel"), role: .cancel) { }
         } message: {
-            Text(String(localized: "Give this prompt a name so you can find it later."))
+            Text(String(localized: "Prompt Library saves instructions only. It does not save temperature, Top-P, or length settings."))
+        }
+        .alert(
+            String(localized: "Couldn’t Save Prompt"),
+            isPresented: Binding(
+                get: { promptSaveErrorMessage != nil },
+                set: { if !$0 { promptSaveErrorMessage = nil } }
+            )
+        ) {
+            Button(String(localized: "OK"), role: .cancel) { promptSaveErrorMessage = nil }
+        } message: {
+            Text(promptSaveErrorMessage ?? "")
         }
         .sheet(isPresented: $isEditorPresented) {
             PersonalityEditorSheet(
@@ -514,7 +180,12 @@ struct AIPersonalityView: View {
                         .font(.body)
                         .frame(minHeight: 180)
                         .padding(10)
-                        .background(Color(white: 0.96), in: RoundedRectangle(cornerRadius: 12))
+                        .scrollContentBackground(.hidden)
+                        .background(.background, in: RoundedRectangle(cornerRadius: 12))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                        }
 
                     if let importErrorMessage {
                         Text(importErrorMessage)
@@ -544,28 +215,658 @@ struct AIPersonalityView: View {
         .sheet(isPresented: shareSheetPresentedBinding, onDismiss: { sharePayload = nil }) {
             ShareSheet(items: [sharePayload ?? ""])
         }
+        .onAppear(perform: syncInitialDraftsFromStorage)
+        .onChange(of: storedSystemPrompt) { syncDraftsFromStorage() }
+        .onChange(of: storedTemperature) { syncDraftsFromStorage() }
+        .onChange(of: storedTopP) { syncDraftsFromStorage() }
+        .onChange(of: storedMaxTokens) { syncDraftsFromStorage() }
+        .onChange(of: storedResponseCharacterLimit) { syncDraftsFromStorage() }
+    }
+
+    private var headerSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: "brain.head.profile.fill")
+                    .font(.title2)
+                    .foregroundStyle(.white)
+                    .frame(width: 50, height: 50)
+                    .background(
+                        LinearGradient(
+                            colors: [.indigo, .blue, .teal],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        in: RoundedRectangle(cornerRadius: 16)
+                    )
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(String(localized: "Shape how the assistant thinks, writes, and decides when it answers."))
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    HStack(spacing: 8) {
+                        Label(LocalizedStringKey(activePresetName), systemImage: "slider.horizontal.2.square")
+                        Text("•")
+                            .accessibilityHidden(true)
+                        Text(String(format: "%.1f", draftTemperature))
+                            .monospacedDigit()
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 0)
+            }
+        }
+        .padding(18)
+        .background(.background, in: RoundedRectangle(cornerRadius: cardCornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: cardCornerRadius)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        }
+    }
+
+    private var savedPromptsSection: some View {
+        settingsSection(title: "Saved Prompts") {
+            NavigationLink {
+                SavedPromptsView()
+                    .environment(monetizationManager)
+            } label: {
+                HStack(spacing: 14) {
+                    rowIcon(systemImage: "books.vertical.fill", tint: .orange)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(String(localized: "Prompt Library"))
+                            .font(.body)
+                            .foregroundStyle(.primary)
+                        Text(savedPromptCountText)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    if !monetizationManager.canUse(.savedPrompts) {
+                        Image(systemName: "crown.fill")
+                            .foregroundStyle(.orange)
+                            .accessibilityLabel(String(localized: "Pro"))
+                    }
+
+                    Image(systemName: "chevron.right")
+                        .font(.footnote)
+                        .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
+                }
+                .padding(16)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var builtInPresetsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(LocalizedStringKey("Presets"))
+                    .font(.footnote)
+                    .bold()
+                    .textCase(.uppercase)
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+            }
+            .padding(.horizontal, 4)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(PersonalityPreset.presets) { preset in
+                        Button {
+                            withAnimation(.snappy) {
+                                applyPreset(preset)
+                            }
+                        } label: {
+                            Label(LocalizedStringKey(preset.name), systemImage: preset.icon)
+                                .font(.subheadline)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .foregroundStyle(selectedPresetID == preset.id ? .white : .primary)
+                                .background(
+                                    selectedPresetID == preset.id ? Color.accentColor : Color(uiColor: .secondarySystemGroupedBackground),
+                                    in: Capsule()
+                                )
+                                .overlay {
+                                    Capsule()
+                                        .stroke(selectedPresetID == preset.id ? Color.clear : Color.primary.opacity(0.08), lineWidth: 1)
+                                }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 4)
+            }
+            .padding(.horizontal, -20)
+        }
+    }
+
+    private var customPresetsSection: some View {
+        sectionGroup(title: "Your Presets") {
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    Button(action: startNewPreset) {
+                        Label(String(localized: "New Full Preset"), systemImage: "plus")
+                            .font(.subheadline)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+
+                    Button(action: startImport) {
+                        Label(String(localized: "Import"), systemImage: "square.and.arrow.down")
+                            .font(.subheadline)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.regular)
+
+                    Spacer(minLength: 0)
+                }
+                .padding(16)
+
+                Divider()
+
+                if userPresets.isEmpty {
+                    emptyPresetRow
+                } else {
+                    ForEach(Array(userPresets.enumerated()), id: \.element.id) { index, preset in
+                        customPresetRow(preset)
+
+                        if index < userPresets.count - 1 {
+                            Divider()
+                                .padding(.leading, 62)
+                        }
+                    }
+                }
+            }
+            .locked(if: !monetizationManager.canUse(.advancedPersonality), overlay: lockedOverlay)
+        }
+    }
+
+    private var emptyPresetRow: some View {
+        HStack(spacing: 14) {
+            rowIcon(systemImage: "tray", tint: .gray)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(String(localized: "No custom presets yet"))
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                Text(String(localized: "Save prompt and tuning together so you can reuse the full setup."))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(16)
+    }
+
+    private func customPresetRow(_ preset: UserPersonalityPreset) -> some View {
+        Button {
+            withAnimation(.snappy) {
+                applyUserPreset(preset)
+            }
+        } label: {
+            HStack(spacing: 14) {
+                rowIcon(systemImage: preset.icon, tint: .indigo)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(preset.name)
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                    Text(preset.systemPrompt)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer(minLength: 8)
+
+                Image(systemName: "chevron.right")
+                    .font(.footnote)
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .padding(16)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .contextMenu {
+            Button(String(localized: "Edit")) {
+                startEditing(preset)
+            }
+
+            Button(String(localized: "Export")) {
+                export(preset)
+            }
+
+            Button(role: .destructive) {
+                deleteUserPreset(id: preset.id)
+            } label: {
+                Text(String(localized: "Delete"))
+            }
+        }
+    }
+
+    private var systemPromptSection: some View {
+        sectionGroup(
+            title: "System Prompt",
+            trailing: {
+                HStack(spacing: 14) {
+                    Button(String(localized: "Save Prompt")) {
+                        savePromptToLibrary()
+                    }
+                    .foregroundStyle(.orange)
+
+                    if draftSystemPrompt != AIResponseDefaults.defaultSystemPrompt {
+                        Button(String(localized: "Reset")) {
+                            resetDefaultPrompt()
+                        }
+                    }
+                }
+                .font(.subheadline)
+            }
+        ) {
+            VStack(alignment: .leading, spacing: 12) {
+                TextEditor(text: $draftSystemPrompt)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+                    .frame(minHeight: 170)
+                    .padding(12)
+                    .scrollContentBackground(.hidden)
+                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    }
+
+                Text(String(localized: "This prompt is sent before each chat response. Save Prompt stores only this text; full presets include the tuning below."))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(16)
+            .locked(if: !monetizationManager.canUse(.advancedPersonality), overlay: lockedOverlay)
+        }
+    }
+
+    private var responseSizeRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(String(localized: "Response Size"))
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                    Text(String(localized: "Adds a visible-character cap for concise replies."))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 12)
+
+                Picker(String(localized: "Response Size"), selection: $draftResponseCharacterLimit) {
+                    ForEach(responseLengthOptions, id: \.self) { option in
+                        Text(LocalizedStringKey(responseLengthLabel(for: option))).tag(option)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(.secondary)
+            }
+        }
+        .padding(16)
+    }
+
+    private var tokenLimitText: String {
+        String(format: String(localized: "%lld tokens", defaultValue: "%lld tokens"), Int64(draftMaxTokens))
+    }
+
+    private func sliderParameterRow<Control: View>(
+        title: LocalizedStringKey,
+        valueText: String,
+        help: LocalizedStringKey,
+        tint: Color,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .font(.body)
+                    .foregroundStyle(.primary)
+
+                Spacer(minLength: 12)
+
+                Text(valueText)
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(tint)
+            }
+
+            control()
+
+            Text(help)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+    }
+
+    private func settingsSection<Content: View>(
+        title: LocalizedStringKey,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        sectionGroup(title: title) {
+            settingsCard(content: content)
+        }
+    }
+
+    private func sectionGroup<Content: View>(
+        title: LocalizedStringKey,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        sectionGroup(title: title, trailing: { EmptyView() }, content: content)
+    }
+
+    private func sectionGroup<Content: View, Trailing: View>(
+        title: LocalizedStringKey,
+        @ViewBuilder trailing: () -> Trailing,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title)
+                    .font(.footnote)
+                    .bold()
+                    .textCase(.uppercase)
+                    .foregroundStyle(.secondary)
+
+                Spacer()
+
+                trailing()
+            }
+            .padding(.horizontal, 4)
+
+            settingsCard(content: content)
+        }
+    }
+
+    private func settingsCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(spacing: 0) {
+            content()
+        }
+        .background(.background, in: RoundedRectangle(cornerRadius: cardCornerRadius))
+        .overlay {
+            RoundedRectangle(cornerRadius: cardCornerRadius)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        }
+    }
+
+    private func rowIcon(systemImage: String, tint: Color) -> some View {
+        Image(systemName: systemImage)
+            .font(.subheadline)
+            .foregroundStyle(tint)
+            .frame(width: 34, height: 34)
+            .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+            .accessibilityHidden(true)
+    }
+
+    private var applyChangesSection: some View {
+        Group {
+            if hasPendingChanges {
+                HStack(spacing: 12) {
+                    Button(action: discardDraftChanges) {
+                        Label(String(localized: "Discard"), systemImage: "arrow.uturn.backward")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button(action: applyDraftChanges) {
+                        Label(String(localized: "Apply"), systemImage: "checkmark")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(draftPromptIsEmpty)
+                }
+                .font(.body)
+                .padding(14)
+                .background(.background, in: RoundedRectangle(cornerRadius: cardCornerRadius))
+                .overlay {
+                    RoundedRectangle(cornerRadius: cardCornerRadius)
+                        .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                }
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.snappy, value: hasPendingChanges)
+    }
+
+    private func startNewPreset() {
+        guard monetizationManager.canUse(.advancedPersonality) else {
+            showUpgradeSheet = true
+            return
+        }
+
+        editingPresetID = nil
+        draftPreset = UserPersonalityPreset(
+            name: "",
+            icon: "sparkles",
+            systemPrompt: draftSystemPrompt,
+            temperature: draftTemperature,
+            topP: draftTopP,
+            maxTokens: draftMaxTokens,
+            responseCharacterLimit: draftResponseCharacterLimit
+        )
+        isEditorPresented = true
+    }
+
+    private func startImport() {
+        guard monetizationManager.canUse(.advancedPersonality) else {
+            showUpgradeSheet = true
+            return
+        }
+
+        importText = ""
+        importErrorMessage = nil
+        isImportPresented = true
+    }
+
+    private func startEditing(_ preset: UserPersonalityPreset) {
+        guard monetizationManager.canUse(.advancedPersonality) else {
+            showUpgradeSheet = true
+            return
+        }
+
+        editingPresetID = preset.id
+        draftPreset = preset
+        isEditorPresented = true
+    }
+
+    private func export(_ preset: UserPersonalityPreset) {
+        if let json = try? UserPersonalityPreset.encode([sanitizedPreset(preset)]) {
+            sharePayload = json
+        }
+    }
+
+    private func savePromptToLibrary() {
+        guard monetizationManager.canUse(.savedPrompts) else {
+            savedPromptsUpgradeFeature = .savedPrompts
+            return
+        }
+
+        guard !draftPromptIsEmpty else {
+            promptSaveErrorMessage = String(localized: "Add a system prompt before saving it to the library.")
+            return
+        }
+
+        guard promptStore.prompts.count < SavedPromptStore.maxPrompts else {
+            promptSaveErrorMessage = String(localized: "The prompt library is full. Delete a prompt before saving another one.")
+            return
+        }
+
+        savePromptName = ""
+        isSavePromptAlertPresented = true
+    }
+
+    private func resetDefaultPrompt() {
+        withAnimation(.snappy) {
+            draftSystemPrompt = AIResponseDefaults.defaultSystemPrompt
+        }
+    }
+
+    private func resetParameters() {
+        withAnimation(.snappy) {
+            draftTemperature = 0.7
+            draftTopP = 1.0
+            draftMaxTokens = AIResponseDefaults.maxTokens
+            draftResponseCharacterLimit = AIResponseDefaults.responseCharacterLimit
+        }
+    }
+
+    private func sanitizedPreset(_ preset: UserPersonalityPreset) -> UserPersonalityPreset {
+        let trimmedName = preset.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedPrompt = preset.systemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedIcon = preset.icon.trimmingCharacters(in: .whitespacesAndNewlines)
+        let icon = isValidSystemImage(trimmedIcon) ? trimmedIcon : "sparkles"
+        let responseLimit = responseLengthOptions.contains(preset.responseCharacterLimit)
+            ? preset.responseCharacterLimit
+            : AIResponseDefaults.responseCharacterLimit
+
+        return UserPersonalityPreset(
+            id: preset.id,
+            name: trimmedName.isEmpty ? String(localized: "Untitled Preset") : trimmedName,
+            icon: icon,
+            systemPrompt: trimmedPrompt.isEmpty ? AIResponseDefaults.defaultSystemPrompt : trimmedPrompt,
+            temperature: min(max(preset.temperature, 0.0), 1.0),
+            topP: min(max(preset.topP, 0.0), 1.0),
+            maxTokens: min(max(preset.maxTokens, 64), 4096),
+            responseCharacterLimit: responseLimit
+        )
+    }
+
+    private func isValidSystemImage(_ name: String) -> Bool {
+        !name.isEmpty && UIImage(systemName: name) != nil
+    }
+
+    private func syncDraftsFromStorage() {
+        draftSystemPrompt = storedSystemPrompt
+        draftTemperature = storedTemperature
+        draftTopP = storedTopP
+        draftMaxTokens = storedMaxTokens
+        draftResponseCharacterLimit = storedResponseCharacterLimit
+    }
+
+    private func syncInitialDraftsFromStorage() {
+        guard !hasLoadedDrafts else { return }
+        syncDraftsFromStorage()
+        hasLoadedDrafts = true
+    }
+
+    private func applyDraftChanges() {
+        guard !draftPromptIsEmpty else { return }
+
+        storedSystemPrompt = draftSystemPrompt
+        storedTemperature = draftTemperature
+        storedTopP = draftTopP
+        storedMaxTokens = draftMaxTokens
+        storedResponseCharacterLimit = draftResponseCharacterLimit
+    }
+
+    private func discardDraftChanges() {
+        withAnimation(.snappy) {
+            syncDraftsFromStorage()
+        }
+    }
+
+    private var parametersSection: some View {
+        sectionGroup(
+            title: "Parameters",
+            trailing: {
+                Button(String(localized: "Reset"), action: resetParameters)
+                    .font(.subheadline)
+            }
+        ) {
+            VStack(spacing: 0) {
+                sliderParameterRow(
+                    title: "Temperature",
+                    valueText: String(format: "%.1f", draftTemperature),
+                    help: "Lower values are consistent; higher values are more exploratory.",
+                    tint: .orange
+                ) {
+                    Slider(value: $draftTemperature, in: 0.0...1.0)
+                        .tint(.orange)
+                }
+
+                Divider()
+                    .padding(.leading, 16)
+
+                sliderParameterRow(
+                    title: "Top-P",
+                    valueText: String(format: "%.1f", draftTopP),
+                    help: "Narrows sampling to the most likely words before choosing a response.",
+                    tint: .blue
+                ) {
+                    Slider(value: $draftTopP, in: 0.0...1.0)
+                        .tint(.blue)
+                }
+
+                Divider()
+                    .padding(.leading, 16)
+
+                responseSizeRow
+
+                Divider()
+                    .padding(.leading, 16)
+
+                sliderParameterRow(
+                    title: "Max Length",
+                    valueText: tokenLimitText,
+                    help: "Caps the generated response before the visible-character limit is applied.",
+                    tint: .teal
+                ) {
+                    Slider(
+                        value: Binding(
+                            get: { Float(draftMaxTokens) },
+                            set: { draftMaxTokens = Int($0) }
+                        ),
+                        in: 64...4096,
+                        step: 64
+                    )
+                    .tint(.teal)
+                }
+            }
+            .locked(if: !monetizationManager.canUse(.advancedPersonality), overlay: lockedOverlay)
+        }
     }
 
     private func applyPreset(_ preset: PersonalityPreset) {
-        systemPrompt = preset.systemPrompt
-        temperature = preset.temperature
-        topP = preset.topP
-        maxTokens = preset.maxTokens
-        responseCharacterLimit = AIResponseDefaults.responseCharacterLimit
+        draftSystemPrompt = preset.systemPrompt
+        draftTemperature = preset.temperature
+        draftTopP = preset.topP
+        draftMaxTokens = preset.maxTokens
+        draftResponseCharacterLimit = AIResponseDefaults.responseCharacterLimit
     }
 
     private func applyUserPreset(_ preset: UserPersonalityPreset) {
-        systemPrompt = preset.systemPrompt
-        temperature = preset.temperature
-        topP = preset.topP
-        maxTokens = preset.maxTokens
-        responseCharacterLimit = preset.responseCharacterLimit
+        let sanitized = sanitizedPreset(preset)
+        draftSystemPrompt = sanitized.systemPrompt
+        draftTemperature = sanitized.temperature
+        draftTopP = sanitized.topP
+        draftMaxTokens = sanitized.maxTokens
+        draftResponseCharacterLimit = sanitized.responseCharacterLimit
     }
 
     private func upsertUserPreset(_ preset: UserPersonalityPreset, editingID: String?) {
+        let sanitizedPreset = sanitizedPreset(preset)
         var current = userPresets
         if let editingID, let idx = current.firstIndex(where: { $0.id == editingID }) {
-            var updated = preset
+            var updated = sanitizedPreset
             updated = UserPersonalityPreset(
                 id: editingID,
                 name: updated.name,
@@ -578,7 +879,7 @@ struct AIPersonalityView: View {
             )
             current[idx] = updated
         } else {
-            current.insert(preset, at: 0)
+            current.insert(sanitizedPreset, at: 0)
         }
         persistUserPresets(current)
     }
@@ -598,7 +899,7 @@ struct AIPersonalityView: View {
 
     private func importPresets(from text: String) {
         do {
-            let imported = try UserPersonalityPreset.decodeList(from: text)
+            let imported = try UserPersonalityPreset.decodeList(from: text).map(sanitizedPreset)
             guard !imported.isEmpty else {
                 importErrorMessage = String(localized: "No presets found in this text.")
                 return
@@ -635,7 +936,7 @@ struct AIPersonalityView: View {
     }
 
     private var lockedOverlay: some View {
-        RoundedRectangle(cornerRadius: 16)
+        RoundedRectangle(cornerRadius: cardCornerRadius)
             .fill(.ultraThinMaterial)
             .overlay {
                 VStack(spacing: 10) {
@@ -644,15 +945,15 @@ struct AIPersonalityView: View {
                         .foregroundStyle(.orange)
                     Text(String(localized: "Own AI Pro"))
                         .font(.headline)
-                        .foregroundStyle(Color(white: 0.15))
+                        .foregroundStyle(.primary)
                     Text(String(localized: "Unlock custom prompts and response tuning."))
-                        .font(.caption)
+                        .font(.footnote)
                         .multilineTextAlignment(.center)
-                        .foregroundStyle(Color(white: 0.45))
+                        .foregroundStyle(.secondary)
                     Button(String(localized: "Unlock Pro")) {
                         showUpgradeSheet = true
                     }
-                    .font(.subheadline.weight(.semibold))
+                    .font(.subheadline)
                     .buttonStyle(.borderedProminent)
                     .tint(.orange)
                 }
@@ -661,88 +962,26 @@ struct AIPersonalityView: View {
     }
 }
 
+private extension View {
+    @ViewBuilder
+    func locked<LockOverlay: View>(if isLocked: Bool, overlay lockOverlay: LockOverlay) -> some View {
+        ZStack {
+            self
+                .disabled(isLocked)
+                .accessibilityHidden(isLocked)
+
+            if isLocked {
+                lockOverlay
+            }
+        }
+    }
+}
+
+
+
 #Preview {
     NavigationStack {
         AIPersonalityView()
     }
     .environment(MonetizationManager())
-}
-
-struct SavedPrompt: Identifiable, Codable, Equatable {
-    var id: UUID
-    var name: String
-    var prompt: String
-
-    init(id: UUID = UUID(), name: String, prompt: String) {
-        self.id = id
-        self.name = name
-        self.prompt = prompt
-    }
-}
-
-@MainActor
-@Observable
-final class SavedPromptStore {
-    static let shared = SavedPromptStore()
-    static let maxPrompts = 20
-
-    private static let storageKey = "savedPrompts.v1"
-
-    private(set) var prompts: [SavedPrompt] = []
-
-    private init() {
-        load()
-    }
-
-    // MARK: - CRUD
-
-    /// Adds a new prompt. Returns false if the 20-prompt cap is reached.
-    @discardableResult
-    func add(name: String, prompt: String) -> Bool {
-        guard prompts.count < Self.maxPrompts else { return false }
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedPrompt.isEmpty else { return false }
-        let saved = SavedPrompt(
-            name: trimmedName.isEmpty ? String(localized: "Untitled Prompt") : trimmedName,
-            prompt: trimmedPrompt
-        )
-        prompts.insert(saved, at: 0)
-        persist()
-        return true
-    }
-
-    func update(id: UUID, name: String, prompt: String) {
-        guard let index = prompts.firstIndex(where: { $0.id == id }) else { return }
-        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        prompts[index].name = trimmedName.isEmpty ? String(localized: "Untitled Prompt") : trimmedName
-        prompts[index].prompt = trimmedPrompt
-        persist()
-    }
-
-    func delete(id: UUID) {
-        prompts.removeAll { $0.id == id }
-        persist()
-    }
-
-    func move(fromOffsets: IndexSet, toOffset: Int) {
-        prompts.move(fromOffsets: fromOffsets, toOffset: toOffset)
-        persist()
-    }
-
-    // MARK: - Persistence
-
-    private func persist() {
-        guard let data = try? JSONEncoder().encode(prompts) else { return }
-        UserDefaults.standard.set(data, forKey: Self.storageKey)
-    }
-
-    private func load() {
-        guard let data = UserDefaults.standard.data(forKey: Self.storageKey),
-              let decoded = try? JSONDecoder().decode([SavedPrompt].self, from: data) else {
-            return
-        }
-        prompts = decoded
-    }
 }

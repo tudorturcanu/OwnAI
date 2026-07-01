@@ -11,6 +11,8 @@ struct ChatEmptyStateView: View {
     let onDownloadModel: () -> Void
     let onSuggestion: (String) -> Void
 
+    @State private var suggestions: [ChatSuggestion] = ChatSuggestions.pool.shuffled().prefix(7).map { $0 }
+
     var body: some View {
         VStack(spacing: 32) {
             modelStatusView
@@ -51,6 +53,7 @@ struct ChatEmptyStateView: View {
                         Button(action: onDownloadModel) {
                             HStack {
                                 Image(systemName: "arrow.down.app")
+                                    .accessibilityHidden(true)
                                 Text(String(localized: "Download a Model"))
                             }
                             .font(.subheadline.bold())
@@ -70,6 +73,7 @@ struct ChatEmptyStateView: View {
                         HStack(spacing: 4) {
                             Image(systemName: personalityLabel.icon)
                                 .font(.caption2)
+                                .accessibilityHidden(true)
                             Text(LocalizedStringKey(personalityLabel.name))
                                 .font(.caption2.weight(.medium))
                         }
@@ -83,26 +87,10 @@ struct ChatEmptyStateView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    SuggestionCard(icon: "lightbulb.fill", title: String(localized: "Tell me"), subtitle: String(localized: "something fascinating")) {
-                        onSuggestion(String(localized: "Tell me something fascinating"))
-                    }
-                    SuggestionCard(icon: "atom", title: String(localized: "Explain"), subtitle: String(localized: "complex topics simply")) {
-                        onSuggestion(String(localized: "Explain a complex topic like black holes simply"))
-                    }
-                    SuggestionCard(icon: "pencil.line", title: String(localized: "Write"), subtitle: String(localized: "an email or story")) {
-                        onSuggestion(String(localized: "Write a short creative story about a robot"))
-                    }
-                    SuggestionCard(icon: "book.fill", title: String(localized: "Discover"), subtitle: String(localized: "my next book")) {
-                        onSuggestion(String(localized: "Help me discover my next book"))
-                    }
-                    SuggestionCard(icon: "map.fill", title: String(localized: "Plan"), subtitle: String(localized: "my weekend trip")) {
-                        onSuggestion(String(localized: "Help me plan a relaxing weekend trip"))
-                    }
-                    SuggestionCard(icon: "bolt.fill", title: String(localized: "Boost"), subtitle: String(localized: "my productivity")) {
-                        onSuggestion(String(localized: "How can I boost my productivity?"))
-                    }
-                    SuggestionCard(icon: "ladybug.fill", title: String(localized: "Debug"), subtitle: String(localized: "my code snippet")) {
-                        onSuggestion(String(localized: "Help me debug this Swift code snippet:\n"))
+                    ForEach(suggestions) { suggestion in
+                        SuggestionCard(icon: suggestion.icon, title: suggestion.title, subtitle: suggestion.subtitle) {
+                            onSuggestion(suggestion.prompt)
+                        }
                     }
                 }
                 .padding(.horizontal, 20)
@@ -110,6 +98,9 @@ struct ChatEmptyStateView: View {
             .padding(.bottom, 20)
         }
         .frame(maxWidth: .infinity)
+        .onAppear {
+            suggestions = ChatSuggestions.pool.shuffled().prefix(7).map { $0 }
+        }
     }
 
     private var modelStatusView: some View {

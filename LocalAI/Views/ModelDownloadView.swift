@@ -13,6 +13,7 @@ struct ModelDownloadView: View {
     @Environment(ModelManager.self) private var modelManager
     @Environment(LLMEngine.self) private var llmEngine
     @Environment(MonetizationManager.self) private var monetizationManager
+    @State private var isShowingAllModels = false
 
     private var appleModels: [ModelInfo] {
         modelManager.models.filter { modelManager.shouldShowModelInCatalog($0) && $0.engine == .appleFoundation }
@@ -40,64 +41,92 @@ struct ModelDownloadView: View {
         }
     }
 
-    private var useCaseRecommendations: [ModelManager.UseCaseRecommendation] {
-        modelManager.useCaseRecommendations()
+    private var recommendedModel: ModelInfo? {
+        guard let recommendation = modelManager.onboardingRecommendation() else { return nil }
+        return modelManager.models.first { $0.id == recommendation.modelID }
     }
 
-    private var shouldShowHeaderTips: Bool {
-        NotificationManager.shared.launchCount <= 2
+    private var recommendedDetail: String {
+        guard let recommendation = modelManager.onboardingRecommendation() else {
+            return String(localized: "A balanced starting point for this device.")
+        }
+        return recommendation.detail
+    }
+
+    private var secondaryAppleModel: ModelInfo? {
+        appleModels.first { $0.id != recommendedModel?.id }
     }
     
     var body: some View {
         ScrollView {
-            VStack(spacing: 20) {
-                if shouldShowHeaderTips {
-                    headerView
+            VStack(spacing: 18) {
+                simpleHeader
+
+                if let selectedModel = modelManager.selectedModel {
+                    CurrentModelSummaryCard(model: selectedModel)
                 }
 
-                DownloadedModelsSection(models: downloadedModels)
-
-                ForEach(appleModels) { model in
-                    ModelCard(model: model)
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .move(edge: .top)),
-                            removal: .opacity
-                        ))
+                if let recommendedModel {
+                    SimpleModelChoiceCard(
+                        model: recommendedModel,
+                        eyebrow: String(localized: "Best Choice"),
+                        title: recommendedModel.name,
+                        detail: recommendedDetail
+                    )
                 }
 
-                if !useCaseRecommendations.isEmpty {
+                if let secondaryAppleModel {
+                    SimpleModelChoiceCard(
+                        model: secondaryAppleModel,
+                        eyebrow: String(localized: "No Download"),
+                        title: secondaryAppleModel.name,
+                        detail: modelManager.isAppleIntelligenceAvailable
+                            ? String(localized: "Uses Apple Intelligence when you want the fastest setup.")
+                            : modelManager.appleIntelligenceUnavailableHint
+                    )
+                }
+
+                if !downloadedModels.isEmpty {
+                    DownloadedModelsSection(models: downloadedModels)
+                }
+
+                DisclosureGroup(isExpanded: $isShowingAllModels) {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text(String(localized: "Choose by Use"))
-                            .font(.headline)
-                            .foregroundStyle(Color(white: 0.2))
-
-                        LazyVGrid(
-                            columns: [
-                                GridItem(.adaptive(minimum: 156), spacing: 12)
-                            ],
-                            spacing: 12
-                        ) {
-                            ForEach(useCaseRecommendations) { recommendation in
-                                ModelUseCaseCard(recommendation: recommendation)
+                        ForEach(familyGroups) { group in
+                            NavigationLink {
+                                ModelFamilyDetailView(family: group.family, models: group.models)
+                            } label: {
+                                FamilyCard(group: group)
                             }
+                            .buttonStyle(.plain)
                         }
                     }
-                }
+                    .padding(.top, 12)
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "square.stack.3d.up.fill")
+                            .font(.headline)
+                            .foregroundStyle(.blue)
+                            .frame(width: 36, height: 36)
+                            .background(Color.blue.opacity(0.09))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
 
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(String(localized: "Advanced Model Families"))
-                        .font(.headline)
-                        .foregroundStyle(Color(white: 0.2))
-
-                    ForEach(familyGroups) { group in
-                        NavigationLink {
-                            ModelFamilyDetailView(family: group.family, models: group.models)
-                        } label: {
-                            FamilyCard(group: group)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(String(localized: "All Models"))
+                                .font(.headline)
+                                .foregroundStyle(Color(white: 0.16))
+                            Text(String(localized: "Browse families and advanced options."))
+                                .font(.caption)
+                                .foregroundStyle(Color(white: 0.48))
                         }
-                        .buttonStyle(.plain)
+
+                        Spacer(minLength: 8)
                     }
                 }
+                .padding(16)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
             }
             .padding(.horizontal, 20)
             .padding(.top, 16)
@@ -108,50 +137,26 @@ struct ModelDownloadView: View {
         .navigationBarTitleDisplayMode(.large)
     }
     
-    private var headerView: some View {
+    private var simpleHeader: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let recommendation = modelManager.onboardingRecommendation(),
-               let model = modelManager.models.first(where: { $0.id == recommendation.modelID }) {
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: "iphone.gen3")
-                        .foregroundStyle(.green.opacity(0.9))
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: "sparkles")
+                    .font(.headline)
+                    .foregroundStyle(.blue)
+                    .frame(width: 34, height: 34)
+                    .background(Color.blue.opacity(0.09))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(String(format: String(localized: "Recommended Now: %@", defaultValue: "Recommended Now: %@"), model.name))
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color(white: 0.18))
-                        Text(recommendation.summary)
-                            .font(.caption)
-                            .foregroundStyle(Color(white: 0.45))
-                    }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(String(localized: "Start with one model"))
+                        .font(.headline)
+                        .foregroundStyle(Color(white: 0.16))
+
+                    Text(String(localized: "Use the recommended model unless you already know you need something specific."))
+                        .font(.subheadline)
+                        .foregroundStyle(Color(white: 0.45))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(12)
-                .background(Color.green.opacity(0.05))
-                .clipShape(RoundedRectangle(cornerRadius: 12))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.green.opacity(0.16), lineWidth: 1)
-                )
-            }
-
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "info.circle.fill")
-                    .foregroundStyle(.blue.opacity(0.8))
-
-                Text(modelManager.isAppleIntelligenceDeviceSupported ?
-                     String(localized: "Choose a model family first. Apple Intelligence is built-in, while other families open into downloadable variants.") :
-                     String(localized: "Choose a model family first, then pick a variant to download and run on your device."))
-                    .font(.subheadline)
-                    .foregroundStyle(Color(white: 0.4))
-            }
-
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "applewatch.radiowaves.left.and.right")
-                    .foregroundStyle(.orange.opacity(0.85))
-
-                Text(String(localized: "Using Apple Watch too? Smaller models usually reply faster because requests still run on your iPhone."))
-                    .font(.caption)
-                    .foregroundStyle(Color(white: 0.45))
             }
         }
         .padding(16)
@@ -362,8 +367,49 @@ struct DownloadedModelRow: View {
     }
 }
 
-struct ModelUseCaseCard: View {
-    let recommendation: ModelManager.UseCaseRecommendation
+struct CurrentModelSummaryCard: View {
+    let model: ModelInfo
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.headline)
+                .foregroundStyle(.green)
+                .frame(width: 38, height: 38)
+                .background(Color.green.opacity(0.09))
+                .clipShape(RoundedRectangle(cornerRadius: 11))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(String(localized: "Using Now"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.green)
+
+                Text(model.name)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color(white: 0.14))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Text(model.isAppleFoundation ? String(localized: "No download needed") : model.sizeLabel)
+                    .font(.caption)
+                    .foregroundStyle(Color(white: 0.48))
+            }
+
+            Spacer(minLength: 8)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+    }
+}
+
+struct SimpleModelChoiceCard: View {
+    let model: ModelInfo
+    let eyebrow: String
+    let title: String
+    let detail: String
 
     @Environment(ModelManager.self) private var modelManager
     @Environment(MonetizationManager.self) private var monetizationManager
@@ -372,32 +418,42 @@ struct ModelUseCaseCard: View {
     @State private var pendingAction: (() -> Void)?
     @State private var upgradeFeature: PremiumFeature?
 
-    private var model: ModelInfo? {
-        modelManager.models.first { $0.id == recommendation.modelID }
-    }
-
     private var isSelected: Bool {
-        modelManager.selectedModel?.id == recommendation.modelID
+        modelManager.selectedModel?.id == model.id
     }
 
     private var isPremiumModel: Bool {
-        guard let model else { return false }
-        return monetizationManager.isPremiumModel(model)
+        monetizationManager.isPremiumModel(model)
+    }
+
+    private var isAppleUnavailable: Bool {
+        model.isAppleFoundation && !modelManager.isAppleIntelligenceAvailable
+    }
+
+    private var compatibilityMessage: String? {
+        modelManager.compatibilityMessage(for: model)
+    }
+
+    private var isUnavailable: Bool {
+        isAppleUnavailable || (compatibilityMessage != nil && !model.downloadState.isDownloading)
     }
 
     private var actionTitle: String {
-        guard let model else { return String(localized: "Unavailable") }
+        if isUnavailable {
+            return String(localized: "Unavailable")
+        }
         if isPremiumModel && !monetizationManager.hasPro {
             return String(localized: "Unlock Pro")
         }
         if isSelected {
             return String(localized: "Selected")
         }
+
         switch model.downloadState {
         case .builtin, .downloaded:
             return String(localized: "Use")
         case .notDownloaded:
-            return String(format: String(localized: "Download %@", defaultValue: "Download %@"), model.sizeLabel)
+            return String(localized: "Download & Select")
         case .downloading, .validating:
             return String(localized: "Cancel")
         case .error:
@@ -406,13 +462,16 @@ struct ModelUseCaseCard: View {
     }
 
     private var actionIcon: String {
-        guard let model else { return "exclamationmark.circle" }
+        if isUnavailable {
+            return "exclamationmark.circle"
+        }
         if isPremiumModel && !monetizationManager.hasPro {
             return "crown.fill"
         }
         if isSelected {
             return "checkmark.circle.fill"
         }
+
         switch model.downloadState {
         case .builtin, .downloaded:
             return "checkmark.circle"
@@ -426,91 +485,101 @@ struct ModelUseCaseCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: recommendation.symbolName)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: model.isAppleFoundation ? "apple.intelligence" : "sparkles")
                     .font(.headline)
-                    .foregroundStyle(.blue)
-                    .frame(width: 34, height: 34)
-                    .background(Color.blue.opacity(0.09))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .foregroundStyle(model.isAppleFoundation ? .orange : .blue)
+                    .frame(width: 40, height: 40)
+                    .background((model.isAppleFoundation ? Color.orange : Color.blue).opacity(0.09))
+                    .clipShape(RoundedRectangle(cornerRadius: 11))
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(recommendation.title)
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(Color(white: 0.12))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(eyebrow)
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(model.isAppleFoundation ? .orange : .blue)
 
-                    Text(recommendation.summary)
-                        .font(.caption)
-                        .foregroundStyle(Color(white: 0.45))
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(isUnavailable ? Color(white: 0.42) : Color(white: 0.12))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    Text(isAppleUnavailable ? modelManager.appleIntelligenceUnavailableHint : detail)
+                        .font(.subheadline)
+                        .foregroundStyle(Color(white: 0.46))
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+
+                Spacer(minLength: 8)
             }
 
-            Text(recommendation.detail)
-                .font(.caption2)
-                .foregroundStyle(Color(white: 0.48))
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 8) {
+                    InfoTag(icon: model.isAppleFoundation ? "bolt.shield" : "externaldrive", text: LocalizedStringKey(model.sizeLabel), isHighlighted: model.isAppleFoundation)
+                    InfoTag(icon: model.isAppleFoundation ? "hand.raised.fill" : "lock.shield", text: LocalizedStringKey(model.privacyLabel), isHighlighted: !model.isAppleFoundation)
+                    if model.supportsVision {
+                        InfoTag(icon: "photo", text: LocalizedStringKey(String(localized: "Images")))
+                    }
+                }
 
-            if let model {
                 VStack(alignment: .leading, spacing: 8) {
-                    InfoTag(icon: model.isAppleFoundation ? "apple.logo" : "cpu", text: LocalizedStringKey(model.name), isHighlighted: isSelected)
-
-                    if model.isAppleFoundation {
-                        InfoTag(icon: "bolt.shield", text: LocalizedStringKey(String(localized: "No download")))
-                    } else {
-                        InfoTag(icon: "externaldrive", text: LocalizedStringKey(model.sizeLabel))
+                    HStack(spacing: 8) {
+                        InfoTag(icon: model.isAppleFoundation ? "bolt.shield" : "externaldrive", text: LocalizedStringKey(model.sizeLabel), isHighlighted: model.isAppleFoundation)
+                        InfoTag(icon: model.isAppleFoundation ? "hand.raised.fill" : "lock.shield", text: LocalizedStringKey(model.privacyLabel), isHighlighted: !model.isAppleFoundation)
+                    }
+                    if model.supportsVision {
+                        InfoTag(icon: "photo", text: LocalizedStringKey(String(localized: "Images")))
                     }
                 }
             }
 
-            Spacer(minLength: 0)
+            if let compatibilityMessage, !model.isAppleFoundation {
+                Label(compatibilityMessage, systemImage: "ipad.and.arrow.forward")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Button {
                 performPrimaryAction()
             } label: {
-                HStack(spacing: 7) {
+                HStack(spacing: 8) {
                     Image(systemName: actionIcon)
-                        .font(.caption.weight(.bold))
+                        .font(.subheadline.weight(.bold))
                     Text(actionTitle)
-                        .font(.caption.weight(.semibold))
+                        .font(.subheadline.weight(.semibold))
                         .lineLimit(1)
-                        .minimumScaleFactor(0.78)
+                        .minimumScaleFactor(0.85)
                 }
                 .foregroundStyle(isSelected ? .white : .blue)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
+                .padding(.vertical, 13)
                 .background(isSelected ? Color.blue : Color.blue.opacity(0.08))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             .buttonStyle(ActionButtonStyle())
-            .disabled(model == nil)
+            .disabled(isUnavailable || isSelected)
         }
-        .frame(maxWidth: .infinity, minHeight: 218, alignment: .topLeading)
         .padding(16)
         .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(isSelected ? Color.blue.opacity(0.25) : Color.clear, lineWidth: 1.5)
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(isSelected ? Color.blue.opacity(0.24) : Color.clear, lineWidth: 1.5)
         )
         .shadow(color: .black.opacity(0.035), radius: 7, y: 3)
         .sheet(isPresented: $showConsentSheet) {
-            if let model {
-                ModelConsentSheet(model: model) {
-                    UserDefaults.standard.set(true, forKey: consentKey(for: model))
-                    showConsentSheet = false
-                    let action = pendingAction
-                    pendingAction = nil
-                    action?()
-                } onCancel: {
-                    showConsentSheet = false
-                    pendingAction = nil
-                }
+            ModelConsentSheet(model: model) {
+                UserDefaults.standard.set(true, forKey: consentKey)
+                showConsentSheet = false
+                let action = pendingAction
+                pendingAction = nil
+                action?()
+            } onCancel: {
+                showConsentSheet = false
+                pendingAction = nil
             }
         }
         .sheet(item: $upgradeFeature) { feature in
@@ -519,9 +588,11 @@ struct ModelUseCaseCard: View {
         }
     }
 
-    private func performPrimaryAction() {
-        guard let model else { return }
+    private var consentKey: String {
+        "modelConsent.\(model.id)"
+    }
 
+    private func performPrimaryAction() {
         if isPremiumModel && !monetizationManager.hasPro {
             upgradeFeature = .allModels
             return
@@ -529,22 +600,22 @@ struct ModelUseCaseCard: View {
 
         switch model.downloadState {
         case .builtin, .downloaded:
-            requireConsent(for: model) {
+            requireConsentAndPerform {
                 modelManager.selectModel(model.id)
             }
         case .notDownloaded:
-            requireConsent(for: model) {
+            requireConsentAndPerform {
                 modelManager.downloadModel(model.id, selectWhenFinished: true)
             }
         case .downloading, .validating:
             modelManager.cancelDownload(model.id)
         case .error:
-            handleDownloadErrorAction(modelManager.downloadErrorAction(for: model.id), model: model)
+            handleDownloadErrorAction(modelManager.downloadErrorAction(for: model.id))
         }
     }
 
-    private func requireConsent(for model: ModelInfo, action: @escaping () -> Void) {
-        if UserDefaults.standard.bool(forKey: consentKey(for: model)) {
+    private func requireConsentAndPerform(_ action: @escaping () -> Void) {
+        if UserDefaults.standard.bool(forKey: consentKey) {
             action()
             return
         }
@@ -552,11 +623,7 @@ struct ModelUseCaseCard: View {
         showConsentSheet = true
     }
 
-    private func consentKey(for model: ModelInfo) -> String {
-        "modelConsent.\(model.id)"
-    }
-
-    private func handleDownloadErrorAction(_ action: DownloadErrorAction, model: ModelInfo) {
+    private func handleDownloadErrorAction(_ action: DownloadErrorAction) {
         switch action {
         case .retry:
             modelManager.downloadModel(model.id, selectWhenFinished: true)
@@ -685,21 +752,7 @@ struct FamilyCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(
-                            LinearGradient(
-                                colors: [.blue.opacity(0.12), .cyan.opacity(0.10)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 58, height: 58)
-
-                    Image(systemName: group.family.symbolName)
-                        .font(.title3)
-                        .foregroundStyle(.blue)
-                }
+                FamilyLogoMark(family: group.family)
 
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 8) {
@@ -771,6 +824,78 @@ struct FamilyCard: View {
         .background(Color.white)
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+    }
+}
+
+struct FamilyLogoMark: View {
+    let family: ModelFamily
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 16)
+                .fill(backgroundStyle)
+                .frame(width: 58, height: 58)
+
+            logo
+        }
+        .frame(width: 58, height: 58)
+        .accessibilityHidden(true)
+    }
+
+    private var backgroundStyle: LinearGradient {
+        switch family {
+        case .llama:
+            return LinearGradient(colors: [.blue.opacity(0.10), .cyan.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .gemma:
+            return LinearGradient(colors: [.purple.opacity(0.11), .blue.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .qwen:
+            return LinearGradient(colors: [.orange.opacity(0.10), .yellow.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .deepSeek:
+            return LinearGradient(colors: [.blue.opacity(0.12), .indigo.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .granite:
+            return LinearGradient(colors: [.blue.opacity(0.10), .white], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .lfm:
+            return LinearGradient(colors: [.black.opacity(0.06), .blue.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .exaone:
+            return LinearGradient(colors: [.pink.opacity(0.09), .red.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .glm:
+            return LinearGradient(colors: [.teal.opacity(0.10), .green.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .holo:
+            return LinearGradient(colors: [.black.opacity(0.06), .gray.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .phi:
+            return LinearGradient(colors: [.blue.opacity(0.08), .green.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .smol:
+            return LinearGradient(colors: [.yellow.opacity(0.16), .orange.opacity(0.07)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .appleIntelligence:
+            return LinearGradient(colors: [.orange.opacity(0.12), .pink.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        }
+    }
+
+    @ViewBuilder
+    private var logo: some View {
+        if let assetName = family.logoAssetName {
+            Image(assetName)
+                .resizable()
+                .renderingMode(.original)
+                .scaledToFit()
+                .padding(13)
+        } else {
+            fallbackLogo
+        }
+    }
+
+    @ViewBuilder
+    private var fallbackLogo: some View {
+        switch family {
+        case .appleIntelligence:
+            Image(systemName: family.symbolName)
+                .font(.title3)
+                .foregroundStyle(.orange)
+        default:
+            Image(systemName: family.symbolName)
+                .font(.title3)
+                .foregroundStyle(.blue)
+        }
     }
 }
 

@@ -118,6 +118,7 @@ struct DocumentSourceDrawerView: View {
                     Image(systemName: document.iconName)
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(.blue)
+                        .accessibilityHidden(true)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -146,6 +147,7 @@ struct DocumentSourceDrawerView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "sparkle.magnifyingglass")
                         .foregroundStyle(.orange)
+                        .accessibilityHidden(true)
                     Text(String(localized: "OCR was used for at least part of this document."))
                         .font(.caption)
                         .foregroundStyle(Color(white: 0.48))
@@ -157,6 +159,7 @@ struct DocumentSourceDrawerView: View {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
+                        .accessibilityHidden(true)
                     Text(ocrWarningText)
                         .font(.caption)
                         .foregroundStyle(Color(white: 0.45))

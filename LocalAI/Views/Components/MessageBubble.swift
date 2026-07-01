@@ -221,7 +221,6 @@ struct MessageBubble: View {
     let followUpSuggestions: [String]
     let onBranchFromHere: ((ChatMessage) -> Void)?
     let onTogglePin: ((ChatMessage) -> Void)?
-    let onTranslate: ((ChatMessage) -> Void)?
     let onSpeak: ((ChatMessage) -> Void)?
     let onSearchWeb: ((ChatMessage) -> Void)?
     let onFollowUp: ((ChatMessage, String) -> Void)?
@@ -261,7 +260,6 @@ struct MessageBubble: View {
         followUpSuggestions: [String] = [],
         onBranchFromHere: ((ChatMessage) -> Void)? = nil,
         onTogglePin: ((ChatMessage) -> Void)? = nil,
-        onTranslate: ((ChatMessage) -> Void)? = nil,
         onSpeak: ((ChatMessage) -> Void)? = nil,
         onSearchWeb: ((ChatMessage) -> Void)? = nil,
         onFollowUp: ((ChatMessage, String) -> Void)? = nil,
@@ -280,7 +278,6 @@ struct MessageBubble: View {
         self.followUpSuggestions = followUpSuggestions
         self.onBranchFromHere = onBranchFromHere
         self.onTogglePin = onTogglePin
-        self.onTranslate = onTranslate
         self.onSpeak = onSpeak
         self.onSearchWeb = onSearchWeb
         self.onFollowUp = onFollowUp
@@ -517,6 +514,46 @@ struct MessageBubble: View {
     }
 
     private var messageCard: some View {
+        messageCardChrome
+            // Keep the menu host free of content animations. Attaching
+            // `.contextMenu` to the same view as `.animation` makes iOS lay out
+            // every row at once (the stacked/overlapping menu you see on long press).
+            // The menu is attached to an invisible `Color.clear` overlay instead,
+            // so the `preview:` closure must always be supplied explicitly — the
+            // system default preview snapshots whatever view the modifier is
+            // attached to (the invisible overlay, not `messageCardChrome`), which
+            // renders as a blank card sized to the row. For assistant replies we
+            // reuse `messageCardChrome` itself so the lifted preview is pixel-for-
+            // pixel identical to what's on screen (no bubble, transparent
+            // background — no ghosting seam).
+            .overlay {
+                if message.role == .user {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .contextMenu {
+                            messageContextMenuContent
+                        } preview: {
+                            messageContextMenuPreview
+                        }
+                } else {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .contextMenu {
+                            messageContextMenuContent
+                        } preview: {
+                            messageCardChrome
+                        }
+                }
+            }
+            .alert("Message Info", isPresented: $showStats) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                let stats = messageStats(for: message.content)
+                Text("\(stats.words) words · \(stats.characters) characters\n~\(stats.readingTime) min read")
+            }
+    }
+
+    private var messageCardChrome: some View {
         VStack(alignment: .leading, spacing: 8) {
             if message.isPinned {
                 HStack(spacing: 6) {
@@ -568,127 +605,130 @@ struct MessageBubble: View {
                 : .spring(response: 0.4, dampingFraction: 0.9),
             value: displayedContent
         )
-        .contextMenu {
+    }
+
+    /// Bubble preview for user-message long press. Assistant replies skip the
+    /// lift preview entirely to avoid ghosting over MarkdownUI content.
+    private var messageContextMenuPreview: some View {
+        Text(displayedContent)
+            .font(.system(size: 17 * messageTextScale))
+            .foregroundStyle(.white)
+            .multilineTextAlignment(.trailing)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background {
+                LinearGradient(
+                    colors: [Color(red: 0.2, green: 0.5, blue: 0.9), Color(red: 0.15, green: 0.45, blue: 0.85)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            }
+            .clipShape(AnyShape(MessageShape(isUser: true)))
+    }
+
+    @ViewBuilder
+    private var messageContextMenuContent: some View {
+        Button {
+            copyAndShowToast(message.content)
+        } label: {
+            Label("Copy", systemImage: "doc.on.doc")
+        }
+
+        Button {
+            copyAndShowToast(markdownRepresentation)
+        } label: {
+            Label("Copy as Markdown", systemImage: "doc.plaintext")
+        }
+
+        if message.role == .assistant, let codeOnly = extractCodeBlocks(from: message.content), !codeOnly.isEmpty {
             Button {
-                copyAndShowToast(message.content)
+                copyAndShowToast(codeOnly)
             } label: {
-                Label("Copy", systemImage: "doc.on.doc")
+                Label("Copy Code Only", systemImage: "curlybraces")
             }
+        }
 
+        Divider()
+
+        if let onTogglePin {
             Button {
-                copyAndShowToast(markdownRepresentation)
+                onTogglePin(message)
             } label: {
-                Label("Copy as Markdown", systemImage: "doc.plaintext")
+                Label(message.isPinned ? "Unpin" : "Pin", systemImage: message.isPinned ? "pin.slash" : "pin")
             }
+        }
 
-            // Copy Code Only — extracts fenced code blocks
-            if message.role == .assistant, let codeOnly = extractCodeBlocks(from: message.content), !codeOnly.isEmpty {
-                Button {
-                    copyAndShowToast(codeOnly)
-                } label: {
-                    Label("Copy Code Only", systemImage: "curlybraces")
-                }
-            }
+        Button {
+            showStats = true
+        } label: {
+            Label("Message Info", systemImage: "info.circle")
+        }
 
-            Divider()
-
-            if let onTogglePin {
-                Button {
-                    onTogglePin(message)
-                } label: {
-                    Label(message.isPinned ? "Unpin" : "Pin", systemImage: message.isPinned ? "pin.slash" : "pin")
-                }
-            }
-
-            // Message Info / Stats
+        if let onSpeak {
+            let isSpeakingThisMessage = speechManager.isSpeaking && speechManager.currentlySpeakingMessageID == message.id
             Button {
-                showStats = true
+                onSpeak(message)
             } label: {
-                Label("Message Info", systemImage: "info.circle")
+                Label(
+                    isSpeakingThisMessage ? "Stop Speaking" : "Read Aloud",
+                    systemImage: isSpeakingThisMessage ? "speaker.slash" : "speaker.wave.2"
+                )
             }
+        }
 
-            if let onSpeak {
-                let isSpeakingThisMessage = speechManager.isSpeaking && speechManager.currentlySpeakingMessageID == message.id
+        if let onSearchWeb {
+            Button {
+                onSearchWeb(message)
+            } label: {
+                Label("Search on Web", systemImage: "magnifyingglass")
+            }
+        }
+
+        if message.role == .user, let onEdit {
+            Button {
+                onEdit(message)
+            } label: {
+                Label("Edit & Re-run", systemImage: "pencil")
+            }
+        }
+
+        if message.role == .assistant {
+            if let onRegenerateMore {
                 Button {
-                    onSpeak(message)
+                    onRegenerateMore(message)
                 } label: {
-                    Label(
-                        isSpeakingThisMessage ? "Stop Speaking" : "Read Aloud",
-                        systemImage: isSpeakingThisMessage ? "speaker.slash" : "speaker.wave.2"
-                    )
+                    Label("Regenerate (More)", systemImage: "plus.magnifyingglass")
                 }
             }
-
-            if let onSearchWeb {
+            if let onRegenerateLess {
                 Button {
-                    onSearchWeb(message)
+                    onRegenerateLess(message)
                 } label: {
-                    Label("Search on Web", systemImage: "magnifyingglass")
-                }
-            }
-
-            if message.role == .user, let onEdit {
-                Button {
-                    onEdit(message)
-                } label: {
-                    Label("Edit & Re-run", systemImage: "pencil")
-                }
-            }
-
-            if message.role == .assistant {
-                if let onRegenerateMore {
-                    Button {
-                        onRegenerateMore(message)
-                    } label: {
-                        Label("Regenerate (More)", systemImage: "plus.magnifyingglass")
-                    }
-                }
-                if let onRegenerateLess {
-                    Button {
-                        onRegenerateLess(message)
-                    } label: {
-                        Label("Regenerate (Less)", systemImage: "minus.magnifyingglass")
-                    }
-                }
-
-                // Translate Reply
-                if let onTranslate {
-                    Divider()
-                    Button {
-                        onTranslate(message)
-                    } label: {
-                        Label("Translate Reply", systemImage: "globe")
-                    }
-                }
-            }
-
-            if let onBranchFromHere {
-                Button {
-                    onBranchFromHere(message)
-                } label: {
-                    Label("Branch from Here", systemImage: "arrow.branch")
-                }
-            }
-
-            // Share
-            ShareLink(item: message.content) {
-                Label("Share", systemImage: "square.and.arrow.up")
-            }
-
-            if message.role == .assistant {
-                Divider()
-                Button(role: .destructive) {
-                    reportContent(message.content)
-                } label: {
-                    Label("Report Inappropriate Content", systemImage: "flag")
+                    Label("Regenerate (Less)", systemImage: "minus.magnifyingglass")
                 }
             }
         }
-        .alert("Message Info", isPresented: $showStats) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            let stats = messageStats(for: message.content)
-            Text("\(stats.words) words · \(stats.characters) characters\n~\(stats.readingTime) min read")
+
+        if let onBranchFromHere {
+            Button {
+                onBranchFromHere(message)
+            } label: {
+                Label("Branch from Here", systemImage: "arrow.branch")
+            }
+        }
+
+        ShareLink(item: message.content) {
+            Label("Share", systemImage: "square.and.arrow.up")
+        }
+
+        if message.role == .assistant {
+            Divider()
+            Button(role: .destructive) {
+                reportContent(message.content)
+            } label: {
+                Label("Report Inappropriate Content", systemImage: "flag")
+            }
         }
     }
 

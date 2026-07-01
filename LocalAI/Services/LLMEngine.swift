@@ -114,6 +114,7 @@ final class LLMEngine {
     private var loadTaskID: UUID?
     private var prewarmTaskID: UUID?
     private var currentModel: ModelInfo?
+    private var lastLoadedAppleFoundationInstructions: String?
     private var isSceneActive = true
     var streamingTokensPerSecond: Double = 0
     private var streamingStartTime: Date?
@@ -178,27 +179,39 @@ final class LLMEngine {
     func loadModel(_ model: ModelInfo) async throws {
         try ensureGPUWorkAllowed(for: model)
 
-        // If same model is already ready, skip
+        // If same model is already ready, skip -- unless it's Apple Foundation and the
+        // system prompt changed since the session was built, since that session's
+        // instructions are otherwise stuck until the model is reloaded.
         if state == .ready && currentModel?.id == model.id {
-            return
+            if model.engine != .appleFoundation {
+                return
+            }
+            let instructions = UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
+            if instructions == lastLoadedAppleFoundationInstructions {
+                return
+            }
         }
         
+        let previousTask = loadTask
+        
         // If a load is in progress, wait for it if it's the same model,
-        // otherwise cancel and replace with the new model.
-        if let inFlight = loadTask {
+        // otherwise cancel and wait for it to finish before starting the new model.
+        if let inFlight = previousTask {
             if loadingModelID == model.id {
                 try await inFlight.value
                 return
             }
             inFlight.cancel()
-            loadTask = nil
-            loadingModelID = nil
         }
         
         loadingModelID = model.id
         let taskID = UUID()
         loadTaskID = taskID
         let task = Task { [weak self] in
+            // Wait for any previous load to finish/cancel before starting to prevent overlapping memory allocations
+            let _ = try? await previousTask?.value
+            try Task.checkCancellation()
+            
             guard let self = self else { return }
             try await self.performLoad(model)
         }
@@ -372,7 +385,7 @@ final class LLMEngine {
         let currentMaxTokens = overrides?.maxTokens ?? self.maxTokens
         let effectiveTopP = lowPowerMode ? min(currentTopP, 0.9) : currentTopP
         let effectiveTemperature = lowPowerMode ? min(currentTemperature, 0.6) : currentTemperature
-        let effectiveMaxTokens = lowPowerMode ? min(currentMaxTokens, 768) : currentMaxTokens
+        let effectiveMaxTokens = overrides?.maxTokens ?? (lowPowerMode ? min(currentMaxTokens, 768) : currentMaxTokens)
         #if !targetEnvironment(simulator)
         let mlxGenerateParameters = makeMlxGenerateParameters(
             topP: effectiveTopP,
@@ -435,6 +448,7 @@ final class LLMEngine {
                     }
                     
                     // Stream MLX output so users see first tokens sooner and keep MLX errors throwable.
+                    var rawContent = ""
                     var lastContent = ""
                     let stream: AsyncThrowingStream<String, Error>
                     
@@ -453,11 +467,17 @@ final class LLMEngine {
                         if firstTokenAt == nil, !chunk.isEmpty {
                             firstTokenAt = Date()
                         }
-                        lastContent = Self.trimRepeatedLoopIfNeeded(in: lastContent + chunk)
+                        // Accumulate the raw model output and sanitize only a copy
+                        // for display. Sanitizing into the buffer would strip any
+                        // control marker the model emits as literal text, so the
+                        // stop check below could never see it — freezing the visible
+                        // answer mid-sentence while generation keeps running.
+                        rawContent += chunk
+                        lastContent = Self.trimRepeatedLoopIfNeeded(in: rawContent)
                         // Fire-and-forget so draining the model stream never blocks
                         // on a per-token main-actor hop (which batched updates).
                         self.postStreamingUpdate(lastContent)
-                        if Self.shouldStopStreaming(content: lastContent) {
+                        if Self.shouldStopStreaming(content: rawContent) {
                             break
                         }
                         // Let the consumer interleave with the synchronous MLX
@@ -669,10 +689,15 @@ final class LLMEngine {
             }
 
             let stream = session.streamResponse(to: effectiveMlxPrompt)
+            var rawResponse = ""
             for try await chunk in stream {
                 if Task.isCancelled { break }
-                response = Self.trimRepeatedLoopIfNeeded(in: response + chunk)
-                if Self.shouldStopStreaming(content: response) {
+                // Keep the raw output for the stop check; sanitize only the copy we
+                // return. Sanitizing into the buffer strips control markers before
+                // shouldStopStreaming can see them, defeating the early stop.
+                rawResponse += chunk
+                response = Self.trimRepeatedLoopIfNeeded(in: rawResponse)
+                if Self.shouldStopStreaming(content: rawResponse) {
                     break
                 }
             }
@@ -821,6 +846,21 @@ final class LLMEngine {
             state = hasLoadedSession(for: currentModel) ? .ready : .idle
             IdleTimerCoordinator.shared.setReason("llmGenerating", enabled: false)
         }
+    }
+
+    /// Responds to `UIApplication.didReceiveMemoryWarningNotification`. The
+    /// loaded model container is by far the largest allocation in the app
+    /// (multi-GB weights), so freeing it is the highest-leverage thing we can
+    /// do under memory pressure. We avoid unloading mid-generation so we
+    /// don't cut off a response the user is actively waiting on; the GPU
+    /// scratch-buffer cache is always safe to drop regardless of state.
+    func handleMemoryWarning() {
+        MemoryProfiler.log("LLMEngine", message: "Memory warning received (state: \(state))")
+        #if !targetEnvironment(simulator)
+        MLX.GPU.clearCache()
+        #endif
+        guard state != .generating, state != .loading else { return }
+        unloadModel()
     }
 
     func hasConversationContext(for model: ModelInfo?) -> Bool {
@@ -1101,6 +1141,7 @@ private extension LLMEngine {
             if availability == .available {
                 let instructions = UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
                 try appleFoundationBridge.loadSession(instructions: instructions)
+                lastLoadedAppleFoundationInstructions = instructions
                 #if !targetEnvironment(simulator)
                 mlxSession = nil
                 mlxModelContainer = nil

@@ -108,7 +108,6 @@ final class MonetizationManager {
 
     static let freeModelIDs: Set<String> = [
         ModelInfo.appleFoundation.id,
-        ModelInfo.gemma3_270m_qat_4bit.id,
         ModelInfo.gemma2_2b_4bit.id
     ]
 

@@ -225,6 +225,20 @@ struct SettingsView: View {
             sectionDivider
 
             NavigationLink {
+                SiriSettingsView()
+            } label: {
+                settingsRow(
+                    icon: "mic.fill",
+                    tint: .purple,
+                    title: "Shortcuts",
+                    subtitle: "Talk to Own AI models directly using Shortcuts"
+                )
+            }
+            .buttonStyle(.plain)
+
+            sectionDivider
+
+            NavigationLink {
                 AdvancedSettingsView()
             } label: {
                 settingsRow(
@@ -380,6 +394,20 @@ struct SettingsView: View {
                     tint: .orange,
                     title: "Support",
                     subtitle: "Billing, downloads, models, or account help"
+                )
+            }
+            .buttonStyle(.plain)
+
+            sectionDivider
+
+            NavigationLink {
+                DiagnosticsView()
+            } label: {
+                settingsRow(
+                    icon: "waveform.path.ecg",
+                    tint: .pink,
+                    title: "Diagnostics",
+                    subtitle: "Crash and hang reports captured on this device"
                 )
             }
             .buttonStyle(.plain)

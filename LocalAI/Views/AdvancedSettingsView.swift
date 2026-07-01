@@ -22,9 +22,6 @@ struct AdvancedSettingsView: View {
     @AppStorage("autoRead") private var autoRead = false
     @AppStorage("speechOutputBackend") private var speechOutputBackendRaw = SpeechOutputBackend.piperAmy.rawValue
     @AppStorage(RAGEngine.neuralEmbeddingsDefaultsKey) private var neuralEmbeddingsEnabled = false
-    @State private var isEmbeddingBusy = false
-    @State private var embeddingStatusMessage: String?
-    @State private var embeddingModelPresent = false
     @State private var whisperModelPresent = false
 
     private var pdfOCRMode: PDFOCRMode {
@@ -57,7 +54,6 @@ struct AdvancedSettingsView: View {
         ScrollView {
             VStack(spacing: 28) {
                 pdfOCRSection
-                documentSearchSection
                 behaviorSection
                 textSizeSection
             }
@@ -75,7 +71,6 @@ struct AdvancedSettingsView: View {
                     await DocumentManager.shared.setNeuralEmbeddingsEnabled(false)
                 }
             }
-            embeddingModelPresent = EmbeddingService.shared.isModelDownloaded
             whisperModelPresent = speechManager.isWhisperModelDownloaded
         }
     }
@@ -103,76 +98,6 @@ struct AdvancedSettingsView: View {
         speechManager.speechInputBackend = .system
         speechManager.deleteWhisperModel()
         whisperModelPresent = speechManager.isWhisperModelDownloaded
-    }
-
-    // MARK: - Document Search
-
-    private var documentSearchSection: some View {
-        advancedSection("Document Search") {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 14) {
-                    rowIcon(systemImage: "magnifyingglass", tint: .blue)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Standard Document Search")
-                            .font(.body)
-                            .fontWeight(.medium)
-                            .foregroundStyle(.primary)
-
-                        Text("Searches attached documents with the built-in lightweight index.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-
-                if let embeddingStatusMessage {
-                    Text(embeddingStatusMessage)
-                        .font(.footnote)
-                        .foregroundStyle(isEmbeddingBusy ? Color.secondary : Color.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-
-            if embeddingModelPresent && !isEmbeddingBusy {
-                sectionDivider
-
-                Button(role: .destructive) {
-                    deleteEmbeddingModel()
-                } label: {
-                    HStack(spacing: 14) {
-                        rowIcon(systemImage: "trash", tint: .red)
-
-                        Text("Delete Search Model")
-                            .font(.body)
-                            .foregroundStyle(.red)
-
-                        Spacer(minLength: 8)
-
-                        Text("~470 MB")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private func deleteEmbeddingModel() {
-        isEmbeddingBusy = true
-        Task {
-            await EmbeddingService.shared.deleteModel()
-            await MainActor.run {
-                embeddingModelPresent = EmbeddingService.shared.isModelDownloaded
-                isEmbeddingBusy = false
-                embeddingStatusMessage = nil
-            }
-        }
     }
 
     // MARK: - Speech Input (Dictation)

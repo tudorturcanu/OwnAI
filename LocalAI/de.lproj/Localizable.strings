@@ -330,7 +330,7 @@
 "TinyLlama" = "TinyLlama";
 "Llama" = "Llama";
 "Phi" = "Phi";
-"SmolLM" = "SmolLM";
+"Smol" = "Smol";
 "Google's compact local models" = "Googles kompakte lokale Modelle";
 "Alibaba's multilingual family" = "Alibabas mehrsprachige Familie";
 "Z.ai's large agentic models" = "Z.ais große Agentenmodelle";
@@ -338,7 +338,7 @@
 "Ultra-small chat models" = "Ultrakleine Chat-Modelle";
 "Meta's local instruction models" = "Metas lokale Instruktionsmodelle";
 "Microsoft's efficient reasoning models" = "Microsofts effiziente Reasoning-Modelle";
-"HuggingFace's ultra-compact models" = "HuggingFaces ultrakompakte Modelle";
+"Hugging Face's compact models" = "HuggingFaces kompakte Modelle";
 "Good" = "Gut";
 "Heavy" = "Anspruchsvoll";
 "Chat" = "Chat";

@@ -77,6 +77,7 @@ struct UpgradeView: View {
                                 endPoint: .bottomTrailing
                             )
                         )
+                        .accessibilityHidden(true)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -282,6 +283,7 @@ struct UpgradeView: View {
                 .foregroundStyle(.orange)
                 .frame(width: 24, height: 24)
                 .padding(.top, 2)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(LocalizedStringKey(title))
