@@ -282,6 +282,41 @@ final class AppleFoundationModelBridge {
         )
     }
 
+    /// One-shot answer on an isolated session, for App Intents that return
+    /// the response directly to Shortcuts without opening the app.
+    func respondOnce(to prompt: String, systemPrompt: String) async throws -> String {
+        let availability = availability
+        guard availability == .available else {
+            throw LLMError.modelNotAvailable(availability.engineErrorMessage)
+        }
+        guard #available(iOS 26.0, *) else {
+            throw LLMError.modelNotAvailable(AppleFoundationModelAvailability.unsupportedOS.engineErrorMessage)
+        }
+
+        await requestGate.enter()
+        defer { requestGate.leave() }
+        try Task.checkCancellation()
+
+        let session = FoundationModels.LanguageModelSession(
+            model: FoundationModels.SystemLanguageModel.default,
+            instructions: systemPrompt
+        )
+        let responseBudget = Self.adaptiveResponseTokenBudget(
+            requested: 1_024,
+            promptTokens: PromptBudgeter.estimatedTokenCount(prompt),
+            historyTokens: PromptBudgeter.estimatedTokenCount(systemPrompt)
+        )
+        let response = try await session.respond(
+            to: prompt,
+            options: FoundationModels.GenerationOptions(
+                sampling: .greedy,
+                temperature: 0.4,
+                maximumResponseTokens: responseBudget
+            )
+        )
+        return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     /// Extracts durable user facts from a message for cross-chat memory.
     /// Returns an empty array when the message contains nothing worth keeping.
     func extractUserFacts(from userMessage: String) async throws -> [String] {

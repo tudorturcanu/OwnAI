@@ -31,6 +31,15 @@ struct OwnAIShortcuts: AppShortcutsProvider {
             shortTitle: "Ask Own AI",
             systemImageName: "brain.head.profile.fill"
         )
+        AppShortcut(
+            intent: GetOwnAIAnswerIntent(),
+            phrases: [
+                "Get an answer from \(.applicationName)",
+                "Answer with \(.applicationName)",
+            ],
+            shortTitle: "Get Answer",
+            systemImageName: "text.bubble.fill"
+        )
     }
 
     /// The accent color shown in the Shortcuts app for Own AI shortcuts.
