@@ -1555,7 +1555,7 @@ final class ModelManager: ObservableObject {
         case .recommended:
             return model.isAppleFoundation ? "Best" : "Recommended"
         case .supported:
-            return "Should run well on this device"
+            return "Runs on this device, but may be slower"
         case .unsupported:
             return "Too heavy for this device"
         }

@@ -417,6 +417,7 @@ struct SimpleModelChoiceCard: View {
     @State private var showConsentSheet = false
     @State private var pendingAction: (() -> Void)?
     @State private var upgradeFeature: PremiumFeature?
+    @State private var showHeavyDownloadConfirm = false
 
     private var isSelected: Bool {
         modelManager.selectedModel?.id == model.id
@@ -586,6 +587,14 @@ struct SimpleModelChoiceCard: View {
             UpgradeView(feature: feature)
                 .environment(monetizationManager)
         }
+        .alert(String(localized: "Heavy model for this device"), isPresented: $showHeavyDownloadConfirm) {
+            Button(String(localized: "Download Anyway")) {
+                startDownload()
+            }
+            Button(String(localized: "Cancel"), role: .cancel) {}
+        } message: {
+            Text(String(localized: "This model may run very slowly or run out of memory here. A smaller model will usually give a better experience."))
+        }
     }
 
     private var consentKey: String {
@@ -604,13 +613,21 @@ struct SimpleModelChoiceCard: View {
                 modelManager.selectModel(model.id)
             }
         case .notDownloaded:
-            requireConsentAndPerform {
-                modelManager.downloadModel(model.id, selectWhenFinished: true)
+            if model.currentDeviceFit == .unsupported {
+                showHeavyDownloadConfirm = true
+            } else {
+                startDownload()
             }
         case .downloading, .validating:
             modelManager.cancelDownload(model.id)
         case .error:
             handleDownloadErrorAction(modelManager.downloadErrorAction(for: model.id))
+        }
+    }
+
+    private func startDownload() {
+        requireConsentAndPerform {
+            modelManager.downloadModel(model.id, selectWhenFinished: true)
         }
     }
 
@@ -914,6 +931,7 @@ struct ModelCard: View {
     @State private var showConsentSheet = false
     @State private var pendingAction: (() -> Void)?
     @State private var upgradeFeature: PremiumFeature?
+    @State private var showHeavyDownloadConfirm = false
     
     private var isSelected: Bool {
         modelManager.selectedModel?.id == model.id
@@ -1169,7 +1187,7 @@ struct ModelCard: View {
                         isHighlighted: !model.isAppleFoundation
                     )
 
-                    if model.currentDeviceFit != .supported {
+                    if !model.isAppleFoundation {
                         InfoTag(
                             icon: model.currentDeviceFit.iconName,
                             text: LocalizedStringKey(model.currentDeviceFit.title),
@@ -1272,10 +1290,20 @@ struct ModelCard: View {
                     }
                 } else {
                     DownloadButton(sizeLabel: model.sizeLabel, action: {
-                        requireConsentAndPerform {
-                            modelManager.downloadModel(model.id, selectWhenFinished: true)
+                        if model.currentDeviceFit == .unsupported {
+                            showHeavyDownloadConfirm = true
+                        } else {
+                            startDownload()
                         }
                     })
+                    .alert(String(localized: "Heavy model for this device"), isPresented: $showHeavyDownloadConfirm) {
+                        Button(String(localized: "Download Anyway")) {
+                            startDownload()
+                        }
+                        Button(String(localized: "Cancel"), role: .cancel) {}
+                    } message: {
+                        Text(String(localized: "This model may run very slowly or run out of memory here. A smaller model will usually give a better experience."))
+                    }
                 }
                 
             case .downloading:
@@ -1325,6 +1353,12 @@ struct ModelCard: View {
 
     private var hasConsented: Bool {
         UserDefaults.standard.bool(forKey: consentKey)
+    }
+
+    private func startDownload() {
+        requireConsentAndPerform {
+            modelManager.downloadModel(model.id, selectWhenFinished: true)
+        }
     }
 
     private func requireConsentAndPerform(_ action: @escaping () -> Void) {

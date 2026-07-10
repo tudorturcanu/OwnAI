@@ -152,7 +152,7 @@ enum ModelDeviceFit: Equatable {
         case .recommended:
             return String(localized: "Recommended")
         case .supported:
-            return String(localized: "Good")
+            return String(localized: "May be slower")
         case .unsupported:
             return String(localized: "Heavy")
         }
@@ -163,7 +163,7 @@ enum ModelDeviceFit: Equatable {
         case .recommended:
             return "sparkles"
         case .supported:
-            return "checkmark.circle"
+            return "tortoise"
         case .unsupported:
             return "exclamationmark.triangle"
         }

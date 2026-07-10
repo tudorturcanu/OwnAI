@@ -74,8 +74,8 @@ struct OnboardingView: View {
         case .supported:
             detail = String(
                 format: String(
-                    localized: "%@ should work well on this device.",
-                    defaultValue: "%@ should work well on this device."
+                    localized: "%@ works on this device, but may run slower.",
+                    defaultValue: "%@ works on this device, but may run slower."
                 ),
                 customModel.name
             )
@@ -711,7 +711,7 @@ struct OnboardingView: View {
                     icon: model.engine == .appleFoundation ? "bolt.fill" : "lock.shield.fill",
                     title: model.engine == .appleFoundation ? String(localized: "Fastest start") : model.privacyLabel
                 )
-                if model.currentDeviceFit != .supported {
+                if model.engine != .appleFoundation {
                     recommendationChip(
                         icon: model.currentDeviceFit.iconName,
                         title: model.currentDeviceFit.title
