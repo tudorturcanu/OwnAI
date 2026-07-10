@@ -91,7 +91,7 @@ struct UpgradeView: View {
                 }
             }
 
-            Text(String(localized: "Unlock the most capable private workflow in Own AI with more models, richer document chat, deeper control, and hands-free use."))
+            Text(String(localized: "Everything runs on your device — no account, no cloud, works offline. Pro unlocks the full local toolkit: every model, richer document chat, and hands-free voice."))
                 .font(.subheadline)
                 .foregroundStyle(Color(white: 0.48))
         }
