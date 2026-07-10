@@ -477,6 +477,8 @@ final class ModelManager: ObservableObject {
             ensureSelection()
             return
         }
+        // A deliberate pick overrides automatic selection until re-enabled.
+        autoSelectBestModel = false
         selectedModelID = modelID
     }
 
@@ -1502,10 +1504,31 @@ final class ModelManager: ObservableObject {
         if let apple = models.first(where: { $0.engine == .appleFoundation && isModelUsable($0) }) {
             return apple
         }
-        let downloadedMLX = models
+        // Prefer models that actually fit this device before rewarding size:
+        // the largest downloaded model is the slowest choice on older hardware.
+        func fitRank(_ model: ModelInfo) -> Int {
+            switch model.currentDeviceFit {
+            case .recommended: return 0
+            case .supported: return 1
+            case .unsupported: return 2
+            }
+        }
+        return models
             .filter { $0.engine == .mlx && isModelUsable($0) }
-            .sorted { $0.sizeGB > $1.sizeGB }
-        return downloadedMLX.first
+            .sorted {
+                if fitRank($0) != fitRank($1) { return fitRank($0) < fitRank($1) }
+                return $0.sizeGB > $1.sizeGB
+            }
+            .first
+    }
+
+    /// Turns automatic selection on and immediately applies the best pick.
+    /// Distinct from `selectModel`, which records a deliberate manual choice.
+    func enableAutomaticSelection() {
+        autoSelectBestModel = true
+        if let best = bestAvailableModel() {
+            selectedModelID = best.id
+        }
     }
 
     func bestDownloadedFreeModel() -> ModelInfo? {

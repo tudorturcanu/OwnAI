@@ -14,6 +14,7 @@ struct ModelDownloadView: View {
     @Environment(LLMEngine.self) private var llmEngine
     @Environment(MonetizationManager.self) private var monetizationManager
     @State private var isShowingAllModels = false
+    @AppStorage("autoSelectBestModel") private var autoSelectBestModel = true
 
     private var appleModels: [ModelInfo] {
         modelManager.models.filter { modelManager.shouldShowModelInCatalog($0) && $0.engine == .appleFoundation }
@@ -56,11 +57,51 @@ struct ModelDownloadView: View {
     private var secondaryAppleModel: ModelInfo? {
         appleModels.first { $0.id != recommendedModel?.id }
     }
+
+    // Lets users opt out of choosing at all: Own AI keeps the selection on
+    // the best usable model for this device (fit-aware; re-applied whenever
+    // the current selection becomes unusable).
+    private var autoPickCard: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "wand.and.stars")
+                .font(.headline)
+                .foregroundStyle(.purple)
+                .frame(width: 36, height: 36)
+                .background(Color.purple.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(String(localized: "Choose for me"))
+                    .font(.headline)
+                    .foregroundStyle(Color.adaptive(white: 0.16))
+                Text(String(localized: "Own AI picks the best model for this device. Selecting a model manually turns this off."))
+                    .font(.caption)
+                    .foregroundStyle(Color.adaptive(white: 0.48))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            Toggle(String(localized: "Choose for me"), isOn: $autoSelectBestModel)
+                .labelsHidden()
+        }
+        .padding(16)
+        .background(Color.adaptiveCard)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+        .onChange(of: autoSelectBestModel) {
+            if autoSelectBestModel {
+                modelManager.enableAutomaticSelection()
+            }
+        }
+    }
     
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
                 simpleHeader
+
+                autoPickCard
 
                 if let selectedModel = modelManager.selectedModel {
                     CurrentModelSummaryCard(model: selectedModel)
