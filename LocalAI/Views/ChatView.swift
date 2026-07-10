@@ -1639,9 +1639,13 @@ struct ChatView: View {
             return
         }
 
-        guard monetizationManager.shouldShowThreeMessagesLeftWarning else { return }
-        monetizationManager.markThreeMessagesLeftWarningShown()
-        showUsageToast(String(localized: "3 free messages left."))
+        // Count down each of the last three so the limit never surprises.
+        let remaining = monetizationManager.freeMessagesRemainingToday
+        guard remaining <= 3 else { return }
+        showUsageToast(String(format: String(
+            localized: "%lld free messages left.",
+            defaultValue: "%lld free messages left."
+        ), Int64(remaining)))
     }
 
     private func showUsageToast(_ message: String) {
@@ -1787,7 +1791,7 @@ struct ChatView: View {
             }
 
             if shouldChargeUsage {
-                monetizationManager.registerFreeMessageIfNeeded()
+                monetizationManager.registerFreeMessageIfNeeded(for: prompt)
                 showUsageToastIfNeededAfterSend()
             }
 
