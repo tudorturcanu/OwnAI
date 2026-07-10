@@ -233,6 +233,7 @@ struct MessageBubble: View {
     @AppStorage("codeTheme") private var codeThemeRaw = CodeTheme.defaultTheme.rawValue
     @AppStorage("messageTextScale") private var messageTextScale: Double = 1.0
     @Environment(SpeechManager.self) private var speechManager
+    @Environment(ModelManager.self) private var modelManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared = false
     @State private var isThinkingExpanded = false
@@ -724,6 +725,11 @@ struct MessageBubble: View {
 
         if message.role == .assistant {
             Divider()
+            Button {
+                reportProblem(message.content)
+            } label: {
+                Label("Report a Problem", systemImage: "exclamationmark.bubble")
+            }
             Button(role: .destructive) {
                 reportContent(message.content)
             } label: {
@@ -989,6 +995,37 @@ struct MessageBubble: View {
     private func debugLogThinking(_ event: String, thinkingText: String) {
     }
 
+    // Quality feedback from the exact moment of dissatisfaction, pre-filled
+    // with the context needed to reproduce (model, device, OS, app version) —
+    // the only signal channel for problems users would otherwise take to the
+    // App Store.
+    private func reportProblem(_ content: String) {
+        let appVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let modelName = modelManager.selectedModel?.name ?? "Unknown"
+        let device = UIDevice.current
+        let excerpt = content.count > 800 ? String(content.prefix(800)) + "…" : content
+
+        let subject = "Own AI Problem Report"
+        let body = """
+        What went wrong with this response?
+
+        (Describe the problem here)
+
+        ---
+        Model: \(modelName)
+        Device: \(device.model), iOS \(device.systemVersion)
+        App version: \(appVersion)
+
+        Response excerpt:
+        "\(excerpt)"
+        """
+        let mailto = "mailto:alice.turcanu91@gmail.com?subject=\(subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&body=\(body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
+
+        if let url = URL(string: mailto) {
+            UIApplication.shared.open(url)
+        }
+    }
+
     private func reportContent(_ content: String) {
         let subject = "Inappropriate AI Content Report"
         let body = "The following AI response was flagged as inappropriate:\n\n\"\(content)\"\n\nPlease provide details on why this content is inappropriate:"
@@ -1145,4 +1182,5 @@ struct MessageShape: Shape {
     .padding()
     .background(Color(white: 0.98))
     .environment(SpeechManager())
+    .environment(ModelManager())
 }
