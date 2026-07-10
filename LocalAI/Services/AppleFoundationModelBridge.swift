@@ -112,6 +112,13 @@ private struct FoundationConversationTitle {
     var title: String
 }
 
+@available(iOS 26.0, *)
+@Generable(description: "Durable facts about the user worth remembering across conversations.")
+private struct FoundationUserFacts {
+    @Guide(description: "Up to 3 short standalone facts about the user themselves — their name, preferences, ongoing projects, or constraints. Only include facts stated by the user that will still matter in future conversations. Empty when the message contains none.", .maximumCount(3))
+    var facts: [String]
+}
+
 final class AppleFoundationModelBridge {
     private let sessionLock = NSLock()
     private let requestGate = AsyncRequestGate()
@@ -273,6 +280,38 @@ final class AppleFoundationModelBridge {
             userMessage: userMessage,
             assistantResponse: assistantResponse
         )
+    }
+
+    /// Extracts durable user facts from a message for cross-chat memory.
+    /// Returns an empty array when the message contains nothing worth keeping.
+    func extractUserFacts(from userMessage: String) async throws -> [String] {
+        guard availability == .available else { return [] }
+        guard #available(iOS 26.0, *) else { return [] }
+
+        await requestGate.enter()
+        defer { requestGate.leave() }
+        try Task.checkCancellation()
+
+        let session = FoundationModels.LanguageModelSession(
+            model: FoundationModels.SystemLanguageModel.default,
+            instructions: """
+            You extract facts about the user for a personal assistant's long-term memory.
+            Only keep facts the user states about themselves that will matter in future
+            conversations: name, role, preferences, ongoing projects, constraints.
+            Ignore one-off requests, questions, and anything about other people.
+            """
+        )
+
+        let response = try await session.respond(
+            to: userMessage,
+            generating: FoundationUserFacts.self,
+            options: FoundationModels.GenerationOptions(
+                sampling: .greedy,
+                temperature: 0.1,
+                maximumResponseTokens: 96
+            )
+        )
+        return response.content.facts
     }
 
     func streamResponse(

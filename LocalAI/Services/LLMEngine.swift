@@ -186,7 +186,9 @@ final class LLMEngine {
             if model.engine != .appleFoundation {
                 return
             }
-            let instructions = UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
+            let instructions = AssistantMemoryStore.augmentedSystemPrompt(
+                UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
+            )
             if instructions == lastLoadedAppleFoundationInstructions {
                 return
             }
@@ -854,6 +856,12 @@ final class LLMEngine {
         unloadModel()
     }
 
+    /// Extracts durable user facts for cross-chat memory. Only available on
+    /// Apple Intelligence devices; returns [] elsewhere.
+    func extractUserFacts(from userMessage: String) async throws -> [String] {
+        try await appleFoundationBridge.extractUserFacts(from: userMessage)
+    }
+
     func hasConversationContext(for model: ModelInfo?) -> Bool {
         guard let model, currentModel?.id == model.id else { return false }
 
@@ -1120,7 +1128,9 @@ private extension LLMEngine {
         case .appleFoundation:
             let availability = appleFoundationBridge.availability
             if availability == .available {
-                let instructions = UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
+                let instructions = AssistantMemoryStore.augmentedSystemPrompt(
+                    UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
+                )
                 try appleFoundationBridge.loadSession(instructions: instructions)
                 lastLoadedAppleFoundationInstructions = instructions
                 #if !targetEnvironment(simulator)
@@ -1206,7 +1216,9 @@ private extension LLMEngine {
             return nil
         }
 
-        return UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
+        return AssistantMemoryStore.augmentedSystemPrompt(
+            UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
+        )
     }
 
     private func storedSystemPrompt(fallback: String) -> String {
@@ -1214,8 +1226,10 @@ private extension LLMEngine {
         let isDefaultFallback = trimmedFallback == AIResponseDefaults.defaultSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
             || trimmedFallback == "You are a helpful AI assistant."
 
-        guard isDefaultFallback else { return fallback }
-        return UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
+        guard isDefaultFallback else { return AssistantMemoryStore.augmentedSystemPrompt(fallback) }
+        return AssistantMemoryStore.augmentedSystemPrompt(
+            UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
+        )
     }
 
     func mlxPrompt(from prompt: String, systemPrompt: String, modelID: String) -> String {

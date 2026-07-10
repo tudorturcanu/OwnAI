@@ -8,6 +8,7 @@ struct ChatView: View {
     @Environment(ChatHistoryManager.self) private var historyManager
     @Environment(ModelManager.self) private var modelManager
     @Environment(SpeechManager.self) private var speechManager
+    @Environment(AssistantMemoryStore.self) private var memoryStore
     @Environment(MonetizationManager.self) private var monetizationManager
     @State private var documentManager = DocumentManager.shared
 
@@ -1919,6 +1920,7 @@ struct ChatView: View {
                 model: model,
                 assistantID: assistantID
             )
+            rememberUserFactsIfNeeded(conversationID: conversationID, assistantID: assistantID)
 
             llmEngine.currentResponse = ""
             streamingPrefix = ""
@@ -1996,6 +1998,26 @@ struct ChatView: View {
         llmEngine.currentResponse = ""
         streamingPrefix = ""
         ReviewPromptManager.noteSuccessfulResponse()
+    }
+
+    // Fire-and-forget cross-chat memory extraction from the latest user
+    // message. Runs on an isolated on-device session, so it never blocks the
+    // reply and does nothing on devices without Apple Intelligence.
+    private func rememberUserFactsIfNeeded(conversationID: UUID?, assistantID: UUID) {
+        guard memoryStore.isEnabled else { return }
+        guard let conversation = historyManager.conversation(id: conversationID),
+              let userMessage = conversation.messages.last(where: { $0.role == .user }) else {
+            return
+        }
+        let text = userMessage.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Very short messages ("thanks", "continue") never contain durable facts.
+        guard text.count >= 25 else { return }
+
+        Task {
+            guard let facts = try? await llmEngine.extractUserFacts(from: text),
+                  !facts.isEmpty else { return }
+            memoryStore.add(facts)
+        }
     }
 
     private func refineConversationInsightsIfNeeded(

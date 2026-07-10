@@ -294,6 +294,20 @@ struct SettingsView: View {
 
     private var privacySection: some View {
         settingsSection("Privacy") {
+            NavigationLink {
+                MemorySettingsView()
+            } label: {
+                settingsRow(
+                    icon: "brain.head.profile",
+                    tint: .pink,
+                    title: "Memory",
+                    subtitle: "What Own AI remembers about you — stored only on this device"
+                )
+            }
+            .buttonStyle(.plain)
+
+            sectionDivider
+
             // Auto-delete picker row
             HStack(spacing: 14) {
                 rowIcon(systemImage: "clock.arrow.circlepath", tint: .orange)

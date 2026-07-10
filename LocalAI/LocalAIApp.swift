@@ -42,6 +42,7 @@ struct LocalAIApp: App {
     @State private var speechManager = SpeechManager()
     @State private var monetizationManager = MonetizationManager()
     @State private var watchSessionManager = WatchConnectivitySessionManager()
+    @State private var memoryStore = AssistantMemoryStore()
     @Environment(\.scenePhase) private var scenePhase
     
     init() {
@@ -61,6 +62,7 @@ struct LocalAIApp: App {
                 .environment(speechManager)
                 .environment(monetizationManager)
                 .environment(watchSessionManager)
+                .environment(memoryStore)
                 .onAppear {
                     watchSessionManager.configure(
                         llmEngine: llmEngine,
