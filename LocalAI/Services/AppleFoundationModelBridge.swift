@@ -127,6 +127,14 @@ final class AppleFoundationModelBridge {
     private static let maxContinuationRounds = 2
     private static let transcriptTurnOverheadTokens = 16
 
+    // Rolling memory: once the transcript passes this share of the window,
+    // older turns are folded into an on-device summary so long chats keep
+    // their context instead of silently dropping it.
+    private static let rollingCondenseThresholdTokens = 2_800
+    private static let rollingRecentEntriesToKeep = 4
+    private static let rollingSummaryResponseTokens = 220
+    private static let rollingSummaryInputBudgetTokens = 2_400
+
     static func adaptiveResponseTokenBudget(
         requested: Int,
         promptTokens: Int,
@@ -426,12 +434,29 @@ final class AppleFoundationModelBridge {
         defer { requestGate.leave() }
         try Task.checkCancellation()
 
-        let session = isolated
+        var session = isolated
             ? FoundationModels.LanguageModelSession(
                 model: FoundationModels.SystemLanguageModel.default,
                 instructions: systemPrompt
             )
             : resolvedSession(systemPrompt: systemPrompt)
+
+        // Rolling memory: fold older turns into a summary before the window
+        // fills, so long chats keep their context instead of dropping it. On
+        // any failure the exceededContextWindowSize retry below still applies.
+        if !isolated {
+            sessionLock.lock()
+            let needsCondense = transcriptTokenEstimate >= Self.rollingCondenseThresholdTokens
+            sessionLock.unlock()
+            if needsCondense,
+               let rolled = try? await rollingCondensedSession(from: session, systemPrompt: systemPrompt) {
+                session = rolled.session
+                sessionLock.lock()
+                sessionStorage = rolled.session
+                transcriptTokenEstimate = rolled.transcriptTokens
+                sessionLock.unlock()
+            }
+        }
 
         // Build prompt: prepend image description if an image is attached
         var enrichedPrompt = prompt
@@ -551,6 +576,100 @@ final class AppleFoundationModelBridge {
 
         _ = await onPartialResponse(prefix + lastContent)
         return lastContent
+    }
+
+    @available(iOS 26.0, *)
+    private static func plainText(of entry: FoundationModels.Transcript.Entry) -> (role: String, text: String)? {
+        func joinedText(_ segments: [FoundationModels.Transcript.Segment]) -> String {
+            segments.compactMap { segment -> String? in
+                if case .text(let textSegment) = segment { return textSegment.content }
+                return nil
+            }.joined(separator: "\n")
+        }
+
+        switch entry {
+        case .prompt(let prompt):
+            return ("User", joinedText(prompt.segments))
+        case .response(let response):
+            return ("Assistant", joinedText(response.segments))
+        default:
+            return nil
+        }
+    }
+
+    // Folds turns older than the last `rollingRecentEntriesToKeep` entries
+    // into a model-written summary, and rebuilds the session as
+    // instructions-plus-summary followed by the recent turns verbatim.
+    // Returns nil when there is nothing old enough to fold.
+    @available(iOS 26.0, *)
+    private func rollingCondensedSession(
+        from session: FoundationModels.LanguageModelSession,
+        systemPrompt: String
+    ) async throws -> (session: FoundationModels.LanguageModelSession, transcriptTokens: Int)? {
+        let conversational = session.transcript.filter { entry in
+            switch entry {
+            case .prompt, .response: return true
+            default: return false
+            }
+        }
+        guard conversational.count > Self.rollingRecentEntriesToKeep + 1 else { return nil }
+
+        // Keep whole exchanges: the retained tail must start with a user turn.
+        var recent = Array(conversational.suffix(Self.rollingRecentEntriesToKeep))
+        while let first = recent.first, Self.plainText(of: first)?.role != "User" {
+            recent.removeFirst()
+        }
+        let older = conversational.dropLast(recent.count)
+        guard !older.isEmpty else { return nil }
+
+        let log = older
+            .compactMap { Self.plainText(of: $0) }
+            .map { "\($0.role): \($0.text)" }
+            .joined(separator: "\n\n")
+        let clippedLog = PromptBudgeter.snippetSizedText(log, maxTokens: Self.rollingSummaryInputBudgetTokens)
+
+        let summarizer = FoundationModels.LanguageModelSession(
+            model: FoundationModels.SystemLanguageModel.default,
+            instructions: """
+            You summarize conversations so an assistant can continue them later.
+            Capture key facts, names, decisions, preferences, and open questions.
+            Write plain prose under 150 words. No preamble, no headings.
+            """
+        )
+        let summary = try await summarizer.respond(
+            to: clippedLog,
+            options: FoundationModels.GenerationOptions(
+                sampling: .greedy,
+                temperature: 0.2,
+                maximumResponseTokens: Self.rollingSummaryResponseTokens
+            )
+        ).content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !summary.isEmpty else { return nil }
+
+        let mergedInstructions = """
+        \(systemPrompt)
+
+        Summary of the conversation so far:
+        \(summary)
+        """
+        var entries: [FoundationModels.Transcript.Entry] = [
+            .instructions(FoundationModels.Transcript.Instructions(
+                segments: [.text(FoundationModels.Transcript.TextSegment(content: mergedInstructions))],
+                toolDefinitions: []
+            ))
+        ]
+        entries.append(contentsOf: recent)
+
+        let recentTokens = recent
+            .compactMap { Self.plainText(of: $0)?.text }
+            .reduce(0) { $0 + PromptBudgeter.estimatedTokenCount($1) + Self.transcriptTurnOverheadTokens }
+        let transcriptTokens = PromptBudgeter.estimatedTokenCount(mergedInstructions) + recentTokens
+
+        let condensed = FoundationModels.LanguageModelSession(
+            model: FoundationModels.SystemLanguageModel.default,
+            transcript: FoundationModels.Transcript(entries: entries)
+        )
+        return (condensed, transcriptTokens)
     }
 
     @available(iOS 26.0, *)
