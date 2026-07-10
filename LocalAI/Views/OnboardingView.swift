@@ -106,7 +106,7 @@ struct OnboardingView: View {
     var body: some View {
         ZStack {
             // Background
-            Color.white.ignoresSafeArea()
+            Color.adaptiveCard.ignoresSafeArea()
             
             TabView(selection: $currentPage) {
                 welcomePage.tag(0)
@@ -173,14 +173,14 @@ struct OnboardingView: View {
             VStack(spacing: 16) {
                 Text(String(localized: "Welcome to Own Ai"))
                     .font(.system(size: 32, weight: .bold))
-                    .foregroundStyle(Color(white: 0.1))
+                    .foregroundStyle(Color.adaptive(white: 0.1))
                 
                 Text(modelManager.isAppleIntelligenceDeviceSupported ?
                      LocalizedStringKey("Experience the power of AI,\non-device and with Apple Intelligence.") :
                      LocalizedStringKey("Experience the power of AI,\nrunning entirely on your device."))
                     .font(.body)
                     .multilineTextAlignment(.center)
-                    .foregroundStyle(Color(white: 0.5))
+                    .foregroundStyle(Color.adaptive(white: 0.5))
                     .padding(.horizontal, 32)
                     .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
@@ -264,12 +264,12 @@ struct OnboardingView: View {
 
                     Text(recommendationPageTitle)
                         .font(.system(size: 28, weight: .bold))
-                        .foregroundStyle(Color(white: 0.1))
+                        .foregroundStyle(Color.adaptive(white: 0.1))
 
                     Text(recommendationPageSubtitle)
                         .font(.body)
                         .multilineTextAlignment(.center)
-                        .foregroundStyle(Color(white: 0.5))
+                        .foregroundStyle(Color.adaptive(white: 0.5))
                         .padding(.horizontal, 32)
                 }
                 .padding(.top, 40)
@@ -286,7 +286,7 @@ struct OnboardingView: View {
                     if let statusText = primaryStatusText {
                         Text(statusText)
                             .font(.caption)
-                            .foregroundStyle(Color(white: 0.5))
+                            .foregroundStyle(Color.adaptive(white: 0.5))
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 12)
                     }
@@ -334,7 +334,7 @@ struct OnboardingView: View {
                             .foregroundStyle(.orange)
                             .frame(maxWidth: .infinity)
                             .frame(height: 48)
-                            .background(Color.white)
+                            .background(Color.adaptiveCard)
                             .clipShape(RoundedRectangle(cornerRadius: 14))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14)
@@ -369,12 +369,12 @@ struct OnboardingView: View {
                     
                     Text(String(localized: "Data & Privacy"))
                         .font(.system(size: 28, weight: .bold))
-                        .foregroundStyle(Color(white: 0.1))
+                        .foregroundStyle(Color.adaptive(white: 0.1))
                     
                     Text(String(localized: "Before you begin, here's how the app handles your data."))
                         .font(.body)
                         .multilineTextAlignment(.center)
-                        .foregroundStyle(Color(white: 0.5))
+                        .foregroundStyle(Color.adaptive(white: 0.5))
                         .padding(.horizontal, 32)
                 }
                 .padding(.top, 40)
@@ -401,12 +401,12 @@ struct OnboardingView: View {
                                 .foregroundStyle(.green)
                             Text(String(localized: "On-Device Models (e.g. Gemma 2 2B)"))
                                 .font(.subheadline.bold())
-                                .foregroundStyle(Color(white: 0.2))
+                                .foregroundStyle(Color.adaptive(white: 0.2))
                         }
                         
                         Text("MLX models like Gemma 2 2B run **100% on your device**. Your prompts, documents, and personal data are **never sent** to Google LLC or any third-party AI service.")
                             .font(.caption)
-                            .foregroundStyle(Color(white: 0.5))
+                            .foregroundStyle(Color.adaptive(white: 0.5))
                     }
                     .padding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -426,12 +426,12 @@ struct OnboardingView: View {
                                     .foregroundStyle(.orange)
                                 Text(String(localized: "Apple Intelligence"))
                                     .font(.subheadline.bold())
-                                    .foregroundStyle(Color(white: 0.2))
+                                    .foregroundStyle(Color.adaptive(white: 0.2))
                             }
                             
                             Text("If you choose Apple Intelligence, prompts and document text may be sent to **Apple Inc.** (including Private Cloud Compute) for AI processing. You will be asked for permission before this model is used.")
                                 .font(.caption)
-                                .foregroundStyle(Color(white: 0.5))
+                                .foregroundStyle(Color.adaptive(white: 0.5))
                         }
                         .padding(14)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -450,16 +450,16 @@ struct OnboardingView: View {
                                 .foregroundStyle(.blue)
                             Text("Model Downloads")
                                 .font(.subheadline.bold())
-                                .foregroundStyle(Color(white: 0.2))
+                                .foregroundStyle(Color.adaptive(white: 0.2))
                         }
                         
                         Text("Downloading model files uses a network request to **Hugging Face Inc.** This may share your IP address and device headers. No personal content is sent.")
                             .font(.caption)
-                            .foregroundStyle(Color(white: 0.5))
+                            .foregroundStyle(Color.adaptive(white: 0.5))
                     }
                     .padding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color(white: 0.96))
+                    .background(Color.adaptive(white: 0.96))
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .padding(.horizontal, 24)
@@ -496,7 +496,7 @@ struct OnboardingView: View {
                     Text("By tapping above, you agree to our [Terms of Service](https://sudoswisshub.github.io/MetalMind-AI/terms.html) and [Privacy Policy](https://sudoswisshub.github.io/MetalMind-AI/privacy.html).")
                         .font(.caption)
                         .tint(.blue)
-                        .foregroundStyle(Color(white: 0.6))
+                        .foregroundStyle(Color.adaptive(white: 0.6))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
                 }
@@ -628,11 +628,11 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(LocalizedStringKey(title))
                     .font(.headline)
-                    .foregroundStyle(Color(white: 0.2))
+                    .foregroundStyle(Color.adaptive(white: 0.2))
                 
                 Text(LocalizedStringKey(subtitle))
                     .font(.subheadline)
-                    .foregroundStyle(Color(white: 0.6))
+                    .foregroundStyle(Color.adaptive(white: 0.6))
             }
             
             Spacer()
@@ -646,7 +646,7 @@ struct OnboardingView: View {
                     .foregroundStyle(iconColor)
                 Text(LocalizedStringKey(title))
                     .font(.subheadline.bold())
-                    .foregroundStyle(Color(white: 0.2))
+                    .foregroundStyle(Color.adaptive(white: 0.2))
             }
             
             VStack(alignment: .leading, spacing: 6) {
@@ -657,14 +657,14 @@ struct OnboardingView: View {
                             .frame(width: 5, height: 5)
                         Text(LocalizedStringKey(item))
                             .font(.caption)
-                            .foregroundStyle(Color(white: 0.5))
+                            .foregroundStyle(Color.adaptive(white: 0.5))
                     }
                 }
             }
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(white: 0.96))
+        .background(Color.adaptive(white: 0.96))
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
@@ -681,10 +681,10 @@ struct OnboardingView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(LocalizedStringKey(recommendation.title))
                         .font(.subheadline.bold())
-                        .foregroundStyle(Color(white: 0.15))
+                        .foregroundStyle(Color.adaptive(white: 0.15))
                     Text(model.name)
                         .font(.headline)
-                        .foregroundStyle(Color(white: 0.1))
+                        .foregroundStyle(Color.adaptive(white: 0.1))
                 }
 
                 Spacer()
@@ -700,11 +700,11 @@ struct OnboardingView: View {
 
             Text(LocalizedStringKey(recommendation.summary))
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color(white: 0.25))
+                .foregroundStyle(Color.adaptive(white: 0.25))
 
             Text(LocalizedStringKey(recommendation.detail))
                 .font(.caption)
-                .foregroundStyle(Color(white: 0.5))
+                .foregroundStyle(Color.adaptive(white: 0.5))
 
             HStack(spacing: 8) {
                 recommendationChip(
@@ -721,7 +721,7 @@ struct OnboardingView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(white: 0.96))
+        .background(Color.adaptive(white: 0.96))
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
@@ -736,10 +736,10 @@ struct OnboardingView: View {
             Text(LocalizedStringKey(title))
                 .font(.caption.weight(.medium))
         }
-        .foregroundStyle(Color(white: 0.38))
+        .foregroundStyle(Color.adaptive(white: 0.38))
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .background(Color.white)
+        .background(Color.adaptiveCard)
         .clipShape(Capsule())
     }
 

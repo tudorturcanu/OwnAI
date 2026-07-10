@@ -20,6 +20,7 @@ struct SettingsView: View {
     @AppStorage("inChatSearchEnabled") private var inChatSearchEnabled = false
     @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
     @AppStorage("downloads.allowCellular") private var allowCellularDownloads = false
+    @AppStorage("appAppearance") private var appAppearanceRaw = AppAppearance.system.rawValue
     @State private var showClearHistoryConfirmation = false
     @State private var showDataPrivacySheet = false
     @State private var isUpgradeSheetPresented = false
@@ -214,6 +215,24 @@ struct SettingsView: View {
 
     private var preferencesSection: some View {
         settingsSection("Preferences") {
+            HStack(spacing: 12) {
+                settingsRow(
+                    icon: "circle.lefthalf.filled",
+                    tint: .indigo,
+                    title: "Appearance",
+                    subtitle: "Match the system or pick light/dark"
+                )
+                Picker("Appearance", selection: $appAppearanceRaw) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(appearance.title).tag(appearance.rawValue)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+            }
+
+            sectionDivider
+
             settingsToggleRow(
                 icon: "antenna.radiowaves.left.and.right",
                 tint: .blue,

@@ -71,7 +71,7 @@ struct ContentView: View {
                                 Image(systemName: "chevron.down")
                                     .font(.caption2.weight(.bold))
                             }
-                            .foregroundStyle(Color(white: 0.2))
+                            .foregroundStyle(Color.adaptive(white: 0.2))
                         }
                         .accessibilityLabel(String(localized: "Select Model"))
                     }
@@ -156,7 +156,7 @@ struct ContentView: View {
                 Image(systemName: "gearshape")
                     .accessibilityLabel(String(localized: "Settings"))
                     .font(.body.weight(.medium))
-                    .foregroundStyle(Color(white: 0.3))
+                    .foregroundStyle(Color.adaptive(white: 0.3))
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
@@ -173,14 +173,14 @@ struct ContentView: View {
                 Image(systemName: "bubble.left")
                     .accessibilityLabel(String(localized: "Chat History"))
                     .font(.body.weight(.medium))
-                    .foregroundStyle(Color(white: 0.3))
+                    .foregroundStyle(Color.adaptive(white: 0.3))
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
         .fixedSize()
-        .background(Color(white: 0.95))
+        .background(Color.adaptive(white: 0.95))
         .clipShape(Capsule())
     }
 
@@ -195,9 +195,9 @@ struct ContentView: View {
                 Image(systemName: "square.and.pencil")
                     .accessibilityLabel(String(localized: "New Chat"))
                     .font(.body.weight(.medium))
-                    .foregroundStyle(Color(white: 0.3))
+                    .foregroundStyle(Color.adaptive(white: 0.3))
                     .frame(width: 32, height: 32)
-                    .background(Color(white: 0.95))
+                    .background(Color.adaptive(white: 0.95))
                     .clipShape(Circle())
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())

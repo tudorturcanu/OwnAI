@@ -193,11 +193,11 @@ struct ChatHistoryView: View {
                             } header: {
                                 Text(section.title)
                                     .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(Color(white: 0.4))
+                                    .foregroundStyle(Color.adaptive(white: 0.4))
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.vertical, 8)
                                     .padding(.horizontal, 4)
-                                    .background(Color(white: 0.96))
+                                    .background(Color.adaptive(white: 0.96))
                             }
                         }
                     }
@@ -205,7 +205,7 @@ struct ChatHistoryView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 12)
             }
-            .background(Color(white: 0.96))
+            .background(Color.adaptive(white: 0.96))
             .navigationTitle(String(localized: "History"))
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -373,7 +373,7 @@ struct ChatHistoryView: View {
 
     private var statDivider: some View {
         Rectangle()
-            .fill(Color(white: 0.9))
+            .fill(Color.adaptive(white: 0.9))
             .frame(width: 1, height: 36)
     }
 
@@ -384,10 +384,10 @@ struct ChatHistoryView: View {
                 .foregroundStyle(tint)
             Text(value)
                 .font(.system(size: 18, weight: .bold, design: .rounded))
-                .foregroundStyle(Color(white: 0.15))
+                .foregroundStyle(Color.adaptive(white: 0.15))
             Text(label)
                 .font(.caption2.weight(.medium))
-                .foregroundStyle(Color(white: 0.5))
+                .foregroundStyle(Color.adaptive(white: 0.5))
         }
         .frame(maxWidth: .infinity)
     }
@@ -453,7 +453,7 @@ struct ChatHistoryView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
-            .background(isSelected ? Color.orange : Color.white)
+            .background(isSelected ? Color.orange : Color.adaptiveCard)
             .foregroundStyle(isSelected ? .white : .primary)
             .clipShape(Capsule())
             .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
@@ -500,15 +500,15 @@ struct ChatHistoryView: View {
 
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.system(size: 50, weight: .light))
-                .foregroundStyle(Color(white: 0.7))
+                .foregroundStyle(Color.adaptive(white: 0.7))
 
             Text(String(localized: "No Conversations Yet"))
                 .font(.headline)
-                .foregroundStyle(Color(white: 0.4))
+                .foregroundStyle(Color.adaptive(white: 0.4))
 
             Text(String(localized: "Start a new chat to see it here"))
                 .font(.subheadline)
-                .foregroundStyle(Color(white: 0.6))
+                .foregroundStyle(Color.adaptive(white: 0.6))
 
             Spacer()
         }
@@ -537,7 +537,7 @@ struct ConversationRow: View {
                         .fill(
                             isSelected ?
                             LinearGradient(colors: [.orange.opacity(0.2), .pink.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing) :
-                            LinearGradient(colors: [Color(white: 0.92)], startPoint: .top, endPoint: .bottom)
+                            LinearGradient(colors: [Color.adaptive(white: 0.92)], startPoint: .top, endPoint: .bottom)
                         )
                         .frame(width: 44, height: 44)
 
@@ -546,7 +546,7 @@ struct ConversationRow: View {
                         .foregroundStyle(
                             isSelected ?
                             LinearGradient(colors: [.orange, .pink], startPoint: .topLeading, endPoint: .bottomTrailing) :
-                            LinearGradient(colors: [Color(white: 0.5)], startPoint: .top, endPoint: .bottom)
+                            LinearGradient(colors: [Color.adaptive(white: 0.5)], startPoint: .top, endPoint: .bottom)
                         )
                 }
 
@@ -555,7 +555,7 @@ struct ConversationRow: View {
                     HStack(spacing: 6) {
                         Text(conversation.title)
                             .font(.body.weight(.medium))
-                            .foregroundStyle(Color(white: 0.1))
+                            .foregroundStyle(Color.adaptive(white: 0.1))
                             .lineLimit(1)
 
                         if let folderLabel {
@@ -572,13 +572,13 @@ struct ConversationRow: View {
                     if let lastMessage = conversation.messages.last {
                         Text(lastMessage.content.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60) + (lastMessage.content.count > 60 ? "…" : ""))
                             .font(.caption)
-                            .foregroundStyle(Color(white: 0.45))
+                            .foregroundStyle(Color.adaptive(white: 0.45))
                             .lineLimit(1)
                     }
 
                     Text(formattedDate)
                         .font(.caption2)
-                        .foregroundStyle(Color(white: 0.55))
+                        .foregroundStyle(Color.adaptive(white: 0.55))
                 }
 
                 Spacer()
@@ -587,18 +587,18 @@ struct ConversationRow: View {
                 if !conversation.messages.isEmpty {
                     Text("\(conversation.messages.count)")
                         .font(.caption.bold())
-                        .foregroundStyle(Color(white: 0.5))
+                        .foregroundStyle(Color.adaptive(white: 0.5))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color(white: 0.92))
+                        .background(Color.adaptive(white: 0.92))
                         .clipShape(Capsule())
                 }
             }
             .padding(14)
             .background(
                 isSelected ?
-                Color.white :
-                Color.white.opacity(0.8)
+                Color.adaptiveCard :
+                Color.adaptiveCard.opacity(0.8)
             )
             .clipShape(RoundedRectangle(cornerRadius: 16))
             .overlay(

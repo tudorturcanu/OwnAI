@@ -78,7 +78,7 @@ struct DocumentSourceDrawerView: View {
                 .padding(.top, 16)
                 .padding(.bottom, 28)
             }
-            .background(Color(white: 0.96))
+            .background(Color.adaptive(white: 0.96))
             .navigationTitle(String(localized: "Document Sources"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -124,12 +124,12 @@ struct DocumentSourceDrawerView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(document.name)
                         .font(.headline)
-                        .foregroundStyle(Color(white: 0.12))
+                        .foregroundStyle(Color.adaptive(white: 0.12))
                         .lineLimit(2)
 
                     Text(provenanceLabel)
                         .font(.subheadline)
-                        .foregroundStyle(Color(white: 0.45))
+                        .foregroundStyle(Color.adaptive(white: 0.45))
                         .lineLimit(1)
                 }
             }
@@ -141,7 +141,7 @@ struct DocumentSourceDrawerView: View {
                 LabeledContent(String(localized: "Text source"), value: provenanceLabel)
             }
             .font(.subheadline)
-            .foregroundStyle(Color(white: 0.25))
+            .foregroundStyle(Color.adaptive(white: 0.25))
 
             if hasOCRContent {
                 HStack(spacing: 8) {
@@ -150,7 +150,7 @@ struct DocumentSourceDrawerView: View {
                         .accessibilityHidden(true)
                     Text(String(localized: "OCR was used for at least part of this document."))
                         .font(.caption)
-                        .foregroundStyle(Color(white: 0.48))
+                        .foregroundStyle(Color.adaptive(white: 0.48))
                 }
                 .padding(.top, 2)
             }
@@ -162,14 +162,14 @@ struct DocumentSourceDrawerView: View {
                         .accessibilityHidden(true)
                     Text(ocrWarningText)
                         .font(.caption)
-                        .foregroundStyle(Color(white: 0.45))
+                        .foregroundStyle(Color.adaptive(white: 0.45))
                 }
                 .padding(12)
                 .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         }
         .padding(16)
-        .background(Color.white)
+        .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
     }
@@ -187,13 +187,13 @@ struct DocumentSourceDrawerView: View {
                     HStack(spacing: 8) {
                         Text(title)
                             .font(.headline)
-                            .foregroundStyle(Color(white: 0.12))
+                            .foregroundStyle(Color.adaptive(white: 0.12))
                             .lineLimit(2)
 
                         if let sectionNumber {
                             Text(String(format: String(localized: "Page %lld", defaultValue: "Page %lld"), Int64(sectionNumber)))
                                 .font(.caption.weight(.semibold))
-                                .foregroundStyle(Color(white: 0.48))
+                                .foregroundStyle(Color.adaptive(white: 0.48))
                         }
                     }
 
@@ -212,7 +212,7 @@ struct DocumentSourceDrawerView: View {
 
             Text(snippet.isEmpty ? String(localized: "No readable text was extracted from this page.") : snippet)
                 .font(.callout)
-                .foregroundStyle(Color(white: 0.25))
+                .foregroundStyle(Color.adaptive(white: 0.25))
                 .lineLimit(5)
                 .multilineTextAlignment(.leading)
 
@@ -359,12 +359,12 @@ private struct DocumentSourceTextView: View {
                     if let subtitle {
                         Text(subtitle)
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(Color(white: 0.48))
+                            .foregroundStyle(Color.adaptive(white: 0.48))
                     }
 
                     Text(title)
                         .font(.title3.weight(.semibold))
-                        .foregroundStyle(Color(white: 0.12))
+                        .foregroundStyle(Color.adaptive(white: 0.12))
 
                     if isOCR {
                         Text(String(localized: "OCR"))
@@ -378,7 +378,7 @@ private struct DocumentSourceTextView: View {
 
                 Text(displayText)
                     .font(.body)
-                    .foregroundStyle(Color(white: 0.22))
+                    .foregroundStyle(Color.adaptive(white: 0.22))
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -386,7 +386,7 @@ private struct DocumentSourceTextView: View {
             .padding(.top, 18)
             .padding(.bottom, 28)
         }
-        .background(Color(white: 0.96))
+        .background(Color.adaptive(white: 0.96))
         .navigationTitle(String(localized: "Source Text"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

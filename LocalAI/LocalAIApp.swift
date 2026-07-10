@@ -9,8 +9,33 @@ import AppIntents
 import SwiftUI
 import UIKit
 
+enum AppAppearance: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return String(localized: "System")
+        case .light: return String(localized: "Light")
+        case .dark: return String(localized: "Dark")
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
 @main
 struct LocalAIApp: App {
+    @AppStorage("appAppearance") private var appAppearanceRaw = AppAppearance.system.rawValue
     @State private var llmEngine = LLMEngine()
     @State private var historyManager = ChatHistoryManager()
     @State private var modelManager = ModelManager()
@@ -57,7 +82,7 @@ struct LocalAIApp: App {
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
                     llmEngine.handleMemoryWarning()
                 }
-                .preferredColorScheme(.light)
+                .preferredColorScheme((AppAppearance(rawValue: appAppearanceRaw) ?? .system).colorScheme)
         }
     }
 }

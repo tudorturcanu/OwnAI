@@ -29,7 +29,7 @@ struct UpgradeView: View {
                 }
                 .padding(20)
             }
-            .background(Color(white: 0.97))
+            .background(Color.adaptive(white: 0.97))
             .navigationTitle(String(localized: "Upgrade to Pro"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -83,20 +83,20 @@ struct UpgradeView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(LocalizedStringKey(feature.title))
                         .font(.title3.bold())
-                        .foregroundStyle(Color(white: 0.1))
+                        .foregroundStyle(Color.adaptive(white: 0.1))
                     Text(LocalizedStringKey(feature.subtitle))
                         .font(.subheadline)
-                        .foregroundStyle(Color(white: 0.45))
+                        .foregroundStyle(Color.adaptive(white: 0.45))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
             Text(String(localized: "Everything runs on your device — no account, no cloud, works offline. Pro unlocks the full local toolkit: every model, richer document chat, and hands-free voice."))
                 .font(.subheadline)
-                .foregroundStyle(Color(white: 0.48))
+                .foregroundStyle(Color.adaptive(white: 0.48))
         }
         .padding(18)
-        .background(Color.white)
+        .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .shadow(color: .black.opacity(0.04), radius: 10, y: 4)
     }
@@ -105,7 +105,7 @@ struct UpgradeView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(String(localized: "Included in Pro"))
                 .font(.headline)
-                .foregroundStyle(Color(white: 0.2))
+                .foregroundStyle(Color.adaptive(white: 0.2))
 
             VStack(spacing: 0) {
                 upgradeRow(
@@ -150,7 +150,7 @@ struct UpgradeView: View {
                     subtitle: String(localized: "Organize conversations into named folders for a tidy history.")
                 )
             }
-            .background(Color.white)
+            .background(Color.adaptiveCard)
             .clipShape(RoundedRectangle(cornerRadius: 18))
             .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
         }
@@ -161,13 +161,13 @@ struct UpgradeView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(String(localized: "Plans"))
                 .font(.headline)
-                .foregroundStyle(Color(white: 0.2))
+                .foregroundStyle(Color.adaptive(white: 0.2))
 
             if monetizationManager.isLoadingProducts {
                 ProgressView(String(localized: "Loading plans…"))
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(24)
-                    .background(Color.white)
+                    .background(Color.adaptiveCard)
                     .clipShape(RoundedRectangle(cornerRadius: 18))
             } else if monetizationManager.products.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
@@ -175,11 +175,11 @@ struct UpgradeView: View {
                         .font(.subheadline.weight(.semibold))
                     Text(String(localized: "This build does not have live App Store products available yet."))
                         .font(.caption)
-                        .foregroundStyle(Color(white: 0.5))
+                        .foregroundStyle(Color.adaptive(white: 0.5))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(18)
-                .background(Color.white)
+                .background(Color.adaptiveCard)
                 .clipShape(RoundedRectangle(cornerRadius: 18))
             } else {
                 VStack(spacing: 12) {
@@ -222,17 +222,17 @@ struct UpgradeView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text(String(localized: "Subscription Information"))
                 .font(.headline)
-                .foregroundStyle(Color(white: 0.2))
+                .foregroundStyle(Color.adaptive(white: 0.2))
 
             VStack(alignment: .leading, spacing: 10) {
                 Text(String(localized: "Own AI Pro Monthly renews every month. Own AI Pro Yearly renews every year."))
                     .font(.footnote)
-                    .foregroundStyle(Color(white: 0.48))
+                    .foregroundStyle(Color.adaptive(white: 0.48))
                     .fixedSize(horizontal: false, vertical: true)
 
                 Text(String(localized: "Payment is charged to your Apple Account at confirmation. Auto-renewable subscriptions renew automatically unless canceled at least 24 hours before the end of the current period."))
                     .font(.footnote)
-                    .foregroundStyle(Color(white: 0.48))
+                    .foregroundStyle(Color.adaptive(white: 0.48))
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack(spacing: 16) {
@@ -243,7 +243,7 @@ struct UpgradeView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(18)
-            .background(Color.white)
+            .background(Color.adaptiveCard)
             .clipShape(RoundedRectangle(cornerRadius: 18))
             .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
         }
@@ -288,10 +288,10 @@ struct UpgradeView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(LocalizedStringKey(title))
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color(white: 0.1))
+                    .foregroundStyle(Color.adaptive(white: 0.1))
                 Text(LocalizedStringKey(subtitle))
                     .font(.caption)
-                    .foregroundStyle(Color(white: 0.48))
+                    .foregroundStyle(Color.adaptive(white: 0.48))
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -310,7 +310,7 @@ struct UpgradeView: View {
                     HStack(spacing: 8) {
                         Text(product.displayName)
                             .font(.headline)
-                            .foregroundStyle(Color(white: 0.1))
+                            .foregroundStyle(Color.adaptive(white: 0.1))
                         if isRecommended {
                             Text(String(localized: "BEST VALUE"))
                                 .font(.caption2.bold())
@@ -323,18 +323,18 @@ struct UpgradeView: View {
                     }
                     Text(product.description)
                         .font(.caption)
-                        .foregroundStyle(Color(white: 0.48))
+                        .foregroundStyle(Color.adaptive(white: 0.48))
 
                     Text(subscriptionLength(for: product))
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(Color(white: 0.36))
+                        .foregroundStyle(Color.adaptive(white: 0.36))
                 }
 
                 Spacer()
 
                 Text(product.displayPrice)
                     .font(.title3.bold())
-                    .foregroundStyle(Color(white: 0.1))
+                    .foregroundStyle(Color.adaptive(white: 0.1))
             }
 
             Button {
@@ -365,7 +365,7 @@ struct UpgradeView: View {
             .disabled(monetizationManager.isProcessingPurchase)
         }
         .padding(18)
-        .background(Color.white)
+        .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }

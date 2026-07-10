@@ -232,9 +232,9 @@ struct ChatView: View {
                     .background(
                         LinearGradient(
                             colors: [
-                                Color(white: 0.98),
-                                Color(white: 0.95),
-                                Color(white: 0.98)
+                                Color.adaptive(white: 0.98),
+                                Color.adaptive(white: 0.95),
+                                Color.adaptive(white: 0.98)
                             ],
                             startPoint: .top,
                             endPoint: .bottom
@@ -435,9 +435,9 @@ struct ChatView: View {
                     } label: {
                         Image(systemName: "magnifyingglass")
                             .font(.body.weight(.medium))
-                            .foregroundStyle(isInChatSearchActive ? Color.blue : Color(white: 0.3))
+                            .foregroundStyle(isInChatSearchActive ? Color.blue : Color.adaptive(white: 0.3))
                             .frame(width: 32, height: 32)
-                            .background(Color(white: 0.95))
+                            .background(Color.adaptive(white: 0.95))
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
@@ -480,7 +480,7 @@ struct ChatView: View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass")
                 .font(.body.weight(.medium))
-                .foregroundStyle(Color(white: 0.45))
+                .foregroundStyle(Color.adaptive(white: 0.45))
 
             TextField(String(localized: "Search in conversation…"), text: $inChatSearchText)
                 .textFieldStyle(.plain)
@@ -489,7 +489,7 @@ struct ChatView: View {
             if !inChatSearchText.isEmpty {
                 Text(String(format: String(localized: "%lld matches", defaultValue: "%lld matches"), Int64(inChatSearchMatchCount)))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color(white: 0.5))
+                    .foregroundStyle(Color.adaptive(white: 0.5))
                     .fixedSize()
             }
 
@@ -501,7 +501,7 @@ struct ChatView: View {
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.body)
-                    .foregroundStyle(Color(white: 0.5))
+                    .foregroundStyle(Color.adaptive(white: 0.5))
             }
             .buttonStyle(.plain)
             .accessibilityLabel(String(localized: "Close search"))
@@ -890,9 +890,9 @@ struct ChatView: View {
                     } label: {
                         Image(systemName: "plus")
                             .font(.body.weight(.semibold))
-                            .foregroundStyle(Color(white: 0.4))
+                            .foregroundStyle(Color.adaptive(white: 0.4))
                             .frame(width: 36, height: 36)
-                            .background(Color(white: 0.95))
+                            .background(Color.adaptive(white: 0.95))
                             .clipShape(Circle())
                     }
                     .disabled(!canStartAttachment)
@@ -935,7 +935,7 @@ struct ChatView: View {
                                 .font(.system(size: 24)) // Icon size
                                 .foregroundStyle(.red)
                                 .frame(width: 36, height: 36)
-                                .background(Color.white)
+                                .background(Color.adaptiveCard)
                                 .clipShape(Circle())
                                 .overlay(
                                     Circle() // Pulsating ring
@@ -981,7 +981,7 @@ struct ChatView: View {
                         Spacer()
                         Text("\(messageText.count) characters")
                             .font(.caption2.weight(.medium))
-                            .foregroundStyle(Color(white: 0.5))
+                            .foregroundStyle(Color.adaptive(white: 0.5))
                             .padding(.trailing, 20)
                             .padding(.bottom, 8)
                     }
@@ -997,7 +997,7 @@ struct ChatView: View {
     
     private var sendButtonGradient: LinearGradient {
         if !canSend && llmEngine.state != .generating {
-            return LinearGradient(colors: [Color(white: 0.85)], startPoint: .top, endPoint: .bottom)
+            return LinearGradient(colors: [Color.adaptive(white: 0.85)], startPoint: .top, endPoint: .bottom)
         }
         return LinearGradient(colors: [.black], startPoint: .top, endPoint: .bottom)
     }
@@ -1098,7 +1098,7 @@ struct ChatView: View {
             HStack(spacing: 10) {
                 Text(currentConversationDocuments.count == 1 ? String(localized: "1 doc in this chat") : String(format: String(localized: "%lld docs in this chat", defaultValue: "%lld docs in this chat"), Int64(currentConversationDocuments.count)))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color(white: 0.35))
+                    .foregroundStyle(Color.adaptive(white: 0.35))
 
                 ForEach(currentConversationDocuments) { document in
                     HStack(spacing: 8) {
@@ -1121,7 +1121,7 @@ struct ChatView: View {
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.caption)
-                                .foregroundStyle(Color(white: 0.6))
+                                .foregroundStyle(Color.adaptive(white: 0.6))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(String(localized: "Remove document"))
@@ -1172,7 +1172,7 @@ struct ChatView: View {
         if document.textOrigin != .native {
             Text(document.textOrigin.accessibilityLabel)
                 .font(.caption2)
-                .foregroundStyle(Color(white: 0.45))
+                .foregroundStyle(Color.adaptive(white: 0.45))
                 .lineLimit(1)
         }
     }
@@ -1193,10 +1193,10 @@ struct ChatView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(String(localized: "This conversation is getting long"))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color(white: 0.15))
+                    .foregroundStyle(Color.adaptive(white: 0.15))
                 Text(String(localized: "Older messages may be forgotten. Start a new chat for best results."))
                     .font(.caption2)
-                    .foregroundStyle(Color(white: 0.5))
+                    .foregroundStyle(Color.adaptive(white: 0.5))
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -1207,9 +1207,9 @@ struct ChatView: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.caption2.weight(.semibold))
-                    .foregroundStyle(Color(white: 0.45))
+                    .foregroundStyle(Color.adaptive(white: 0.45))
                     .frame(width: 24, height: 24)
-                    .background(Color(white: 0.94))
+                    .background(Color.adaptive(white: 0.94))
                     .clipShape(Circle())
             }
             .accessibilityLabel(String(localized: "Dismiss"))
@@ -1227,10 +1227,10 @@ struct ChatView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(String(localized: "Conversation Mode"))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color(white: 0.15))
+                    .foregroundStyle(Color.adaptive(white: 0.15))
                 Text(speechManager.isListening ? String(localized: "Listening for your next turn") : String(localized: "Replies are spoken and listening restarts automatically"))
                     .font(.caption2)
-                    .foregroundStyle(Color(white: 0.5))
+                    .foregroundStyle(Color.adaptive(white: 0.5))
             }
 
             Spacer()
@@ -1292,7 +1292,7 @@ struct ChatView: View {
             .foregroundStyle(.blue)
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
-            .background(Color.white.opacity(0.9))
+            .background(Color.adaptiveCard.opacity(0.9))
             .clipShape(Capsule())
             .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
         }
@@ -1370,9 +1370,9 @@ struct ChatView: View {
                 } label: {
                     Image(systemName: "waveform.slash")
                         .font(.body.weight(.semibold))
-                        .foregroundStyle(Color(white: 0.35))
+                        .foregroundStyle(Color.adaptive(white: 0.35))
                         .frame(width: 36, height: 36)
-                        .background(Color.white.opacity(0.9))
+                        .background(Color.adaptiveCard.opacity(0.9))
                         .clipShape(Circle())
                 }
                 .accessibilityLabel(String(localized: "Turn off conversation mode"))
@@ -2066,7 +2066,7 @@ struct ChatView: View {
 
             Text(imageAttachmentLabel)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(Color(white: 0.2))
+                .foregroundStyle(Color.adaptive(white: 0.2))
 
             Spacer()
 
@@ -2078,7 +2078,7 @@ struct ChatView: View {
             } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.title3)
-                    .foregroundStyle(Color(white: 0.5))
+                    .foregroundStyle(Color.adaptive(white: 0.5))
             }
             .buttonStyle(.plain)
             .accessibilityLabel(String(localized: "Remove attached image"))
@@ -2088,7 +2088,7 @@ struct ChatView: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(Color.white.opacity(0.72))
+                .fill(Color.adaptiveCard.opacity(0.72))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
                         .stroke(Color.black.opacity(0.05), lineWidth: 1)
@@ -2314,11 +2314,11 @@ struct ChatView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(String(localized: "Refine the prompt"))
                 .font(.title2.bold())
-                .foregroundStyle(Color(white: 0.12))
+                .foregroundStyle(Color.adaptive(white: 0.12))
 
             Text(String(localized: "Update the last user message and rerun the answer from that point."))
                 .font(.subheadline)
-                .foregroundStyle(Color(white: 0.45))
+                .foregroundStyle(Color.adaptive(white: 0.45))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2333,20 +2333,20 @@ struct ChatView: View {
 
                 Text(String(localized: "Original message"))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color(white: 0.45))
+                    .foregroundStyle(Color.adaptive(white: 0.45))
 
                 Spacer()
             }
 
             Text(message.content)
                 .font(.callout)
-                .foregroundStyle(Color(white: 0.2))
+                .foregroundStyle(Color.adaptive(white: 0.2))
                 .lineLimit(4)
                 .multilineTextAlignment(.leading)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(Color.adaptiveCard, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .stroke(Color.black.opacity(0.05), lineWidth: 1)
@@ -2361,20 +2361,20 @@ struct ChatView: View {
             HStack {
                 Text(String(localized: "Your revision"))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color(white: 0.45))
+                    .foregroundStyle(Color.adaptive(white: 0.45))
 
                 Spacer()
 
                 Text(String(format: String(localized: "%lld characters", defaultValue: "%lld characters"), Int64(editedMessageText.count)))
                     .font(.caption2.weight(.medium))
-                    .foregroundStyle(Color(white: 0.5))
+                    .foregroundStyle(Color.adaptive(white: 0.5))
             }
 
             ZStack(alignment: .topLeading) {
                 if editedMessageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     Text(String(localized: "Rewrite the message here..."))
                         .font(.callout)
-                        .foregroundStyle(Color(white: 0.55))
+                        .foregroundStyle(Color.adaptive(white: 0.55))
                         .padding(editorPadding)
                         .allowsHitTesting(false)
                 }
@@ -2388,7 +2388,7 @@ struct ChatView: View {
                     .id(editingMessage?.id)
             }
             .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
-            .background(Color(white: 0.985), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(Color.adaptive(white: 0.985), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
                     .stroke(Color.black.opacity(0.06), lineWidth: 1)
@@ -2404,7 +2404,7 @@ struct ChatView: View {
                         .font(.caption.weight(.semibold))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(Color(white: 0.4))
+                .foregroundStyle(Color.adaptive(white: 0.4))
                 .disabled(editedMessageText == (editingMessage?.content ?? ""))
 
                 Spacer()

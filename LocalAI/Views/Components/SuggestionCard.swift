@@ -34,12 +34,12 @@ struct SuggestionCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
                         .font(.headline)
-                        .foregroundStyle(Color(white: 0.1))
+                        .foregroundStyle(Color.adaptive(white: 0.1))
                         .fixedSize(horizontal: false, vertical: true)
                     
                     Text(subtitle)
                         .font(.subheadline)
-                        .foregroundStyle(Color(white: 0.4))
+                        .foregroundStyle(Color.adaptive(white: 0.4))
                         .fixedSize(horizontal: false, vertical: true)
                         .lineLimit(2)
                         .minimumScaleFactor(0.85)
@@ -51,7 +51,7 @@ struct SuggestionCard: View {
             .frame(minHeight: 110)
             .background(
                 RoundedRectangle(cornerRadius: 20)
-                    .fill(Color.white.opacity(0.7))
+                    .fill(Color.adaptiveCard.opacity(0.7))
                     .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 5)
             )
             .overlay(

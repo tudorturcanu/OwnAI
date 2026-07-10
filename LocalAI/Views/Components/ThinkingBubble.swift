@@ -16,7 +16,7 @@ struct ThinkingBubble: View {
                     )
                 )
                 .padding(8)
-                .background(Color.white)
+                .background(Color.adaptiveCard)
                 .clipShape(Circle())
                 .shadow(color: Color.black.opacity(0.05), radius: 2)
             
@@ -24,7 +24,7 @@ struct ThinkingBubble: View {
             HStack(spacing: 4) {
                 ForEach(0..<3) { index in
                     Circle()
-                        .fill(Color(white: 0.6))
+                        .fill(Color.adaptive(white: 0.6))
                         .frame(width: 6, height: 6)
                         .scaleEffect(animationStep == index ? 1.2 : 0.8)
                         .opacity(animationStep == index ? 1.0 : 0.4)
@@ -32,7 +32,7 @@ struct ThinkingBubble: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .background(Color(white: 0.95))
+            .background(Color.adaptive(white: 0.95))
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             
             Spacer()

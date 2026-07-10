@@ -114,17 +114,17 @@ struct ModelDownloadView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(String(localized: "All Models"))
                                 .font(.headline)
-                                .foregroundStyle(Color(white: 0.16))
+                                .foregroundStyle(Color.adaptive(white: 0.16))
                             Text(String(localized: "Browse families and advanced options."))
                                 .font(.caption)
-                                .foregroundStyle(Color(white: 0.48))
+                                .foregroundStyle(Color.adaptive(white: 0.48))
                         }
 
                         Spacer(minLength: 8)
                     }
                 }
                 .padding(16)
-                .background(Color.white)
+                .background(Color.adaptiveCard)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
                 .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
             }
@@ -132,7 +132,7 @@ struct ModelDownloadView: View {
             .padding(.top, 16)
             .padding(.bottom, 40)
         }
-        .background(Color(white: 0.96))
+        .background(Color.adaptive(white: 0.96))
         .navigationTitle(String(localized: "Manage Models"))
         .navigationBarTitleDisplayMode(.large)
     }
@@ -150,17 +150,17 @@ struct ModelDownloadView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(String(localized: "Start with one model"))
                         .font(.headline)
-                        .foregroundStyle(Color(white: 0.16))
+                        .foregroundStyle(Color.adaptive(white: 0.16))
 
                     Text(String(localized: "Use the recommended model unless you already know you need something specific."))
                         .font(.subheadline)
-                        .foregroundStyle(Color(white: 0.45))
+                        .foregroundStyle(Color.adaptive(white: 0.45))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
         .padding(16)
-        .background(Color.white)
+        .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
     }
@@ -182,13 +182,13 @@ struct DownloadedModelsSection: View {
             HStack(alignment: .firstTextBaseline) {
                 Text(String(localized: "Downloaded Models"))
                     .font(.headline)
-                    .foregroundStyle(Color(white: 0.2))
+                    .foregroundStyle(Color.adaptive(white: 0.2))
 
                 Spacer()
 
                 Text(storageText)
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(Color(white: 0.5))
+                    .foregroundStyle(Color.adaptive(white: 0.5))
             }
 
             if models.isEmpty {
@@ -203,17 +203,17 @@ struct DownloadedModelsSection: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(String(localized: "No models downloaded yet"))
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color(white: 0.18))
+                            .foregroundStyle(Color.adaptive(white: 0.18))
 
                         Text(String(localized: "Download a model below and it will appear here for quick selection or removal."))
                             .font(.caption)
-                            .foregroundStyle(Color(white: 0.45))
+                            .foregroundStyle(Color.adaptive(white: 0.45))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.white)
+                .background(Color.adaptiveCard)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
                 .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
             } else {
@@ -227,7 +227,7 @@ struct DownloadedModelsSection: View {
                         }
                     }
                 }
-                .background(Color.white)
+                .background(Color.adaptiveCard)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
                 .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
             }
@@ -265,14 +265,14 @@ struct DownloadedModelRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(model.name)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color(white: 0.14))
+                    .foregroundStyle(Color.adaptive(white: 0.14))
                     .lineLimit(1)
                     .truncationMode(.tail)
 
                 HStack(spacing: 6) {
                     Text("\(model.family.title) • \(model.sizeLabel)")
                         .font(.caption)
-                        .foregroundStyle(Color(white: 0.45))
+                        .foregroundStyle(Color.adaptive(white: 0.45))
                         .lineLimit(1)
                         .truncationMode(.tail)
 
@@ -386,20 +386,20 @@ struct CurrentModelSummaryCard: View {
 
                 Text(model.name)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color(white: 0.14))
+                    .foregroundStyle(Color.adaptive(white: 0.14))
                     .lineLimit(1)
                     .truncationMode(.tail)
 
                 Text(model.isAppleFoundation ? String(localized: "No download needed") : model.sizeLabel)
                     .font(.caption)
-                    .foregroundStyle(Color(white: 0.48))
+                    .foregroundStyle(Color.adaptive(white: 0.48))
             }
 
             Spacer(minLength: 8)
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white)
+        .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
     }
@@ -502,13 +502,13 @@ struct SimpleModelChoiceCard: View {
 
                     Text(title)
                         .font(.headline)
-                        .foregroundStyle(isUnavailable ? Color(white: 0.42) : Color(white: 0.12))
+                        .foregroundStyle(isUnavailable ? Color.adaptive(white: 0.42) : Color.adaptive(white: 0.12))
                         .lineLimit(2)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Text(isAppleUnavailable ? modelManager.appleIntelligenceUnavailableHint : detail)
                         .font(.subheadline)
-                        .foregroundStyle(Color(white: 0.46))
+                        .foregroundStyle(Color.adaptive(white: 0.46))
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -564,7 +564,7 @@ struct SimpleModelChoiceCard: View {
             .disabled(isUnavailable || isSelected)
         }
         .padding(16)
-        .background(Color.white)
+        .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
@@ -692,16 +692,16 @@ struct ModelFamilyDetailView: View {
                             .foregroundStyle(.blue)
                         Text(LocalizedStringKey(family.title))
                             .font(.title3.bold())
-                            .foregroundStyle(Color(white: 0.1))
+                            .foregroundStyle(Color.adaptive(white: 0.1))
                     }
 
                     Text(LocalizedStringKey(family.subtitle))
                         .font(.subheadline)
-                        .foregroundStyle(Color(white: 0.45))
+                        .foregroundStyle(Color.adaptive(white: 0.45))
 
                     Text(LocalizedStringKey(familyGuidance))
                         .font(.caption)
-                        .foregroundStyle(Color(white: 0.5))
+                        .foregroundStyle(Color.adaptive(white: 0.5))
 
                     if let recommendedModel = models.first(where: modelManager.isOnboardingRecommended) {
                         HStack(spacing: 8) {
@@ -709,13 +709,13 @@ struct ModelFamilyDetailView: View {
                                 .foregroundStyle(.green)
                             Text(String(format: String(localized: "%@ is the best match here for this device.", defaultValue: "%@ is the best match here for this device."), recommendedModel.name))
                                 .font(.caption.weight(.medium))
-                                .foregroundStyle(Color(white: 0.34))
+                                .foregroundStyle(Color.adaptive(white: 0.34))
                         }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(16)
-                .background(Color.white)
+                .background(Color.adaptiveCard)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
                 .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
 
@@ -727,7 +727,7 @@ struct ModelFamilyDetailView: View {
             .padding(.top, 16)
             .padding(.bottom, 40)
         }
-        .background(Color(white: 0.96))
+        .background(Color.adaptive(white: 0.96))
         .navigationTitle(LocalizedStringKey(family.title))
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -775,7 +775,7 @@ struct FamilyCard: View {
                     HStack(spacing: 8) {
                         Text(LocalizedStringKey(group.family.title))
                             .font(.title3.bold())
-                            .foregroundStyle(Color(white: 0.1))
+                            .foregroundStyle(Color.adaptive(white: 0.1))
 
                         if selectedModel != nil {
                              Text(String(localized: "ACTIVE"))
@@ -790,7 +790,7 @@ struct FamilyCard: View {
 
                     Text(LocalizedStringKey(group.family.subtitle))
                         .font(.subheadline)
-                        .foregroundStyle(Color(white: 0.5))
+                        .foregroundStyle(Color.adaptive(white: 0.5))
                         .lineLimit(2)
                 }
 
@@ -798,7 +798,7 @@ struct FamilyCard: View {
 
                 Image(systemName: "chevron.right")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color(white: 0.6))
+                    .foregroundStyle(Color.adaptive(white: 0.6))
                     .padding(.top, 4)
             }
 
@@ -830,15 +830,15 @@ struct FamilyCard: View {
             if let selectedModel {
                 Text(String(format: String(localized: "Selected: %@", defaultValue: "Selected: %@"), selectedModel.name))
                     .font(.caption)
-                    .foregroundStyle(Color(white: 0.45))
+                    .foregroundStyle(Color.adaptive(white: 0.45))
             } else {
                 Text(String(format: String(localized: "Tap to view all %@ models.", defaultValue: "Tap to view all %@ models."), group.family.title))
                     .font(.caption)
-                    .foregroundStyle(Color(white: 0.45))
+                    .foregroundStyle(Color.adaptive(white: 0.45))
             }
         }
         .padding(20)
-        .background(Color.white)
+        .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
@@ -958,7 +958,7 @@ struct ModelCard: View {
                     HStack(spacing: 8) {
                         Text(model.name)
                             .font(.title3.bold())
-                            .foregroundStyle(isAppleUnavailable ? Color(white: 0.4) : Color(white: 0.1))
+                            .foregroundStyle(isAppleUnavailable ? Color.adaptive(white: 0.4) : Color.adaptive(white: 0.1))
                         
                         if model.isAppleFoundation && !isAppleUnavailable {
                             Text(String(localized: "DEFAULT"))
@@ -980,13 +980,13 @@ struct ModelCard: View {
                     if isAppleUnavailable {
                         Text(modelManager.appleIntelligenceUnavailableHint)
                             .font(.subheadline)
-                            .foregroundStyle(Color(white: 0.5))
+                            .foregroundStyle(Color.adaptive(white: 0.5))
                             .lineLimit(3)
                     } else {
                         VStack(alignment: .leading, spacing: 6) {
                             Text(LocalizedStringKey(model.shortDescription))
                                 .font(.subheadline)
-                                .foregroundStyle(Color(white: 0.5))
+                                .foregroundStyle(Color.adaptive(white: 0.5))
                                 .lineLimit(4)
                                 .fixedSize(horizontal: false, vertical: true)
 
@@ -1015,13 +1015,13 @@ struct ModelCard: View {
             AnyShapeStyle(
                 LinearGradient(
                     colors: isAppleUnavailable ? 
-                        [Color(white: 0.97), Color(white: 0.96)] :
-                        [Color.white, Color(white: 0.99)],
+                        [Color.adaptive(white: 0.97), Color.adaptive(white: 0.96)] :
+                        [Color.adaptiveCard, Color.adaptive(white: 0.99)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
             ) :
-            AnyShapeStyle(Color.white)
+            AnyShapeStyle(Color.adaptiveCard)
         )
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .overlay(
@@ -1116,7 +1116,7 @@ struct ModelCard: View {
                         .foregroundStyle(.orange)
                     Text(modelManager.isAppleIntelligenceAvailable ? String(localized: "No download required.") : modelManager.appleIntelligenceUnavailableHint)
                         .font(.caption)
-                        .foregroundStyle(Color(white: 0.5))
+                        .foregroundStyle(Color.adaptive(white: 0.5))
                 }
             } else {
                 if let compatibilityMessage = modelManager.compatibilityMessage(for: model) {
@@ -1125,7 +1125,7 @@ struct ModelCard: View {
                             .foregroundStyle(.orange)
                         Text(compatibilityMessage)
                             .font(.caption)
-                            .foregroundStyle(Color(white: 0.5))
+                            .foregroundStyle(Color.adaptive(white: 0.5))
                     }
                 }
                 if let readiness = modelManager.downloadReadiness(for: model) {
@@ -1143,12 +1143,12 @@ struct ModelCard: View {
                             .foregroundStyle(result.success ? .green : .red)
                         Text(result.success ? String(localized: "Passed") : String(localized: "Failed"))
                             .font(.caption)
-                            .foregroundStyle(Color(white: 0.5))
+                            .foregroundStyle(Color.adaptive(white: 0.5))
                     }
 
                     Text(String(format: String(localized: "Last test: %lldms • %@", defaultValue: "Last test: %lldms • %@"), Int64(result.durationMs), result.responseSnippet))
                         .font(.caption2)
-                        .foregroundStyle(Color(white: 0.5))
+                        .foregroundStyle(Color.adaptive(white: 0.5))
                         .lineLimit(1)
                 }
             }
@@ -1160,7 +1160,7 @@ struct ModelCard: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(LocalizedStringKey(modelManager.isOnboardingRecommended(model) ? modelManager.deviceFitSummary(for: model) : model.recommendedFor))
                 .font(.caption)
-                .foregroundStyle(modelManager.isOnboardingRecommended(model) ? Color.green.opacity(0.95) : Color(white: 0.42))
+                .foregroundStyle(modelManager.isOnboardingRecommended(model) ? Color.green.opacity(0.95) : Color.adaptive(white: 0.42))
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(alignment: .leading, spacing: 8) {
@@ -1234,10 +1234,10 @@ struct ModelCard: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                 }
-                .foregroundStyle(isThinkingEnabled ? .blue : Color(white: 0.5))
+                .foregroundStyle(isThinkingEnabled ? .blue : Color.adaptive(white: 0.5))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(isThinkingEnabled ? Color.blue.opacity(0.1) : Color(white: 0.95))
+                .background(isThinkingEnabled ? Color.blue.opacity(0.1) : Color.adaptive(white: 0.95))
                 .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -1445,12 +1445,12 @@ struct ModelConsentSheet: View {
                     
                     Text(String(localized: "You can change models anytime in Settings."))
                         .font(.caption)
-                        .foregroundStyle(Color(white: 0.5))
+                        .foregroundStyle(Color.adaptive(white: 0.5))
                 }
                 .padding(.horizontal, 20)
                 .padding(.top, 8)
                 .padding(.bottom, 16)
-                .background(Color(white: 0.98))
+                .background(Color.adaptive(white: 0.98))
             }
         }
     }
@@ -1459,10 +1459,10 @@ struct ModelConsentSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(model.name)
                 .font(.title2.bold())
-                .foregroundStyle(Color(white: 0.1))
+                .foregroundStyle(Color.adaptive(white: 0.1))
             Text(String(format: String(localized: "Provider: %@", defaultValue: "Provider: %@"), model.providerName))
                 .font(.subheadline)
-                .foregroundStyle(Color(white: 0.5))
+                .foregroundStyle(Color.adaptive(white: 0.5))
         }
     }
     
@@ -1475,12 +1475,12 @@ struct ModelConsentSheet: View {
                     .foregroundStyle(.orange)
                 Text(String(localized: "Data Sent to Apple Inc."))
                     .font(.headline)
-                    .foregroundStyle(Color(white: 0.2))
+                    .foregroundStyle(Color.adaptive(white: 0.2))
             }
             
             Text(String(localized: "When you use Apple Intelligence, the following personal data may be sent to Apple Inc. (including Apple Private Cloud Compute) to generate AI responses:"))
                 .font(.subheadline)
-                .foregroundStyle(Color(white: 0.5))
+                .foregroundStyle(Color.adaptive(white: 0.5))
             
             VStack(alignment: .leading, spacing: 8) {
                 dataRow(icon: "text.bubble", text: String(localized: "Your chat messages and prompts"))
@@ -1490,11 +1490,11 @@ struct ModelConsentSheet: View {
             
             Text(String(localized: "By tapping \"Allow Data Sharing & Continue\", you authorize this data transfer to Apple Inc. for AI processing."))
                 .font(.caption)
-                .foregroundStyle(Color(white: 0.45))
+                .foregroundStyle(Color.adaptive(white: 0.45))
                 .padding(.top, 4)
         }
         .padding(16)
-        .background(Color.white)
+        .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
@@ -1508,12 +1508,12 @@ struct ModelConsentSheet: View {
                     .foregroundStyle(.green)
                 Text(String(localized: "Data NOT Sent to Any Third Party"))
                     .font(.headline)
-                    .foregroundStyle(Color(white: 0.2))
+                    .foregroundStyle(Color.adaptive(white: 0.2))
             }
             
             Text(String(format: String(localized: "This model runs 100%% on your device. The following data is processed locally and is never sent to %@ or any third-party AI service:", defaultValue: "This model runs 100%% on your device. The following data is processed locally and is never sent to %@ or any third-party AI service:"), model.providerName))
                 .font(.subheadline)
-                .foregroundStyle(Color(white: 0.5))
+                .foregroundStyle(Color.adaptive(white: 0.5))
             
             VStack(alignment: .leading, spacing: 8) {
                 privacyRow(text: String(localized: "Your chat messages and prompts"))
@@ -1527,7 +1527,7 @@ struct ModelConsentSheet: View {
                     .foregroundStyle(.blue)
                 Text(String(localized: "All AI inference happens on your device. No personal data leaves your device for AI processing."))
                     .font(.caption)
-                    .foregroundStyle(Color(white: 0.45))
+                    .foregroundStyle(Color.adaptive(white: 0.45))
             }
             .padding(.top, 4)
         }
@@ -1549,12 +1549,12 @@ struct ModelConsentSheet: View {
                     .foregroundStyle(.blue)
                 Text(String(localized: "Model Download Data"))
                     .font(.headline)
-                    .foregroundStyle(Color(white: 0.2))
+                    .foregroundStyle(Color.adaptive(white: 0.2))
             }
             
             Text(String(localized: "To download the model files, a network request is made to Hugging Face Inc. (model hosting provider). This request may include:"))
                 .font(.subheadline)
-                .foregroundStyle(Color(white: 0.5))
+                .foregroundStyle(Color.adaptive(white: 0.5))
             
             VStack(alignment: .leading, spacing: 8) {
                 dataRow(icon: "network", text: String(localized: "Your IP address"))
@@ -1563,11 +1563,11 @@ struct ModelConsentSheet: View {
             
             Text(String(localized: "No chat messages, prompts, documents, or any personal content is sent during downloads."))
                 .font(.caption)
-                .foregroundStyle(Color(white: 0.45))
+                .foregroundStyle(Color.adaptive(white: 0.45))
                 .padding(.top, 4)
         }
         .padding(16)
-        .background(Color.white)
+        .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
@@ -1581,12 +1581,12 @@ struct ModelConsentSheet: View {
                     .foregroundStyle(.blue)
                 Text(String(localized: "Terms & Conditions"))
                     .font(.headline)
-                    .foregroundStyle(Color(white: 0.2))
+                    .foregroundStyle(Color.adaptive(white: 0.2))
             }
             
             Text(String(localized: "By continuing, you agree to the terms and conditions for this model, as well as the app's Terms of Service and Privacy Policy."))
                 .font(.subheadline)
-                .foregroundStyle(Color(white: 0.5))
+                .foregroundStyle(Color.adaptive(white: 0.5))
             
             VStack(alignment: .leading, spacing: 8) {
                 if let termsURL = model.termsURL {
@@ -1602,7 +1602,7 @@ struct ModelConsentSheet: View {
             .foregroundStyle(.blue)
         }
         .padding(16)
-        .background(Color.white)
+        .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
@@ -1617,7 +1617,7 @@ struct ModelConsentSheet: View {
                 .frame(width: 20)
             Text(text)
                 .font(.subheadline)
-                .foregroundStyle(Color(white: 0.4))
+                .foregroundStyle(Color.adaptive(white: 0.4))
         }
     }
     
@@ -1629,7 +1629,7 @@ struct ModelConsentSheet: View {
                 .frame(width: 20)
             Text(text)
                 .font(.subheadline)
-                .foregroundStyle(Color(white: 0.4))
+                .foregroundStyle(Color.adaptive(white: 0.4))
         }
     }
 }
@@ -1651,10 +1651,10 @@ struct InfoTag: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.85)
         }
-        .foregroundStyle(isHighlighted ? .green : Color(white: 0.5))
+        .foregroundStyle(isHighlighted ? .green : Color.adaptive(white: 0.5))
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
-        .background(isHighlighted ? Color.green.opacity(0.1) : Color(white: 0.95))
+        .background(isHighlighted ? Color.green.opacity(0.1) : Color.adaptive(white: 0.95))
         .clipShape(Capsule())
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -1671,7 +1671,7 @@ struct DownloadReadinessView: View {
                     .foregroundStyle(isDownloaded ? .green : .blue)
                 Text(isDownloaded ? String(localized: "Ready offline") : String(localized: "Download plan"))
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color(white: 0.24))
+                    .foregroundStyle(Color.adaptive(white: 0.24))
             }
 
             if isDownloaded {
@@ -1718,7 +1718,7 @@ struct DownloadReadinessView: View {
             }
         }
         .padding(12)
-        .background(Color(white: 0.975))
+        .background(Color.adaptive(white: 0.975))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
@@ -1735,10 +1735,10 @@ struct DownloadReadinessView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
         }
-        .foregroundStyle(isWarning ? .orange : Color(white: 0.45))
+        .foregroundStyle(isWarning ? .orange : Color.adaptive(white: 0.45))
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(isWarning ? Color.orange.opacity(0.08) : Color.white)
+        .background(isWarning ? Color.orange.opacity(0.08) : Color.adaptiveCard)
         .clipShape(Capsule())
     }
 
@@ -1750,7 +1750,7 @@ struct DownloadReadinessView: View {
                 .frame(width: 16)
             Text(text)
                 .font(.caption2)
-                .foregroundStyle(Color(white: 0.45))
+                .foregroundStyle(Color.adaptive(white: 0.45))
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -1914,17 +1914,17 @@ struct UnsupportedModelButton: View {
         VStack(spacing: 4) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color(white: 0.35))
+                .foregroundStyle(Color.adaptive(white: 0.35))
             Text(subtitle)
                 .font(.caption)
-                .foregroundStyle(Color(white: 0.5))
+                .foregroundStyle(Color.adaptive(white: 0.5))
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
         .padding(.horizontal, 10)
-        .background(Color(white: 0.94))
+        .background(Color.adaptive(white: 0.94))
         .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
@@ -1953,7 +1953,7 @@ struct DownloadingButton: View {
             Button(role: .cancel, action: action) {
                 Image(systemName: "xmark")
                     .font(.caption.bold())
-                    .foregroundStyle(Color(white: 0.45))
+                    .foregroundStyle(Color.adaptive(white: 0.45))
                     .frame(width: closeButtonSize, height: closeButtonSize)
                     .background(Color.black.opacity(0.04))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -2014,7 +2014,7 @@ struct ErrorButton: View {
                     .foregroundStyle(.orange)
                 Text(message)
                     .font(.caption)
-                    .foregroundStyle(Color(white: 0.5))
+                    .foregroundStyle(Color.adaptive(white: 0.5))
                     .lineLimit(2)
             }
             

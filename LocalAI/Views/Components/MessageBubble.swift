@@ -101,7 +101,7 @@ struct AssistantMarkdownView: View, Equatable {
             .markdownTextStyle {
                 FontSize(CGFloat(17 * textScale))
             }
-            .foregroundStyle(Color(white: 0.15))
+            .foregroundStyle(Color.adaptive(white: 0.15))
             .markdownBlockStyle(\.codeBlock) { configuration in
                 VStack(spacing: 0) {
                     HStack {
@@ -164,9 +164,9 @@ struct ThinkingMarkdownView: View, Equatable {
         Markdown(text)
             .font(.callout)
             .markdownTextStyle {
-                ForegroundColor(isExpanded ? Color(white: 0.66) : Color(white: 0.86))
+                ForegroundColor(isExpanded ? Color.adaptive(white: 0.66) : Color.adaptive(white: 0.86))
             }
-            .foregroundStyle(isExpanded ? Color(white: 0.86) : Color(white: 0.66))
+            .foregroundStyle(isExpanded ? Color.adaptive(white: 0.86) : Color.adaptive(white: 0.66))
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -387,7 +387,7 @@ struct MessageBubble: View {
                 .foregroundStyle(.blue)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(Color.white.opacity(0.85))
+                .background(Color.adaptiveCard.opacity(0.85))
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -437,11 +437,11 @@ struct MessageBubble: View {
     private func actionChipLabel(title: String, systemImage: String) -> some View {
         Label(title, systemImage: systemImage)
             .font(.caption.weight(.semibold))
-            .foregroundStyle(Color(white: 0.22))
+            .foregroundStyle(Color.adaptive(white: 0.22))
             .lineLimit(1)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .background(Color.white.opacity(0.9))
+            .background(Color.adaptiveCard.opacity(0.9))
             .clipShape(Capsule())
             .overlay(
                 Capsule()
@@ -501,7 +501,7 @@ struct MessageBubble: View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color(white: 0.35))
+                .foregroundStyle(Color.adaptive(white: 0.35))
                 .frame(width: 34, height: 30)
                 .contentShape(Rectangle())
         }
@@ -842,16 +842,16 @@ struct MessageBubble: View {
                                 .font(.caption2.weight(.bold))
                                 .foregroundStyle(.white)
                                 .frame(width: 16, height: 16)
-                                .background(isHighlighted ? Color.accentColor : Color(white: 0.55))
+                                .background(isHighlighted ? Color.accentColor : Color.adaptive(white: 0.55))
                                 .clipShape(Circle())
                             Text(title)
                                 .lineLimit(1)
                         }
                         .font(.caption2.weight(.medium))
-                        .foregroundStyle(isHighlighted ? Color.accentColor : Color(white: 0.4))
+                        .foregroundStyle(isHighlighted ? Color.accentColor : Color.adaptive(white: 0.4))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
-                        .background(isHighlighted ? Color.accentColor.opacity(0.12) : Color.white.opacity(0.92))
+                        .background(isHighlighted ? Color.accentColor.opacity(0.12) : Color.adaptiveCard.opacity(0.92))
                         .clipShape(Capsule())
                         .overlay(
                             Capsule()
@@ -893,7 +893,7 @@ struct MessageBubble: View {
                             let wordCount = thinkingText.split { $0.isWhitespace }.count
                             Text("\(wordCount) words")
                                 .font(.caption2)
-                                .foregroundStyle(Color(white: 0.55))
+                                .foregroundStyle(Color.adaptive(white: 0.55))
                         }
                     }
 
@@ -933,7 +933,7 @@ struct MessageBubble: View {
                         }
                         .overlay(alignment: .top) {
                             LinearGradient(
-                                colors: [Color.white.opacity(0.985), Color.clear],
+                                colors: [Color.adaptiveCard.opacity(0.985), Color.clear],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
@@ -942,7 +942,7 @@ struct MessageBubble: View {
                         }
                         .overlay(alignment: .bottom) {
                             LinearGradient(
-                                colors: [Color.clear, Color.white.opacity(0.985)],
+                                colors: [Color.clear, Color.adaptiveCard.opacity(0.985)],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
@@ -1180,7 +1180,7 @@ struct MessageShape: Shape {
         MessageBubble(message: ChatMessage(role: .assistant, content: "Thinking…", isStreaming: true))
     }
     .padding()
-    .background(Color(white: 0.98))
+    .background(Color.adaptive(white: 0.98))
     .environment(SpeechManager())
     .environment(ModelManager())
 }

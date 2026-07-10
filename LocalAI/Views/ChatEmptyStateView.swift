@@ -30,12 +30,12 @@ struct ChatEmptyStateView: View {
                 VStack(spacing: 4) {
                     Text(String(localized: "Start a Conversation"))
                         .font(isInputFocused ? .headline : .title2.bold())
-                        .foregroundStyle(Color(white: 0.15))
+                        .foregroundStyle(Color.adaptive(white: 0.15))
 
                     if let selectedModelName {
                         Text(String(format: String(localized: "Using %@"), selectedModelName))
                             .font(.caption)
-                            .foregroundStyle(Color(white: 0.4))
+                            .foregroundStyle(Color.adaptive(white: 0.4))
                     } else if let downloadingModelName {
                         HStack(spacing: 8) {
                             ProgressView()
@@ -77,7 +77,7 @@ struct ChatEmptyStateView: View {
                             Text(LocalizedStringKey(personalityLabel.name))
                                 .font(.caption2.weight(.medium))
                         }
-                        .foregroundStyle(Color(white: 0.45))
+                        .foregroundStyle(Color.adaptive(white: 0.45))
                         .padding(.top, 2)
                     }
                 }
@@ -111,7 +111,7 @@ struct ChatEmptyStateView: View {
 
             Text(statusTitle)
                 .font(.caption.weight(.medium))
-                .foregroundStyle(Color(white: 0.35))
+                .foregroundStyle(Color.adaptive(white: 0.35))
                 .shimmering(active: isWarmingUp, bandSize: 0.22)
         }
         .padding(.horizontal, 14)

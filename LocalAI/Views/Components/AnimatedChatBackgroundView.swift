@@ -7,7 +7,7 @@ struct AnimatedChatBackgroundView: View {
     var body: some View {
         ZStack {
             // Base background
-            Color.white.ignoresSafeArea()
+            Color.adaptiveCard.ignoresSafeArea()
             
             // Aurora Blobs
             TimelineView(.animation) { timeline in

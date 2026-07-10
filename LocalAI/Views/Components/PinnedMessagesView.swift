@@ -37,7 +37,7 @@ struct PinnedMessagesView: View {
                     }
                 }
             }
-            .background(Color(white: 0.96).ignoresSafeArea())
+            .background(Color.adaptive(white: 0.96).ignoresSafeArea())
             .navigationTitle(String(localized: "Pinned Messages"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -62,7 +62,7 @@ struct PinnedMessagesView: View {
 
                 Text(conversation.title)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color(white: 0.45))
+                    .foregroundStyle(Color.adaptive(white: 0.45))
                     .lineLimit(1)
 
                 Spacer()
@@ -82,12 +82,12 @@ struct PinnedMessagesView: View {
             if message.role == .assistant {
                 Markdown(message.content)
                     .font(.callout)
-                    .foregroundStyle(Color(white: 0.2))
+                    .foregroundStyle(Color.adaptive(white: 0.2))
                     .lineLimit(6)
             } else {
                 Text(message.content)
                     .font(.callout)
-                    .foregroundStyle(Color(white: 0.2))
+                    .foregroundStyle(Color.adaptive(white: 0.2))
                     .lineLimit(6)
             }
 
@@ -100,7 +100,7 @@ struct PinnedMessagesView: View {
                 } label: {
                     Label(String(localized: "Copy"), systemImage: "doc.on.doc")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(Color(white: 0.45))
+                        .foregroundStyle(Color.adaptive(white: 0.45))
                 }
                 .buttonStyle(.plain)
 
@@ -138,16 +138,16 @@ struct PinnedMessagesView: View {
         VStack(spacing: 16) {
             Image(systemName: "pin.slash")
                 .font(.system(size: 48, weight: .light))
-                .foregroundStyle(Color(white: 0.65))
+                .foregroundStyle(Color.adaptive(white: 0.65))
                 .accessibilityHidden(true)
 
             Text(String(localized: "No Pinned Messages"))
                 .font(.headline)
-                .foregroundStyle(Color(white: 0.4))
+                .foregroundStyle(Color.adaptive(white: 0.4))
 
             Text(String(localized: "Long-press any message and tap Pin to save it here."))
                 .font(.subheadline)
-                .foregroundStyle(Color(white: 0.6))
+                .foregroundStyle(Color.adaptive(white: 0.6))
                 .multilineTextAlignment(.center)
         }
         .padding(40)

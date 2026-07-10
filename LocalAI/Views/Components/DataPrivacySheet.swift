@@ -20,7 +20,7 @@ struct DataPrivacySheet: View {
                     // Intro
                     Text("This screen explains what data the app processes, who it is shared with, and how your privacy is protected.")
                         .font(.subheadline)
-                        .foregroundStyle(Color(white: 0.5))
+                        .foregroundStyle(Color.adaptive(white: 0.5))
                     
                     // Data the app processes
                     sectionCard(
@@ -43,7 +43,7 @@ struct DataPrivacySheet: View {
                     ) {
                         Text("MLX models like Gemma 2 2B by Google run **100% on your device**. Your prompts, documents, and all personal data are **never sent** to Google LLC or any third-party AI service for inference.")
                             .font(.subheadline)
-                            .foregroundStyle(Color(white: 0.45))
+                            .foregroundStyle(Color.adaptive(white: 0.45))
                         
                         VStack(alignment: .leading, spacing: 6) {
                             privacyCheckRow("Prompts stay on-device")
@@ -61,11 +61,11 @@ struct DataPrivacySheet: View {
                     ) {
                         Text("If you enable Conversation Mode, the app can keep listening between turns and speak replies aloud on-device.")
                             .font(.subheadline)
-                            .foregroundStyle(Color(white: 0.45))
+                            .foregroundStyle(Color.adaptive(white: 0.45))
 
                         Text("You can turn this off at any time in Chat or Settings.")
                             .font(.caption)
-                            .foregroundStyle(Color(white: 0.5))
+                            .foregroundStyle(Color.adaptive(white: 0.5))
                     }
                     
                     if modelManager.isAppleIntelligenceDeviceSupported {
@@ -77,11 +77,11 @@ struct DataPrivacySheet: View {
                         ) {
                             Text("If you select Apple Intelligence, prompts and document text may be sent to **Apple Inc.** (including Apple Private Cloud Compute) to generate AI responses.")
                                 .font(.subheadline)
-                                .foregroundStyle(Color(white: 0.45))
+                                .foregroundStyle(Color.adaptive(white: 0.45))
                             
                             Text("The app asks for your explicit permission before using Apple Intelligence for the first time.")
                                 .font(.caption)
-                                .foregroundStyle(Color(white: 0.5))
+                                .foregroundStyle(Color.adaptive(white: 0.5))
                         }
                     }
                     
@@ -93,11 +93,11 @@ struct DataPrivacySheet: View {
                     ) {
                         Text("Downloading model files uses a network request to **Hugging Face Inc.** (model hosting provider). This request may include your IP address and device request headers.")
                             .font(.subheadline)
-                            .foregroundStyle(Color(white: 0.45))
+                            .foregroundStyle(Color.adaptive(white: 0.45))
                         
                         Text("No chat messages, prompts, documents, or personal content is sent during downloads.")
                             .font(.caption)
-                            .foregroundStyle(Color(white: 0.5))
+                            .foregroundStyle(Color.adaptive(white: 0.5))
                     }
                     
                     // No tracking
@@ -108,7 +108,7 @@ struct DataPrivacySheet: View {
                     ) {
                         Text("The app does not include third-party advertising, analytics, or tracking SDKs.")
                             .font(.subheadline)
-                            .foregroundStyle(Color(white: 0.45))
+                            .foregroundStyle(Color.adaptive(white: 0.45))
                     }
                     
                     // Links
@@ -122,7 +122,7 @@ struct DataPrivacySheet: View {
                 }
                 .padding(20)
             }
-            .background(Color(white: 0.98))
+            .background(Color.adaptive(white: 0.98))
             .navigationTitle("Data & Privacy")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -143,14 +143,14 @@ struct DataPrivacySheet: View {
                     .foregroundStyle(iconColor)
                 Text(title)
                     .font(.headline)
-                    .foregroundStyle(Color(white: 0.2))
+                    .foregroundStyle(Color.adaptive(white: 0.2))
             }
             
             content()
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white)
+        .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
@@ -163,7 +163,7 @@ struct DataPrivacySheet: View {
                 .padding(.top, 6)
             Text(text)
                 .font(.subheadline)
-                .foregroundStyle(Color(white: 0.45))
+                .foregroundStyle(Color.adaptive(white: 0.45))
         }
     }
     
@@ -175,7 +175,7 @@ struct DataPrivacySheet: View {
                 .frame(width: 18)
             Text(text)
                 .font(.subheadline)
-                .foregroundStyle(Color(white: 0.4))
+                .foregroundStyle(Color.adaptive(white: 0.4))
         }
     }
 }
