@@ -1661,7 +1661,7 @@ struct ChatView: View {
         showUsageToast(message)
     }
 
-    private func showUsageToastIfNeededAfterSend() {
+    private func showUsageToastIfNeededAfterSend(messageWasCharged: Bool) {
         guard !monetizationManager.hasPro else { return }
 
         if monetizationManager.hasReachedFreeDailyMessageLimit {
@@ -1669,7 +1669,10 @@ struct ChatView: View {
             return
         }
 
-        // Count down each of the last three so the limit never surprises.
+        // Count down each of the last three so the limit never surprises —
+        // but only when this send actually consumed one, so uncharged short
+        // messages don't repeat the same number.
+        guard messageWasCharged else { return }
         let remaining = monetizationManager.freeMessagesRemainingToday
         guard remaining <= 3 else { return }
         showUsageToast(String(format: String(
@@ -1821,8 +1824,8 @@ struct ChatView: View {
             }
 
             if shouldChargeUsage {
-                monetizationManager.registerFreeMessageIfNeeded(for: prompt)
-                showUsageToastIfNeededAfterSend()
+                let charged = monetizationManager.registerFreeMessageIfNeeded(for: prompt)
+                showUsageToastIfNeededAfterSend(messageWasCharged: charged)
             }
 
             let continuityPrompt = shouldResetSession

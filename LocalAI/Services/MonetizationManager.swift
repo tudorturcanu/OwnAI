@@ -253,17 +253,20 @@ final class MonetizationManager {
         !hasPro && freeMessagesRemainingToday == 3 && !didWarnAtThreeLeftOnInstall
     }
 
-    func registerFreeMessageIfNeeded(for messageText: String = "") {
-        guard !hasPro else { return }
+    /// Returns true when the message consumed one of the free messages.
+    @discardableResult
+    func registerFreeMessageIfNeeded(for messageText: String = "") -> Bool {
+        guard !hasPro else { return false }
         // Don't spend the small free allowance on greetings and
         // acknowledgements — let the limit arrive after real use, not before.
         let trimmed = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty, trimmed.count < 25 {
-            return
+            return false
         }
-        guard freeInstallMessageCount < Self.freeInstallMessageLimit else { return }
+        guard freeInstallMessageCount < Self.freeInstallMessageLimit else { return false }
         freeInstallMessageCount += 1
         defaults.set(freeInstallMessageCount, forKey: StorageKey.freeInstallMessageCount)
+        return true
     }
 
     func markThreeMessagesLeftWarningShown() {

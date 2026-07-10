@@ -186,9 +186,11 @@ final class LLMEngine {
             if model.engine != .appleFoundation {
                 return
             }
-            let instructions = AssistantMemoryStore.augmentedSystemPrompt(
-                UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
-            )
+            // Compare the BASE prompt only: memory facts learned mid-chat must
+            // not force a session rebuild here, or the conversation's context
+            // would be wiped every time something new is remembered. Fresh
+            // facts apply when the next session is created.
+            let instructions = UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
             if instructions == lastLoadedAppleFoundationInstructions {
                 return
             }
@@ -1128,11 +1130,11 @@ private extension LLMEngine {
         case .appleFoundation:
             let availability = appleFoundationBridge.availability
             if availability == .available {
-                let instructions = AssistantMemoryStore.augmentedSystemPrompt(
-                    UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
+                let baseInstructions = UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
+                try appleFoundationBridge.loadSession(
+                    instructions: AssistantMemoryStore.augmentedSystemPrompt(baseInstructions)
                 )
-                try appleFoundationBridge.loadSession(instructions: instructions)
-                lastLoadedAppleFoundationInstructions = instructions
+                lastLoadedAppleFoundationInstructions = baseInstructions
                 #if !targetEnvironment(simulator)
                 mlxSession = nil
                 mlxModelContainer = nil
