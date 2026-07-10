@@ -845,6 +845,10 @@ struct ChatView: View {
             }
             
             VStack(spacing: 8) {
+                if llmEngine.state == .loading {
+                    modelLoadingBanner
+                }
+
                 if shouldShowContextLimitWarning {
                     contextLimitBanner
                 }
@@ -1176,6 +1180,32 @@ struct ChatView: View {
                 .foregroundStyle(Color.adaptive(white: 0.45))
                 .lineLimit(1)
         }
+    }
+
+    // Large models take seconds to load into memory; without this the send
+    // button just silently refuses and the app reads as frozen.
+    private var modelLoadingBanner: some View {
+        HStack(spacing: 10) {
+            ProgressView()
+                .controlSize(.small)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(String(format: String(
+                    localized: "Loading %@…",
+                    defaultValue: "Loading %@…"
+                ), selectedModel?.name ?? String(localized: "model")))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.adaptive(white: 0.15))
+                Text(String(localized: "You can keep typing — sending unlocks in a moment."))
+                    .font(.caption2)
+                    .foregroundStyle(Color.adaptive(white: 0.5))
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .transition(.opacity)
     }
 
     // Warn before the model's fixed context window silently drops older
