@@ -1376,7 +1376,6 @@ struct ChatView: View {
                 // User-initiated cancellation should quietly restore the composer.
             } catch {
                 chatDiagnostic("document import failed id=\(extractionID) file=\(fileName) error=\(error.localizedDescription)")
-                print("Error processing file: \(error)")
                 documentError = error.localizedDescription
             }
             if isCurrentDocumentExtraction(extractionID) {
@@ -1630,7 +1629,6 @@ struct ChatView: View {
     }
 
     private func chatDiagnostic(_ message: String) {
-        print("[ChatDiagnostics] chat \(message)")
     }
 
     private func wordCount(in content: String) -> Int {
@@ -1973,7 +1971,6 @@ struct ChatView: View {
         do {
             let shouldGenerateFollowUps = smartReplyStylesEnabled
             let generatedTitle: String
-            let generatedSummary: String
             let generatedFollowUps: [String]
 
             if shouldGenerateFollowUps {
@@ -1983,7 +1980,6 @@ struct ChatView: View {
                     model: model
                 )
                 generatedTitle = insights.title
-                generatedSummary = insights.summary
                 generatedFollowUps = insights.suggestedFollowUps
             } else {
                 generatedTitle = try await llmEngine.generateConversationTitle(
@@ -1991,7 +1987,6 @@ struct ChatView: View {
                     assistantResponse: assistantResponse,
                     model: model
                 )
-                generatedSummary = ""
                 generatedFollowUps = []
             }
 
@@ -2001,15 +1996,10 @@ struct ChatView: View {
                 historyManager.updateTitle(generatedTitle, for: conversationID)
             }
 
-            if !generatedSummary.isEmpty {
-                print("[ChatView] Apple insights summary assistantID=\(assistantID): \(generatedSummary)")
-            }
             if shouldGenerateFollowUps, !generatedFollowUps.isEmpty {
                 generatedFollowUpSuggestions[assistantID] = generatedFollowUps
-                print("[ChatView] Apple insights followUps assistantID=\(assistantID): \(generatedFollowUps)")
             }
         } catch {
-            print("[ChatView] Apple insights unavailable assistantID=\(assistantID): \(error.localizedDescription)")
         }
     }
 
@@ -2248,7 +2238,7 @@ struct ChatView: View {
         guard let lastScalar = trimmed.unicodeScalars.last else { return content }
 
         let terminalCharacters = CharacterSet(charactersIn: ".!?\"')]}”")
-        if terminalCharacters.contains(lastScalar) {
+        if terminalCharacters.contains(lastScalar) || endsWithEmoji(trimmed) {
             return content.hasSuffix("\n") ? content : content + "\n\n"
         }
 
@@ -2733,6 +2723,7 @@ struct ChatView: View {
                 return false
             }
         }
+        if endsWithEmoji(trimmed) { return false }
 
         let lowercased = trimmed.lowercased()
         let trailingFragments = [
@@ -2782,8 +2773,15 @@ struct ChatView: View {
         guard trimmed.count >= 40 else { return false }
         guard let lastScalar = trimmed.unicodeScalars.last else { return false }
 
+        // Emoji endings ("Let me know! 🎉") close a sentence just like
+        // punctuation does.
         let terminalCharacters = CharacterSet(charactersIn: ".!?\"')]}”`")
-        return !terminalCharacters.contains(lastScalar)
+        return !terminalCharacters.contains(lastScalar) && !endsWithEmoji(trimmed)
+    }
+
+    private func endsWithEmoji(_ content: String) -> Bool {
+        guard let last = content.last else { return false }
+        return last.unicodeScalars.contains { $0.properties.isEmojiPresentation }
     }
 
     private func likelyHitResponseLimit(_ content: String) -> Bool {
@@ -2821,9 +2819,13 @@ struct ChatView: View {
         let trimmed = visibleContent.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
 
+        // A missing sentence ending alone is not enough to continue: complete
+        // answers that end in an emoji or a list item would keep getting
+        // "continue" prompts and ramble past their natural end. Only continue
+        // when the pass also ran out of output tokens, or when the text shows
+        // a strong truncation signal (trailing conjunction, open clause).
         return looksTruncated(trimmed) ||
-            likelyHitResponseLimit(trimmed) ||
-            missingTerminalPunctuation(trimmed)
+            (likelyHitResponseLimit(trimmed) && missingTerminalPunctuation(trimmed))
     }
 
     private func adaptiveGenerationOverrides(
@@ -3024,7 +3026,6 @@ struct ChatView: View {
         let effectiveRequest = trimmedText.isEmpty ? String(localized: "Summarize the documents in this chat.") : trimmedText
 
         guard let conversationID, documentManager.shouldSearchDocuments(in: conversationID) else {
-            print("[OCRDEBUG] prompt no-doc-context conversation=\(conversationID?.uuidString ?? "nil") request=\"\(debugPromptPreview(effectiveRequest))\"")
             return (budgetedGenerationPrompt(trimmedText, model: model), [], false, effectiveRequest)
         }
 
@@ -3034,25 +3035,16 @@ struct ChatView: View {
         let latestAttachedDocumentSnippet = prefersNewestAttachment
             ? latestAttachedDocumentSnippet(for: conversationID)
             : nil
-        let documentInventory = attachedDocuments.map { document in
-            "\(document.name):chars=\(document.content.count):sections=\(document.sections.count):origin=\(document.textOrigin.rawValue):preview='\(debugPromptPreview(document.content, maxLength: 80))'"
-        }.joined(separator: " | ")
-        print("[OCRDEBUG] prompt start conversation=\(conversationID) request=\"\(debugPromptPreview(effectiveRequest))\" docs=\(attachedDocuments.count) latest=\(attachedDocuments.first?.name ?? "nil") inventory=\(documentInventory)")
 
         let snippets = await documentManager.retrieveRelevantSnippets(
             for: effectiveRequest,
             conversationID: conversationID,
             limit: 4
         )
-        let retrievedSummary = snippets.map { item in
-            "\(item.document.name)@\(item.chunk.sourceLocationLabel ?? "nil"):score=\(String(format: "%.3f", item.chunk.score)):chars=\(item.chunk.content.count):preview='\(debugPromptPreview(item.chunk.content, maxLength: 80))'"
-        }.joined(separator: " | ")
-        print("[OCRDEBUG] prompt retrieved count=\(snippets.count) results=\(retrievedSummary)")
 
         let strongSnippets = snippets.filter { item in
             item.document.id == attachedDocuments.first?.id || item.chunk.score >= 0.22
         }
-        print("[OCRDEBUG] prompt retrieval-filter prefersNewest=\(prefersNewestAttachment) strongCount=\(strongSnippets.count) threshold=0.220")
 
         if !snippets.isEmpty {
             var documentSnippets = snippets.map { item in
@@ -3077,7 +3069,6 @@ struct ChatView: View {
                 }
                 documentSnippets.insert(latestAttachedDocumentSnippet, at: 0)
             }
-            print("[OCRDEBUG] prompt retrieved-branch newestInjected=\(latestAttachedDocumentSnippet != nil) snippetOrder=\(debugSnippetSummary(documentSnippets))")
             let instructions = """
             \(documentAnsweringInstructions)
             The retrieved passages are ranked by relevance. Use higher-ranked passages and exact matches first.
@@ -3095,7 +3086,6 @@ struct ChatView: View {
                 userRequest: effectiveRequest,
                 configuration: configuration
             )
-            print("[OCRDEBUG] prompt package branch=retrieved contextChars=\(package.context.count) omitted=\(package.omittedCount) sourceTitles=\(package.sourceTitles) finalChars=\(finalPrompt.count) finalTokensApprox=\(PromptBudgeter.estimatedTokenCount(finalPrompt)) preview=\"\(debugPromptPreview(finalPrompt, maxLength: 220))\"")
 
             return (
                 finalPrompt,
@@ -3131,7 +3121,6 @@ struct ChatView: View {
             userRequest: effectiveRequest,
             configuration: configuration
         )
-        print("[OCRDEBUG] prompt package branch=fallback snippetOrder=\(debugSnippetSummary(Array(documentSnippets))) contextChars=\(package.context.count) omitted=\(package.omittedCount) sourceTitles=\(package.sourceTitles) finalChars=\(finalPrompt.count) finalTokensApprox=\(PromptBudgeter.estimatedTokenCount(finalPrompt)) preview=\"\(debugPromptPreview(finalPrompt, maxLength: 220))\"")
 
         return (
             finalPrompt,

@@ -30,15 +30,7 @@ enum MemoryProfiler {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .memory)
     }
     
-    /// Logs the current memory usage with a tag.
     nonisolated static func log(_ tag: String, message: String? = nil) {
-        let memory = currentResidentMemory
-        let formatted = formatBytes(memory)
-        var logMessage = "[MemoryProfiler] [\(tag)] Memory: \(formatted)"
-        if let message = message {
-            logMessage += " - \(message)"
-        }
-        print(logMessage)
     }
     
     /// Measures memory delta for an operation.

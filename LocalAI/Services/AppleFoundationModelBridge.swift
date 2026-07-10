@@ -116,6 +116,45 @@ final class AppleFoundationModelBridge {
     private let sessionLock = NSLock()
     private let requestGate = AsyncRequestGate()
     private var sessionStorage: Any?
+    // Rough token count of the persistent session's transcript (instructions +
+    // every prompt/response so far). Guarded by sessionLock. Used to size each
+    // request's response budget against the model's fixed context window.
+    private var transcriptTokenEstimate = 0
+
+    private static let contextWindowTokens = 4_096
+    private static let responseBudgetCushion = 256
+    private static let minimumResponseTokens = 256
+    private static let maxContinuationRounds = 2
+    private static let transcriptTurnOverheadTokens = 16
+
+    static func adaptiveResponseTokenBudget(
+        requested: Int,
+        promptTokens: Int,
+        historyTokens: Int
+    ) -> Int {
+        let available = contextWindowTokens - promptTokens - historyTokens - responseBudgetCushion
+        return max(minimumResponseTokens, min(requested, available))
+    }
+
+    // A response that landed near the token cap and doesn't end a sentence (or
+    // leaves a code fence open) was almost certainly cut by the cap, not
+    // finished by the model.
+    static func looksCutOffAtTokenCap(_ content: String, budget: Int) -> Bool {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return false }
+        guard PromptBudgeter.estimatedTokenCount(trimmed) >= Int(Double(budget) * 0.9) else {
+            return false
+        }
+
+        let fenceCount = trimmed.components(separatedBy: "```").count - 1
+        if fenceCount % 2 != 0 { return true }
+
+        let closingCharacters = CharacterSet(charactersIn: "\"'”’)»]}*_`")
+        let core = trimmed.trimmingCharacters(in: closingCharacters)
+        guard let last = core.last else { return true }
+        if last.unicodeScalars.contains(where: { $0.properties.isEmojiPresentation }) { return false }
+        return !".!?…。！？".contains(last)
+    }
 
     var hasConversationContext: Bool {
         sessionLock.lock()
@@ -147,6 +186,7 @@ final class AppleFoundationModelBridge {
     func resetSession() {
         sessionLock.lock()
         sessionStorage = nil
+        transcriptTokenEstimate = 0
         sessionLock.unlock()
     }
 
@@ -165,24 +205,19 @@ final class AppleFoundationModelBridge {
 
     func prewarm(promptPrefix: String? = nil) {
         guard !requestGate.isBusy else {
-            print("[AppleFoundationModelBridge] prewarm skipped; model request in flight")
             return
         }
 
         let availability = availability
         guard availability == .available else {
-            print("[AppleFoundationModelBridge] prewarm skipped availability=\(availability)")
             return
         }
         guard #available(iOS 26.0, *) else {
-            print("[AppleFoundationModelBridge] prewarm skipped unsupported OS")
             return
         }
 
-        print("[AppleFoundationModelBridge] prewarm start hasPromptPrefix=\(promptPrefix != nil)")
         resolvedSession(systemPrompt: AIResponseDefaults.defaultSystemPrompt)
             .prewarm(promptPrefix: promptPrefix.map(FoundationModels.Prompt.init))
-        print("[AppleFoundationModelBridge] prewarm requested")
     }
 
     func generateConversationTitle(
@@ -279,11 +314,10 @@ final class AppleFoundationModelBridge {
             model: FoundationModels.SystemLanguageModel.default,
             instructions: instructions
         )
-        print("[AppleFoundationModelBridge] storeSession prewarm start")
         session.prewarm()
-        print("[AppleFoundationModelBridge] storeSession prewarm requested")
         sessionLock.lock()
         sessionStorage = session
+        transcriptTokenEstimate = PromptBudgeter.estimatedTokenCount(instructions)
         sessionLock.unlock()
     }
 
@@ -390,12 +424,6 @@ final class AppleFoundationModelBridge {
             )
             : resolvedSession(systemPrompt: systemPrompt)
 
-        let options = FoundationModels.GenerationOptions(
-            sampling: .random(probabilityThreshold: topP),
-            temperature: temperature,
-            maximumResponseTokens: maxTokens
-        )
-
         // Build prompt: prepend image description if an image is attached
         var enrichedPrompt = prompt
         if let image {
@@ -406,22 +434,138 @@ final class AppleFoundationModelBridge {
             enrichedPrompt = "[Image context]\n\(description)\n\n[User message]\n" + prompt
         }
 
-        let stream = session.streamResponse(to: enrichedPrompt, options: options)
+        // Size the response cap to what the 4,096-token window can actually
+        // hold once the prompt and accumulated transcript are accounted for,
+        // instead of letting a fixed cap collide with the window mid-response.
+        let promptTokens = PromptBudgeter.estimatedTokenCount(enrichedPrompt)
+        let instructionTokens = PromptBudgeter.estimatedTokenCount(systemPrompt)
+        sessionLock.lock()
+        let historyTokens = isolated
+            ? instructionTokens
+            : max(transcriptTokenEstimate, instructionTokens)
+        sessionLock.unlock()
+        let responseBudget = Self.adaptiveResponseTokenBudget(
+            requested: maxTokens,
+            promptTokens: promptTokens,
+            historyTokens: historyTokens
+        )
+
+        let options = FoundationModels.GenerationOptions(
+            sampling: .random(probabilityThreshold: topP),
+            temperature: temperature,
+            maximumResponseTokens: responseBudget
+        )
+
+        var activeSession = session
+        let content: String
+        do {
+            content = try await streamFromSession(
+                activeSession,
+                prompt: enrichedPrompt,
+                options: options,
+                prefix: "",
+                onPartialResponse: onPartialResponse
+            )
+        } catch let error as FoundationModels.LanguageModelSession.GenerationError {
+            guard case .exceededContextWindowSize = error else { throw error }
+            // The accumulated transcript no longer fits the model's 4,096-token
+            // context window, which aborts generation mid-response. Retry once on
+            // a fresh session that keeps only the instructions and the most
+            // recent completed exchange.
+            activeSession = Self.condensedSession(from: activeSession)
+            if !isolated {
+                sessionLock.lock()
+                transcriptTokenEstimate = instructionTokens
+                sessionLock.unlock()
+            }
+            content = try await streamFromSession(
+                activeSession,
+                prompt: enrichedPrompt,
+                options: options,
+                prefix: "",
+                onPartialResponse: onPartialResponse
+            )
+        }
+
+        // If generation stopped because it ran into the response cap rather
+        // than finishing naturally, ask the same session to pick up where it
+        // left off so the visible answer never ends mid-sentence.
+        var combined = content
+        var latestChunk = content
+        var continuationRounds = 0
+        while continuationRounds < Self.maxContinuationRounds,
+              !Task.isCancelled,
+              Self.looksCutOffAtTokenCap(latestChunk, budget: responseBudget) {
+            continuationRounds += 1
+            let needsSeparator = !(combined.last?.isWhitespace ?? true)
+            let prefix = combined + (needsSeparator ? " " : "")
+            guard let continuation = try? await streamFromSession(
+                activeSession,
+                prompt: "Continue your previous answer from exactly where it stopped. Do not repeat text you already wrote.",
+                options: options,
+                prefix: prefix,
+                onPartialResponse: onPartialResponse
+            ), !continuation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                break
+            }
+            combined = prefix + continuation
+            latestChunk = continuation
+        }
+
+        sessionLock.lock()
+        if !isolated {
+            sessionStorage = activeSession
+            transcriptTokenEstimate += promptTokens
+                + PromptBudgeter.estimatedTokenCount(combined)
+                + Self.transcriptTurnOverheadTokens
+        }
+        sessionLock.unlock()
+    }
+
+    @available(iOS 26.0, *)
+    private func streamFromSession(
+        _ session: FoundationModels.LanguageModelSession,
+        prompt: String,
+        options: FoundationModels.GenerationOptions,
+        prefix: String,
+        onPartialResponse: @escaping @Sendable (String) async -> Bool
+    ) async throws -> String {
+        let stream = session.streamResponse(to: prompt, options: options)
         var lastContent = ""
 
         for try await partialResponse in stream {
             if Task.isCancelled { break }
             lastContent = partialResponse.content
-            let shouldStop = await onPartialResponse(lastContent)
+            let shouldStop = await onPartialResponse(prefix + lastContent)
             if shouldStop { break }
         }
 
-        _ = await onPartialResponse(lastContent)
-        if !isolated {
-            sessionLock.lock()
-            sessionStorage = session
-            sessionLock.unlock()
+        _ = await onPartialResponse(prefix + lastContent)
+        return lastContent
+    }
+
+    @available(iOS 26.0, *)
+    private static func condensedSession(
+        from session: FoundationModels.LanguageModelSession
+    ) -> FoundationModels.LanguageModelSession {
+        let entries = session.transcript
+        var condensed: [FoundationModels.Transcript.Entry] = []
+        if let first = entries.first {
+            condensed.append(first)
         }
+        // Keep the last completed response rather than the last entry: after a
+        // mid-generation failure the trailing entry can be the very prompt that
+        // is about to be retried.
+        if let lastResponse = entries.last(where: { entry in
+            if case .response = entry { return true }
+            return false
+        }) {
+            condensed.append(lastResponse)
+        }
+        return FoundationModels.LanguageModelSession(
+            model: FoundationModels.SystemLanguageModel.default,
+            transcript: FoundationModels.Transcript(entries: condensed)
+        )
     }
 
     @available(iOS 26.0, *)

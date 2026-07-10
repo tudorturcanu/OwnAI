@@ -124,7 +124,6 @@ struct SyntaxHighlighter {
                     }
                 }
             } catch {
-                print("Regex error: \(error)")
             }
         }
         

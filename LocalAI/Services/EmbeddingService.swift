@@ -88,7 +88,6 @@ actor EmbeddingService {
             bundle = try await loadBundle()
             return true
         } catch {
-            print("[EmbeddingService] load failed: \(error)")
             return false
         }
     }
@@ -135,7 +134,6 @@ actor EmbeddingService {
                 let scalars = await encoded.cast(to: Float.self).shapedArray(of: Float.self).scalars
 
                 guard scalars.count == slice.count * Self.dimension else {
-                    print("[EmbeddingService] unexpected output shape: \(scalars.count) for \(slice.count) inputs")
                     return nil
                 }
                 for row in 0..<slice.count {
@@ -144,7 +142,6 @@ actor EmbeddingService {
                 }
             }
         } catch {
-            print("[EmbeddingService] encode failed: \(error)")
             return nil
         }
 

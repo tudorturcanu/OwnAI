@@ -337,7 +337,7 @@ final class LLMEngine {
         lastStreamingUpdateLength = 0
         streamingStartTime = Date()
         streamingTokensPerSecond = 0
-        print("[LLMEngine] generate start id=\(model.id) engine=\(model.engine.rawValue)")
+
         
         let usesEphemeralMlxSession = model.engine == .mlx && (
             !mlxModelSupportsSystemRole(modelID: model.id)
@@ -361,9 +361,6 @@ final class LLMEngine {
             : nil
         if let mlxFingerprint {
             lastMlxRequestFingerprint = mlxFingerprint
-            print(
-                "[LLMEngine] MLX fingerprint request=\(mlxFingerprint.requestKey) prefix=\(mlxFingerprint.reusablePrefixKey) image=\(mlxFingerprint.imageKey ?? "none") estimatedPromptTokens=\(mlxFingerprint.estimatedPromptTokens)"
-            )
         }
         let mlxCacheLookup: MlxPromptReuseStore.LookupResult?
         if let mlxFingerprint {
@@ -372,11 +369,6 @@ final class LLMEngine {
                 imageKey: mlxFingerprint.imageKey,
                 estimatedPromptTokens: mlxFingerprint.estimatedPromptTokens
             )
-            if let mlxCacheLookup {
-                print(
-                    "[LLMEngine] MLX prompt cache \(mlxCacheLookup.isHit ? "hit" : "miss") prefix=\(mlxFingerprint.reusablePrefixKey) cachedTokens≈\(mlxCacheLookup.cachedPromptTokens)"
-                )
-            }
         } else {
             mlxCacheLookup = nil
         }
@@ -428,7 +420,10 @@ final class LLMEngine {
                     ) { [weak self] content in
                         guard let self else { return true }
                         self.postStreamingUpdate(content)
-                        return AssistantOutputSanitizer.containsControlMarker(content)
+                        // Apple's model never emits MLX-style control markers as
+                        // stop tokens; matching them here only aborts answers that
+                        // mention markers like </s> literally.
+                        return false
                     }
                 } else if model.engine == .mlx {
                     #if targetEnvironment(simulator)
@@ -443,7 +438,6 @@ final class LLMEngine {
                     } else if let currentMlxSession {
                         session = currentMlxSession
                     } else {
-                        print("[LLMEngine] MLX session missing id=\(model.id)")
                         throw LLMError.modelNotLoaded
                     }
                     
@@ -531,10 +525,8 @@ final class LLMEngine {
                 }
                 #endif
                 if model.engine == .mlx, let mlxFingerprint {
-                    print("[LLMEngine] MLX generation cancelled request=\(mlxFingerprint.requestKey)")
                 }
             } catch {
-                print("[LLMEngine] generate failed id=\(model.id) error=\(error.localizedDescription)")
                 await MainActor.run {
                     self.state = .error(message: error.localizedDescription)
                     IdleTimerCoordinator.shared.setReason("llmGenerating", enabled: false)
@@ -548,7 +540,6 @@ final class LLMEngine {
                 }
                 #endif
                 if model.engine == .mlx, let mlxFingerprint {
-                    print("[LLMEngine] MLX generation failed request=\(mlxFingerprint.requestKey) error=\(error.localizedDescription)")
                 }
             }
         }
@@ -676,7 +667,7 @@ final class LLMEngine {
                     isolated: true
                 ) { content in
                     response = content
-                    return AssistantOutputSanitizer.containsControlMarker(content)
+                    return false
                 }
                 return response
             }
@@ -943,42 +934,32 @@ extension LLMEngine {
     }
 
     func prewarmIfNeeded(model: ModelInfo) async {
-        print("[LLMEngine] prewarm requested id=\(model.id) engine=\(model.engine.rawValue) current=\(currentModel?.id ?? "none") state=\(state)")
-
         if model.engine == .appleFoundation {
             let taskID = UUID()
             prewarmTaskID = taskID
             isPrewarming = true
             let startedAt = Date()
-            print("[LLMEngine] prewarm indicator on task=\(taskID) id=\(model.id)")
 
             if currentModel?.id == model.id {
-                print("[LLMEngine] prewarm using existing Apple session id=\(model.id)")
                 appleFoundationBridge.prewarm()
             } else {
-                print("[LLMEngine] prewarm loading Apple session id=\(model.id)")
                 try? await loadModel(model)
             }
 
             let minimumDisplayDuration: TimeInterval = 0.7
             let remainingDuration = minimumDisplayDuration - Date().timeIntervalSince(startedAt)
             if remainingDuration > 0 {
-                print("[LLMEngine] prewarm holding indicator remaining=\(String(format: "%.2f", remainingDuration))s")
                 try? await Task.sleep(nanoseconds: UInt64(remainingDuration * 1_000_000_000))
             }
 
             if prewarmTaskID == taskID {
                 isPrewarming = false
                 prewarmTaskID = nil
-                print("[LLMEngine] prewarm indicator off task=\(taskID) id=\(model.id)")
-            } else {
-                print("[LLMEngine] prewarm task superseded task=\(taskID) id=\(model.id)")
             }
             return
         }
 
         guard isSceneActive else {
-            print("[LLMEngine] prewarm skipped scene inactive id=\(model.id) engine=\(model.engine.rawValue)")
             return
         }
 
@@ -987,12 +968,10 @@ extension LLMEngine {
             if let session = mlxSession {
                 guard model.engine != .mlx || isSceneActive else { return }
                 _ = session
-                print("[LLMEngine] prewarm skipped MLX already has session id=\(model.id)")
                 return
             }
             #endif
         }
-        print("[LLMEngine] prewarm loading non-Apple model id=\(model.id)")
         try? await loadModel(model)
     }
 
@@ -1044,11 +1023,6 @@ extension LLMEngine {
 
     private func recordMlxGenerationMetrics(_ metrics: MlxGenerationMetrics) {
         lastMlxGenerationMetrics = metrics
-        let firstToken = metrics.firstTokenLatency.map { String(format: "%.2fs", $0) } ?? "none"
-        let memoryDelta = Self.formatSignedBytes(metrics.residentMemoryDelta)
-        print(
-            "[LLMEngine] MLX metrics request=\(metrics.requestKey) prefix=\(metrics.reusablePrefixKey) image=\(metrics.imageKey ?? "none") cache=\(metrics.cacheHit ? "hit" : "miss") cachedTokens≈\(metrics.cachedPromptTokens) session=\(metrics.sessionKind) inputTokens≈\(metrics.estimatedInputTokens) outputTokens≈\(metrics.estimatedOutputTokens) firstToken=\(firstToken) wall=\(String(format: "%.2fs", metrics.wallTime)) memoryDelta=\(memoryDelta)"
-        )
         updateAdaptivePromptBudget(using: metrics)
         Task {
             await MlxPromptReuseStore.shared.record(
@@ -1080,7 +1054,6 @@ extension LLMEngine {
 
         guard newBonus != previousBonus else { return }
         UserDefaults.standard.set(newBonus, forKey: key)
-        print("[LLMEngine] MLX adaptive prompt budget bonus=\(newBonus) previous=\(previousBonus)")
     }
 }
 
@@ -1131,7 +1104,6 @@ private extension LLMEngine {
 
         try ensureGPUWorkAllowed(for: model)
         
-        print("[LLMEngine] loadModel start id=\(model.id) engine=\(model.engine.rawValue) state=\(state)")
         state = .loading
         currentModel = model
         
@@ -1174,18 +1146,15 @@ private extension LLMEngine {
                 state = .error(message: message)
                 throw LLMError.modelNotAvailable(message)
             }
-            print("[LLMEngine] MLX load requested id=\(model.id)")
             do {
                 if mlxModelID != model.id || mlxSession == nil {
                     try Task.checkCancellation()
                     try ensureGPUWorkAllowed(for: model)
-                    print("[LLMEngine] MLX loading model id=\(model.id)")
                     let container = try await loadMlxContainer(modelID: model.id)
                     mlxModelContainer = container
                     mlxSession = ChatSession(container, instructions: mlxSessionInstructions(for: model.id))
                     try ensureGPUWorkAllowed(for: model)
                     mlxModelID = model.id
-                    print("[LLMEngine] MLX session ready id=\(model.id)")
                 }
                 appleFoundationBridge.resetSession()
                 state = .ready
@@ -1194,7 +1163,6 @@ private extension LLMEngine {
                     state = .idle
                     throw error
                 }
-                print("[LLMEngine] MLX load failed id=\(model.id) error=\(error.localizedDescription)")
                 state = .error(message: error.localizedDescription)
                 throw LLMError.modelNotAvailable(error.localizedDescription)
             }
@@ -1299,7 +1267,6 @@ private extension LLMEngine {
         let clamped: UInt64 = min(max(fivePercent, floorBytes), capBytes)
         let cacheLimit = Int(clamped)
         MLX.Memory.cacheLimit = cacheLimit
-        print("[LLMEngine] MLX GPU cache limit set to \(cacheLimit / (1024 * 1024))MB (physical=\(physical / (1024 * 1024))MB)")
     }
 
     private func loadMlxContainer(modelID: String) async throws -> ModelContainer {
@@ -1625,15 +1592,12 @@ private actor LocalInferenceScheduler {
     func acquire(label: String) async {
         if !isRunning {
             isRunning = true
-            print("[LocalInferenceScheduler] acquired label=\(label) queueDepth=0")
             return
         }
 
         await withCheckedContinuation { continuation in
             waiters.append(Waiter(label: label, continuation: continuation))
-            print("[LocalInferenceScheduler] queued label=\(label) queueDepth=\(waiters.count)")
         }
-        print("[LocalInferenceScheduler] resumed label=\(label) queueDepth=\(waiters.count)")
     }
 
     func release(label: String) {
@@ -1641,12 +1605,10 @@ private actor LocalInferenceScheduler {
 
         if waiters.isEmpty {
             isRunning = false
-            print("[LocalInferenceScheduler] released label=\(label) queueDepth=0")
             return
         }
 
         let next = waiters.removeFirst()
-        print("[LocalInferenceScheduler] handoff from=\(label) to=\(next.label) queueDepth=\(waiters.count)")
         next.continuation.resume()
     }
 }

@@ -21,14 +21,12 @@ final class NotificationManager {
     
     func incrementLaunchCount() {
         launchCount += 1
-        print("[NotificationManager] Launch count incremented to \(launchCount)")
     }
 
     @MainActor
     func requestAuthorizationIfNeeded() async -> Bool {
         // Only ask on the 2nd launch or later
         guard launchCount >= 2 else {
-            print("[NotificationManager] Skipping notification request (launchCount: \(launchCount))")
             return false
         }
         

@@ -480,7 +480,6 @@ struct ChatHistoryView: View {
             exportShareItems = [tempURL]
             isShareSheetPresented = true
         } catch {
-            print("Export failed: \(error)")
         }
     }
 

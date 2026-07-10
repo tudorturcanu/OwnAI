@@ -300,7 +300,6 @@ final class ChatHistoryManager {
                     deletedConversationIDs: deletedConversationIDs
                 )
             } catch {
-                print("Failed to save conversations: \(error)")
             }
         }
         guard let workItem else { return }
@@ -370,7 +369,6 @@ final class ChatHistoryManager {
             }
             currentConversationID = snapshot.currentConversationID
         } catch {
-            print("No saved chat history found or failed to load: \(error)")
         }
     }
 

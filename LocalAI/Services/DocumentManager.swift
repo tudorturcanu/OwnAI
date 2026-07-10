@@ -169,9 +169,6 @@ final class DocumentManager {
                 let extraction = try await Self.valueWithExtractionTimeout(from: extractionTask)
 
                 extractionProgress = 0.9
-                print("""
-                [OCRDEBUG] extracted file=\(url.lastPathComponent) ext=\(ext) chars=\(extraction.text.count) sections=\(extraction.sections.count) pages=\(extraction.extractedPages)/\(extraction.totalPages) origin=\(extraction.textOrigin.rawValue) quality=\(extraction.ocrQuality.rawValue) preview="\(Self.debugPreview(extraction.text))"
-                """)
 
                 // Check for empty content
                 guard !extraction.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -261,7 +258,6 @@ final class DocumentManager {
 
     nonisolated
     private static func documentDiagnostic(_ message: String) {
-        print("[ChatDiagnostics] document \(message)")
     }
 
     func documents(for conversationID: UUID?) -> [ConversationDocument] {
@@ -326,13 +322,9 @@ final class DocumentManager {
         let maxStoredCharacters = Self.currentDocumentProcessingMode().maxStoredCharacters
         let document = ConversationDocument(from: attachedDocument, maxCharacters: maxStoredCharacters)
         guard !document.content.isEmpty else {
-            print("[OCRDEBUG] addDocument skipped empty name=\(attachedDocument.name) conversation=\(conversationID)")
             return
         }
 
-        print("""
-        [OCRDEBUG] addDocument start name=\(document.name) id=\(document.id) conversation=\(conversationID) chars=\(document.content.count) sections=\(document.sections.count) pages=\(document.extractedPages)/\(document.totalPages) origin=\(document.textOrigin.rawValue) quality=\(document.ocrQuality.rawValue) trimmed=\(document.isTrimmed) preview="\(Self.debugPreview(document.content))"
-        """)
 
         var documents = documentsByConversationID[conversationID] ?? []
         let keepsSingleChatDocument = conversationID != Self.libraryScopeID
@@ -363,7 +355,6 @@ final class DocumentManager {
                     conversationID: conversationID
                 )
             }
-            print("[OCRDEBUG] addDocument reused existing name=\(existing.name) id=\(existing.id) conversation=\(conversationID) docCount=\(documents.count) pruned=\(pruned)")
             return
         }
 
@@ -389,7 +380,6 @@ final class DocumentManager {
                 conversationID: conversationID
             )
         }
-        print("[OCRDEBUG] addDocument stored name=\(document.name) id=\(document.id) conversation=\(conversationID) docCount=\(documents.count) pruned=\(pruned)")
     }
 
     func removeDocument(id: UUID, from conversationID: UUID) {
@@ -437,15 +427,10 @@ final class DocumentManager {
         let documents = (documentsByConversationID[conversationID] ?? []) + libraryDocuments
         let resolved: [(document: ConversationDocument, chunk: RetrievedChunk)] = retrieved.compactMap { chunk -> (document: ConversationDocument, chunk: RetrievedChunk)? in
             guard let document = documents.first(where: { $0.id == chunk.documentID }) else {
-                print("[OCRDEBUG] retrieve unresolved chunk documentID=\(chunk.documentID) conversation=\(conversationID) location=\(chunk.sourceLocationLabel ?? "nil") score=\(chunk.score)")
                 return nil
             }
             return (document: document, chunk: chunk)
         }
-        let summary = resolved.map { item in
-            "\(item.document.name)@\(item.chunk.sourceLocationLabel ?? "nil"):score=\(String(format: "%.3f", item.chunk.score)):chars=\(item.chunk.content.count)"
-        }.joined(separator: " | ")
-        print("[OCRDEBUG] retrieve query=\"\(Self.debugPreview(query, maxLength: 80))\" conversation=\(conversationID) scopes=\(scopes.count) raw=\(retrieved.count) resolved=\(resolved.count) results=\(summary)")
         return resolved
     }
     
@@ -486,7 +471,6 @@ final class DocumentManager {
             }
             try SecureFileStore.save(entries, to: documentsURL)
         } catch {
-            print("Failed to save conversation documents: \(error)")
         }
     }
 
@@ -1243,7 +1227,6 @@ final class ImageAttachmentManager: Sendable {
             try data.write(to: fileURL, options: .atomic)
             return fileName
         } catch {
-            print("[ImageAttachmentManager] Failed to save image: \(error)")
             return nil
         }
     }

@@ -12,7 +12,11 @@ enum PromptBudgeter {
             var baseBudget: Int
             switch model.engine {
             case .appleFoundation:
-                baseBudget = model.supportsVision ? 4_500 : 5_500
+                // Apple's on-device model has a hard 4,096-token context window
+                // shared by the instructions, the session transcript, the prompt,
+                // and the response. Budgeting above it aborts generation
+                // mid-response with exceededContextWindowSize.
+                baseBudget = model.supportsVision ? 3_500 : 4_096
             case .mlx:
                 if model.supportsVision {
                     baseBudget = 2_800

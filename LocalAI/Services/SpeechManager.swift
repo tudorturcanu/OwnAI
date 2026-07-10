@@ -482,28 +482,21 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     /// Loads (and optionally downloads) the Whisper model. Returns true on success.
     @discardableResult
     func prepareTranscriptionIfNeeded(downloadIfNeeded: Bool) async -> Bool {
-        print("[SpeechManager] prepareTranscriptionIfNeeded(downloadIfNeeded: \(downloadIfNeeded)) — model=\(Self.whisperModelName), downloaded=\(isWhisperModelDownloaded), folder=\(Self.whisperModelFolder.path)")
-
         if whisperKit != nil {
-            print("[SpeechManager] WhisperKit already loaded — reusing instance.")
             return true
         }
         if !downloadIfNeeded && !isWhisperModelDownloaded {
-            print("[SpeechManager] Model not downloaded and downloadIfNeeded=false — skipping load.")
             return false
         }
 
         if let whisperLoadTask {
-            print("[SpeechManager] A WhisperKit load is already in progress — awaiting it.")
             whisperKit = await whisperLoadTask.value
-            print("[SpeechManager] In-progress load finished — whisperKit \(whisperKit == nil ? "is nil" : "ready").")
             return whisperKit != nil
         }
 
         isPreparingTranscription = true
         let base = Self.whisperDownloadBase
         let modelName = Self.whisperModelName
-        print("[SpeechManager] Starting WhisperKit load — base=\(base.path)")
         let task = Task { () -> WhisperKit? in
             do {
                 try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
@@ -518,10 +511,8 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
                     download: true
                 )
                 let kit = try await WhisperKit(config)
-                print("[SpeechManager] WhisperKit initialized — tokenizer \(kit.tokenizer == nil ? "MISSING (nil)" : "loaded"), modelState=\(kit.modelState)")
                 return kit
             } catch {
-                print("[SpeechManager] WhisperKit load failed: \(error)")
                 return nil
             }
         }
@@ -530,7 +521,6 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         whisperLoadTask = nil
         whisperKit = loaded
         isPreparingTranscription = false
-        print("[SpeechManager] prepareTranscriptionIfNeeded finished — success=\(loaded != nil)")
         return loaded != nil
     }
 
@@ -556,17 +546,14 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
             }
 
             guard await prepareTranscriptionIfNeeded(downloadIfNeeded: false) else {
-                print("[SpeechManager] startWhisperListening aborted — model not prepared (not downloaded or load failed).")
                 publishError("Download the Whisper model in Settings to use it.")
                 return
             }
             guard let whisperKit else {
-                print("[SpeechManager] startWhisperListening aborted — whisperKit is nil after prepare returned true.")
                 publishError("Whisper model is not ready.")
                 return
             }
             guard let tokenizer = whisperKit.tokenizer else {
-                print("[SpeechManager] startWhisperListening aborted — whisperKit loaded but tokenizer is nil (modelState=\(whisperKit.modelState)).")
                 publishError("Whisper model is not ready.")
                 return
             }
@@ -721,7 +708,6 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
                 fileManager.fileExists(atPath: dataURL.appendingPathComponent(fileName).path)
             }
             if !hasRequiredFiles {
-                print("[PIPERDEBUG] Removing incomplete espeak-ng data at \(dataURL.path)")
                 try? fileManager.removeItem(at: dataURL)
             }
         }
@@ -731,10 +717,7 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         let missingFiles = requiredFiles.filter { fileName in
             !fileManager.fileExists(atPath: dataURL.appendingPathComponent(fileName).path)
         }
-        if missingFiles.isEmpty {
-            print("[PIPERDEBUG] espeak-ng data ready at \(dataURL.path)")
-        } else {
-            print("[PIPERDEBUG] espeak-ng data missing compiled files: \(missingFiles)")
+        guard missingFiles.isEmpty else {
             throw NSError(
                 domain: "SpeechManager",
                 code: -2,

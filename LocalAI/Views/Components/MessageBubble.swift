@@ -987,9 +987,6 @@ struct MessageBubble: View {
     }
 
     private func debugLogThinking(_ event: String, thinkingText: String) {
-        #if DEBUG
-        print("[ThinkingBubble] \(event) | expanded=\(isThinkingExpanded) | textLength=\(thinkingText.count)")
-        #endif
     }
 
     private func reportContent(_ content: String) {

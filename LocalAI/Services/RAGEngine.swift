@@ -382,7 +382,6 @@ actor RAGEngine {
         do {
             try SecureFileStore.save(state, to: persistenceURL)
         } catch {
-            print("Failed to save RAG index: \(error)")
         }
     }
 

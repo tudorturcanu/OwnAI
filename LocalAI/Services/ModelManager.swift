@@ -90,7 +90,6 @@ private final class DownloadDiagnostics: @unchecked Sendable {
             lastProgressTimestamp: now,
             lastLoggedTimestamp: now
         )
-        print("[ModelManager] download diagnostics start id=\(modelID) name=\(modelName) expected=\(Self.byteString(expectedBytes))")
     }
 
     func recordSnapshotCallback(
@@ -126,15 +125,6 @@ private final class DownloadDiagnostics: @unchecked Sendable {
         )
 
         if shouldLog {
-            let deltaProgress = max(0, progress - previousProgress)
-            let deltaTime = max(0.001, now - previousTimestamp)
-            let instantaneousSpeed = state.expectedBytes > 0
-                ? (state.expectedBytes * deltaProgress) / deltaTime
-                : 0
-            let downloadedBytes = state.expectedBytes * progress
-            print(
-                "[ModelManager] download progress id=\(modelID) progress=\(Int(progress * 100))% downloaded=\(Self.byteString(downloadedBytes)) speed=\(Self.byteString(instantaneousSpeed))/s raw=\(state.rawCallbacks) emitted=\(state.emittedCallbacks) suppressed=\(state.suppressedCallbacks)"
-            )
             state.lastLoggedTimestamp = now
             state.lastLoggedProgress = progress
         }
@@ -153,14 +143,6 @@ private final class DownloadDiagnostics: @unchecked Sendable {
 
         guard var state = states[modelID] else { return }
         state.mainActorUpdates += 1
-
-        let queueDelay = now - enqueuedAt
-        if queueDelay >= 0.08 {
-            print(
-                "[ModelManager] download main-thread lag id=\(modelID) progress=\(Int(progress * 100))% delay=\(String(format: "%.0f", queueDelay * 1000))ms updates=\(state.mainActorUpdates)"
-            )
-        }
-
         states[modelID] = state
     }
 
@@ -168,35 +150,21 @@ private final class DownloadDiagnostics: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
-        guard let state = states.removeValue(forKey: modelID) else { return }
-        let duration = max(0.001, now - state.startedAt)
-        let downloadedBytes = state.expectedBytes * finalProgress
-        let averageSpeed = downloadedBytes / duration
-        print(
-            "[ModelManager] download diagnostics finish id=\(modelID) name=\(state.modelName) duration=\(String(format: "%.1f", duration))s downloaded=\(Self.byteString(downloadedBytes)) avg=\(Self.byteString(averageSpeed))/s raw=\(state.rawCallbacks) emitted=\(state.emittedCallbacks) suppressed=\(state.suppressedCallbacks) mainActor=\(state.mainActorUpdates)"
-        )
+        _ = states.removeValue(forKey: modelID)
     }
 
     func cancel(modelID: String, now: CFTimeInterval = CACurrentMediaTime()) {
         lock.lock()
         defer { lock.unlock() }
 
-        guard let state = states.removeValue(forKey: modelID) else { return }
-        let duration = max(0.001, now - state.startedAt)
-        print(
-            "[ModelManager] download diagnostics cancel id=\(modelID) name=\(state.modelName) duration=\(String(format: "%.1f", duration))s raw=\(state.rawCallbacks) emitted=\(state.emittedCallbacks) suppressed=\(state.suppressedCallbacks) mainActor=\(state.mainActorUpdates)"
-        )
+        _ = states.removeValue(forKey: modelID)
     }
 
     func fail(modelID: String, message: String, now: CFTimeInterval = CACurrentMediaTime()) {
         lock.lock()
         defer { lock.unlock() }
 
-        guard let state = states.removeValue(forKey: modelID) else { return }
-        let duration = max(0.001, now - state.startedAt)
-        print(
-            "[ModelManager] download diagnostics fail id=\(modelID) name=\(state.modelName) duration=\(String(format: "%.1f", duration))s progress=\(Int(state.lastProgress * 100))% raw=\(state.rawCallbacks) emitted=\(state.emittedCallbacks) suppressed=\(state.suppressedCallbacks) mainActor=\(state.mainActorUpdates) error=\(message)"
-        )
+        _ = states.removeValue(forKey: modelID)
     }
 
     private static func byteString(_ bytes: Double) -> String {
@@ -504,7 +472,6 @@ final class ModelManager: ObservableObject {
     
     /// Select a specific model to use
     func selectModel(_ modelID: String) {
-        print("[ModelManager] selectModel id=\(modelID)")
         if let model = models.first(where: { $0.id == modelID }),
            compatibilityMessage(for: model) != nil {
             ensureSelection()
@@ -662,7 +629,6 @@ final class ModelManager: ObservableObject {
         }
 
         guard let recommendation = onboardingRecommendation() else {
-            print("[ModelManager] onboarding recommendation unavailable")
             ensureSelection()
             return nil
         }
@@ -673,12 +639,9 @@ final class ModelManager: ObservableObject {
     @discardableResult
     private func applyOnboardingChoice(using recommendation: OnboardingRecommendation) -> OnboardingRecommendation? {
         guard let model = models.first(where: { $0.id == recommendation.modelID }) else {
-            print("[ModelManager] onboarding recommendation unavailable")
             ensureSelection()
             return nil
         }
-
-        print("[ModelManager] onboarding recommendation accepted model=\(model.id) fallback=\(recommendation.usesFallback)")
 
         if model.engine == .appleFoundation || model.downloadState.isDownloaded {
             selectModel(model.id)
@@ -692,7 +655,6 @@ final class ModelManager: ObservableObject {
         }
 
         if let fallback = bestAvailableModel() {
-            print("[ModelManager] onboarding recommendation fallback model=\(fallback.id)")
             selectModel(fallback.id)
         } else {
             ensureSelection()
@@ -902,7 +864,6 @@ final class ModelManager: ObservableObject {
             return
         }
         
-        print("[ModelManager] download start id=\(modelID)")
         downloadFailures.removeValue(forKey: modelID)
         downloadProgressLimiter.reset(modelID: modelID)
         downloadDiagnostics.start(
@@ -1062,7 +1023,6 @@ final class ModelManager: ObservableObject {
                 }
             }
             downloadDiagnostics.finish(modelID: modelID, finalProgress: 1.0)
-            print("[ModelManager] download complete id=\(modelID)")
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 if selectWhenFinished || self.selectedModelID == nil {
@@ -1072,7 +1032,6 @@ final class ModelManager: ObservableObject {
         } catch is CancellationError {
             downloadDiagnostics.cancel(modelID: modelID)
             cleanupIncompleteArtifactsIfNeeded(modelID: modelID)
-            print("[ModelManager] download cancelled id=\(modelID)")
         } catch let failureError as DownloadFailureError {
             downloadDiagnostics.fail(modelID: modelID, message: failureError.failure.message)
             cleanupArtifactsIfNeeded(after: failureError.failure, modelID: modelID)
@@ -1085,7 +1044,6 @@ final class ModelManager: ObservableObject {
                     NotificationManager.shared.postDownloadFailed(modelName: modelName, errorMessage: failureError.failure.message)
                 }
             }
-            print("[ModelManager] download failed id=\(modelID) error=\(failureError.failure.message)")
         } catch {
             let failure = classifyDownloadError(error, for: model)
             downloadDiagnostics.fail(modelID: modelID, message: failure.message)
@@ -1099,7 +1057,6 @@ final class ModelManager: ObservableObject {
                     NotificationManager.shared.postDownloadFailed(modelName: modelName, errorMessage: failure.message)
                 }
             }
-            print("[ModelManager] download failed id=\(modelID) error=\(failure.message)")
         }
         #endif
     }
@@ -1243,7 +1200,6 @@ final class ModelManager: ObservableObject {
         let hub = makeHubApi()
 
         do {
-            print("[ModelManager] download filter id=\(modelID) globs=\(Self.requiredMLXDownloadGlobs.joined(separator: ","))")
             try await runSnapshotDownload(
                 hub: hub,
                 modelID: modelID,
@@ -1260,7 +1216,6 @@ final class ModelManager: ObservableObject {
             if !shouldTryFullRepoFallback {
                 throw DownloadFailureError(failure: failure)
             }
-            print("[ModelManager] download fallback id=\(modelID) reason=\(failure.message)")
         }
 
         do {
