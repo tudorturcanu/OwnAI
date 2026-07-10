@@ -162,6 +162,15 @@ final class AppleFoundationModelBridge {
         return sessionStorage != nil
     }
 
+    /// Fraction of the model's fixed context window occupied by the
+    /// persistent session's transcript, in 0...1.
+    var contextUsageFraction: Double {
+        sessionLock.lock()
+        defer { sessionLock.unlock() }
+        guard sessionStorage != nil else { return 0 }
+        return min(1, Double(transcriptTokenEstimate) / Double(Self.contextWindowTokens))
+    }
+
     var isAvailable: Bool {
         availability == .available
     }

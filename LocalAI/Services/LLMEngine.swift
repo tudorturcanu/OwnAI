@@ -869,6 +869,15 @@ final class LLMEngine {
         }
     }
 
+    /// How full the current model's context window is (0...1), for models
+    /// with a fixed window the UI should warn about. Returns 0 when the
+    /// model has no such limit or no session is active.
+    func contextUsageFraction(for model: ModelInfo?) -> Double {
+        guard let model, currentModel?.id == model.id else { return 0 }
+        guard model.engine == .appleFoundation else { return 0 }
+        return appleFoundationBridge.contextUsageFraction
+    }
+
     func mlxImageFingerprint(for image: UIImage?) -> String? {
         image.flatMap(Self.imageFingerprint)
     }

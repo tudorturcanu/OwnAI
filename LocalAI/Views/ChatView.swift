@@ -36,6 +36,7 @@ struct ChatView: View {
     @State private var voiceError: String?
     @State private var usageLimitToastMessage: String?
     @State private var extractionNoticeMessage: String?
+    @State private var contextLimitWarningDismissed = false
     @State private var streamingPrefix = ""
     @State private var speechStreamingSpokenCharCount: Int = 0
     @State private var selectedImage: UIImage?
@@ -292,6 +293,7 @@ struct ChatView: View {
             }
             .onChange(of: modelManager.selectedModelID) {
                 invalidateGenerationSessionScope()
+                contextLimitWarningDismissed = false
                 if llmEngine.state == .generating {
                     pendingSessionReset = true
                 } else {
@@ -302,6 +304,7 @@ struct ChatView: View {
             .onChange(of: historyManager.currentConversationID) {
                 speechManager.stopSpeaking()
                 invalidateGenerationSessionScope()
+                contextLimitWarningDismissed = false
                 if llmEngine.state == .generating {
                     pendingSessionReset = true
                 } else {
@@ -841,6 +844,10 @@ struct ChatView: View {
             }
             
             VStack(spacing: 8) {
+                if shouldShowContextLimitWarning {
+                    contextLimitBanner
+                }
+
                 if voiceConversationMode {
                     voiceModeBanner
                 }
@@ -1168,6 +1175,48 @@ struct ChatView: View {
                 .foregroundStyle(Color(white: 0.45))
                 .lineLimit(1)
         }
+    }
+
+    // Warn before the model's fixed context window silently drops older
+    // turns, so degraded recall reads as a known limit instead of a bug.
+    private var shouldShowContextLimitWarning: Bool {
+        guard !contextLimitWarningDismissed else { return false }
+        guard llmEngine.state != .generating else { return false }
+        return llmEngine.contextUsageFraction(for: selectedModel) >= 0.8
+    }
+
+    private var contextLimitBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "clock.arrow.circlepath")
+                .foregroundStyle(.orange)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(String(localized: "This conversation is getting long"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(white: 0.15))
+                Text(String(localized: "Older messages may be forgotten. Start a new chat for best results."))
+                    .font(.caption2)
+                    .foregroundStyle(Color(white: 0.5))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer()
+
+            Button {
+                withAnimation { contextLimitWarningDismissed = true }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Color(white: 0.45))
+                    .frame(width: 24, height: 24)
+                    .background(Color(white: 0.94))
+                    .clipShape(Circle())
+            }
+            .accessibilityLabel(String(localized: "Dismiss"))
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .transition(.opacity)
     }
 
     private var voiceModeBanner: some View {
