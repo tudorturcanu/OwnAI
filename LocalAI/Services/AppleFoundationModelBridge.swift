@@ -115,7 +115,7 @@ private struct FoundationConversationTitle {
 @available(iOS 26.0, *)
 @Generable(description: "Durable facts about the user worth remembering across conversations.")
 private struct FoundationUserFacts {
-    @Guide(description: "Up to 3 exact, verbatim excerpts from the user's message that state durable facts about the user themselves — their name, preferences, ongoing projects, or constraints. Never paraphrase or add words. Ignore facts about relatives or other people. Empty when the message contains none.", .maximumCount(3))
+    @Guide(description: "Exact, verbatim excerpts containing either the user's name or an explicit request such as 'remember this'. Never retain ordinary preferences, projects, relatives, or temporary details. Never paraphrase or add words. Empty when neither condition exists.", .maximumCount(3))
     var facts: [String]
 }
 
@@ -331,9 +331,10 @@ final class AppleFoundationModelBridge {
             model: FoundationModels.SystemLanguageModel.default,
             instructions: """
             You extract facts about the user for a personal assistant's long-term memory.
-            Only keep facts the user states about themselves that will matter in future
-            conversations: name, role, preferences, ongoing projects, constraints.
-            Ignore one-off requests, questions, and anything about other people.
+            Memory is deliberately minimal. Keep only the user's explicitly stated name,
+            or a fact the user directly asks the assistant to remember. Do not retain
+            ordinary preferences, roles, projects, constraints, requests, relatives,
+            or temporary details unless the user explicitly says to remember them.
             Copy each fact exactly from the user's message. Never paraphrase, infer, or
             add words that are not present in the message. Return no fact when an exact
             supporting excerpt does not exist.

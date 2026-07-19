@@ -16,7 +16,7 @@ final class AssistantMemoryStore {
 
     private nonisolated static let factsKey = "assistantMemory.facts"
     private nonisolated static let enabledKey = "assistantMemory.enabled"
-    private static let unverifiedFactPurgeKey = "assistantMemory.unverifiedFactPurge.v2"
+    private static let priorityPolicyPurgeKey = "assistantMemory.priorityPolicyPurge.v3"
 
     private(set) var facts: [Fact] = []
 
@@ -32,13 +32,12 @@ final class AssistantMemoryStore {
             ? true
             : defaults.bool(forKey: Self.enabledKey)
         var storedFacts = defaults.stringArray(forKey: Self.factsKey) ?? []
-        // Facts created by older versions have no source evidence attached,
-        // so they cannot be distinguished from extractor hallucinations.
-        // Clear them once and let the evidence-checked pipeline relearn only
-        // facts the user actually states.
-        if !defaults.bool(forKey: Self.unverifiedFactPurgeKey) {
+        // Older versions remembered broad preferences and projects
+        // automatically. Clear them once so the stricter identity-or-explicit
+        // policy starts from a trustworthy slate.
+        if !defaults.bool(forKey: Self.priorityPolicyPurgeKey) {
             defaults.removeObject(forKey: Self.factsKey)
-            defaults.set(true, forKey: Self.unverifiedFactPurgeKey)
+            defaults.set(true, forKey: Self.priorityPolicyPurgeKey)
             storedFacts = []
         }
         facts = storedFacts.map { Fact(id: $0, text: $0) }
@@ -86,12 +85,49 @@ final class AssistantMemoryStore {
         "je", "moi", "mon", "ma", "mes", "suis"
     ]
 
+    private nonisolated static let explicitMemoryPrefixes = [
+        // English
+        "please remember", "remember that", "remember this",
+        "can you remember", "could you remember", "don't forget that",
+        "do not forget that", "keep in mind that",
+        // German
+        "bitte merk dir", "merk dir, dass", "erinnere dich daran", "nicht vergessen, dass",
+        // Spanish
+        "por favor recuerda", "recuerda que", "no olvides que", "acuerdate de que",
+        // French
+        "souviens-toi que", "souviens toi que", "memorise que", "n'oublie pas que",
+        "retiens que"
+    ]
+
+    private nonisolated static let coreIdentityPhrases = [
+        // English
+        "my name is", "i am called", "i'm called",
+        // German
+        "mein name ist", "ich heisse",
+        // Spanish
+        "me llamo", "mi nombre es",
+        // French
+        "je m'appelle", "mon nom est"
+    ]
+
     /// Whether the user is talking about themselves at all.
     nonisolated static func containsSelfReference(_ message: String) -> Bool {
         let words = message.lowercased()
             .split(whereSeparator: { !$0.isLetter && $0 != "'" })
             .map(String.init)
         return words.contains { selfReferenceWords.contains($0) || $0.hasPrefix("j'") }
+    }
+
+    /// Memory is intentionally opt-in except for a user's name. This keeps
+    /// casual preferences and temporary projects from becoming global hidden
+    /// context merely because the extractor considers them plausible.
+    private nonisolated static func isHighPriorityMemory(_ fact: String) -> Bool {
+        let normalized = fact
+            .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            .lowercased()
+        let trimmed = normalized.trimmingCharacters(in: .whitespacesAndNewlines)
+        return coreIdentityPhrases.contains(where: normalized.contains)
+            || explicitMemoryPrefixes.contains(where: trimmed.hasPrefix)
     }
 
     /// Keeps only exact excerpts from the source message. The extractor is a
@@ -106,6 +142,7 @@ final class AssistantMemoryStore {
             guard fact.count >= 6,
                   fact.count <= 160,
                   containsSelfReference(fact),
+                  isHighPriorityMemory(fact),
                   message.range(
                     of: fact,
                     options: [.caseInsensitive, .diacriticInsensitive]
