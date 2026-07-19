@@ -115,7 +115,7 @@ private struct FoundationConversationTitle {
 @available(iOS 26.0, *)
 @Generable(description: "Durable facts about the user worth remembering across conversations.")
 private struct FoundationUserFacts {
-    @Guide(description: "Up to 3 short standalone facts about the user themselves — their name, preferences, ongoing projects, or constraints. Only include facts stated by the user that will still matter in future conversations. Empty when the message contains none.", .maximumCount(3))
+    @Guide(description: "Up to 3 exact, verbatim excerpts from the user's message that state durable facts about the user themselves — their name, preferences, ongoing projects, or constraints. Never paraphrase or add words. Ignore facts about relatives or other people. Empty when the message contains none.", .maximumCount(3))
     var facts: [String]
 }
 
@@ -334,6 +334,9 @@ final class AppleFoundationModelBridge {
             Only keep facts the user states about themselves that will matter in future
             conversations: name, role, preferences, ongoing projects, constraints.
             Ignore one-off requests, questions, and anything about other people.
+            Copy each fact exactly from the user's message. Never paraphrase, infer, or
+            add words that are not present in the message. Return no fact when an exact
+            supporting excerpt does not exist.
             """
         )
 

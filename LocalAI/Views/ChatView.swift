@@ -2049,11 +2049,19 @@ struct ChatView: View {
         let text = userMessage.content.trimmingCharacters(in: .whitespacesAndNewlines)
         // Very short messages ("thanks", "continue") never contain durable facts.
         guard text.count >= 25 else { return }
+        // Only messages where the user talks about themselves can contain
+        // durable user facts.
+        guard AssistantMemoryStore.containsSelfReference(text) else { return }
 
         Task {
             guard let facts = try? await llmEngine.extractUserFacts(from: text),
                   !facts.isEmpty else { return }
-            memoryStore.add(facts)
+            // The extractor is generative, so accept only verbatim evidence
+            // from the user's message. This prevents invented preferences or
+            // topics from poisoning every later model's system prompt.
+            let grounded = AssistantMemoryStore.verifiedExtractedFacts(facts, from: text)
+            guard !grounded.isEmpty else { return }
+            memoryStore.add(grounded)
         }
     }
 
