@@ -16,7 +16,7 @@ final class AssistantMemoryStore {
 
     private nonisolated static let factsKey = "assistantMemory.facts"
     private nonisolated static let enabledKey = "assistantMemory.enabled"
-    private static let priorityPolicyPurgeKey = "assistantMemory.priorityPolicyPurge.v3"
+    private static let disabledByDefaultResetKey = "assistantMemory.disabledByDefaultReset.v4"
 
     private(set) var facts: [Fact] = []
 
@@ -28,18 +28,16 @@ final class AssistantMemoryStore {
 
     init() {
         let defaults = UserDefaults.standard
-        isEnabled = defaults.object(forKey: Self.enabledKey) == nil
-            ? true
-            : defaults.bool(forKey: Self.enabledKey)
-        var storedFacts = defaults.stringArray(forKey: Self.factsKey) ?? []
-        // Older versions remembered broad preferences and projects
-        // automatically. Clear them once so the stricter identity-or-explicit
-        // policy starts from a trustworthy slate.
-        if !defaults.bool(forKey: Self.priorityPolicyPurgeKey) {
+        // The next version starts Memory from a clean, opt-in state for every
+        // installation. Once this migration runs, later launches respect the
+        // user's toggle choice and do not clear newly approved memories.
+        if !defaults.bool(forKey: Self.disabledByDefaultResetKey) {
             defaults.removeObject(forKey: Self.factsKey)
-            defaults.set(true, forKey: Self.priorityPolicyPurgeKey)
-            storedFacts = []
+            defaults.set(false, forKey: Self.enabledKey)
+            defaults.set(true, forKey: Self.disabledByDefaultResetKey)
         }
+        isEnabled = defaults.bool(forKey: Self.enabledKey)
+        let storedFacts = defaults.stringArray(forKey: Self.factsKey) ?? []
         facts = storedFacts.map { Fact(id: $0, text: $0) }
     }
 

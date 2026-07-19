@@ -14,7 +14,7 @@ struct MemorySettingsView: View {
             Section {
                 Toggle(String(localized: "Remember things about me"), isOn: $memoryStore.isEnabled)
             } footer: {
-                Text(String(localized: "Own AI keeps short notes about you — like your name, preferences, and projects — so new chats can pick up where you left off. Notes are extracted on-device, stored only on this device, and never leave it."))
+                Text(String(localized: "Memory is off by default. If you enable it, Own AI stores only your name or details you explicitly ask it to remember. Notes stay on this device and never leave it."))
             }
 
             if memoryStore.isEnabled {

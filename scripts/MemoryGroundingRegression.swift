@@ -77,22 +77,42 @@ struct MemoryGroundingRegression {
 
         let defaults = UserDefaults.standard
         let factsKey = "assistantMemory.facts"
-        let purgeKey = "assistantMemory.priorityPolicyPurge.v3"
-        defaults.removeObject(forKey: purgeKey)
+        let enabledKey = "assistantMemory.enabled"
+        let resetKey = "assistantMemory.disabledByDefaultReset.v4"
+        defaults.removeObject(forKey: resetKey)
+        defaults.set(true, forKey: enabledKey)
         defaults.set(["The user prefers Apple Intelligence."], forKey: factsKey)
 
         let migratedStore = AssistantMemoryStore()
         precondition(
             migratedStore.facts.isEmpty,
-            "Memories learned under the broader policy must be purged on upgrade"
+            "All existing memories must be purged for the next version"
         )
+        precondition(
+            !migratedStore.isEnabled,
+            "Memory must be disabled by default after the next-version reset"
+        )
+        precondition(
+            AssistantMemoryStore.augmentedSystemPrompt("Base prompt") == "Base prompt",
+            "Disabled Memory must not inject anything into model prompts"
+        )
+        migratedStore.isEnabled = true
         migratedStore.add([statedIdentity])
         precondition(
+            AssistantMemoryStore().isEnabled,
+            "The user's toggle choice must survive later launches"
+        )
+        precondition(
             AssistantMemoryStore().facts.map(\.text) == [statedIdentity],
-            "Facts learned by the verified pipeline must survive later launches"
+            "Opt-in memories must survive later launches"
+        )
+        precondition(
+            AssistantMemoryStore.augmentedSystemPrompt("Base prompt").contains(statedIdentity),
+            "Enabled Memory must inject approved facts"
         )
         defaults.removeObject(forKey: factsKey)
-        defaults.removeObject(forKey: purgeKey)
+        defaults.removeObject(forKey: enabledKey)
+        defaults.removeObject(forKey: resetKey)
         print("PASS: fabricated memory facts were rejected")
     }
 }
