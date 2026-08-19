@@ -20,7 +20,7 @@ struct AdvancedSettingsView: View {
     @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
     @AppStorage("messageTextScale") private var messageTextScale: Double = 1.0
     @AppStorage("autoRead") private var autoRead = false
-    @AppStorage("speechOutputBackend") private var speechOutputBackendRaw = SpeechOutputBackend.piperAmy.rawValue
+    @AppStorage("speechOutputBackend") private var speechOutputBackendRaw = SpeechOutputBackend.system.rawValue
     @AppStorage(RAGEngine.neuralEmbeddingsDefaultsKey) private var neuralEmbeddingsEnabled = false
     @State private var whisperModelPresent = false
 
@@ -37,7 +37,7 @@ struct AdvancedSettingsView: View {
     }
 
     private var speechOutputBackend: SpeechOutputBackend {
-        SpeechOutputBackend(rawValue: speechOutputBackendRaw) ?? .piperAmy
+        SpeechOutputBackend(rawValue: speechOutputBackendRaw) ?? .system
     }
 
     private func selectSpeechOutputBackend(_ backend: SpeechOutputBackend) {
@@ -536,7 +536,7 @@ struct AdvancedSettingsView: View {
             VStack(spacing: 0) {
                 content()
             }
-            .background(.white, in: RoundedRectangle(cornerRadius: 16))
+            .background(Color.adaptiveCard, in: RoundedRectangle(cornerRadius: 16))
             .shadow(color: .black.opacity(0.04), radius: 10, y: 5)
         }
     }

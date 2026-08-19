@@ -55,7 +55,10 @@ enum ImageProcessingMode: String, CaseIterable, Identifiable, Sendable {
     }
 
     nonisolated static var current: ImageProcessingMode {
-        ImageProcessingMode(
+        if DeviceResourcePolicy.current.isLowMemoryPhone {
+            return .fast
+        }
+        return ImageProcessingMode(
             rawValue: UserDefaults.standard.string(forKey: storageKey) ?? ImageProcessingMode.fast.rawValue
         ) ?? .fast
     }

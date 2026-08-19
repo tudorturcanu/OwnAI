@@ -15,6 +15,10 @@ enum AppleFoundationModelAvailability: Equatable {
     case deviceNotEligible
     case modelNotReady
     case appleIntelligenceNotEnabled
+    // The system model is ready but does not support the device's current
+    // language. Generating anyway yields degraded, often English, output, so
+    // callers should route to a downloaded MLX model instead.
+    case unsupportedLocale
     case unavailable
 
     var engineErrorMessage: String {
@@ -27,6 +31,8 @@ enum AppleFoundationModelAvailability: Equatable {
             return "Apple Intelligence model is not ready. Please check Settings."
         case .appleIntelligenceNotEnabled:
             return "Apple Intelligence is not enabled. Enable it in Settings > Apple Intelligence."
+        case .unsupportedLocale:
+            return "Apple Intelligence doesn't support this language yet. Choose a downloaded model in Settings > Models."
         case .unavailable:
             return "Apple Intelligence is unavailable."
         }
@@ -42,6 +48,8 @@ enum AppleFoundationModelAvailability: Equatable {
             return "Model not ready"
         case .appleIntelligenceNotEnabled:
             return "Not enabled"
+        case .unsupportedLocale:
+            return "Language not supported"
         case .unavailable:
             return "Unavailable"
         }
@@ -54,40 +62,42 @@ struct AppleFoundationConversationInsights: Equatable {
     let suggestedFollowUps: [String]
 }
 
-private final class AsyncRequestGate: @unchecked Sendable {
-    private let lock = NSLock()
+/// Serializes access to the system language model, which accepts one request
+/// at a time. Modeled as an actor (the coordinator pattern) so the shared
+/// state is protected by actor isolation instead of a hand-rolled lock; the
+/// FIFO waiter queue preserves request ordering across suspensions.
+private actor AsyncRequestGate {
     private var isRunning = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
 
-    var isBusy: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return isRunning
+    /// Best-effort busy check for callers (e.g. prewarm) that want to bow out
+    /// rather than queue behind an in-flight request.
+    var isBusy: Bool { isRunning }
+
+    /// Runs `body` with exclusive access to the model, releasing the gate — and
+    /// waking the next waiter — even if `body` throws.
+    func withExclusiveAccess<T>(_ body: () async throws -> T) async rethrows -> T {
+        await enter()
+        defer { leave() }
+        return try await body()
     }
 
-    func enter() async {
+    private func enter() async {
+        if !isRunning {
+            isRunning = true
+            return
+        }
         await withCheckedContinuation { continuation in
-            lock.lock()
-            if isRunning {
-                waiters.append(continuation)
-                lock.unlock()
-            } else {
-                isRunning = true
-                lock.unlock()
-                continuation.resume()
-            }
+            waiters.append(continuation)
         }
     }
 
-    func leave() {
-        lock.lock()
+    private func leave() {
         if waiters.isEmpty {
             isRunning = false
-            lock.unlock()
         } else {
-            let next = waiters.removeFirst()
-            lock.unlock()
-            next.resume()
+            // Hand the gate directly to the next waiter: isRunning stays true.
+            waiters.removeFirst().resume()
         }
     }
 }
@@ -120,6 +130,14 @@ private struct FoundationUserFacts {
 }
 
 final class AppleFoundationModelBridge {
+    /// Called with each rolling-condensation summary and the conversation ID
+    /// the triggering request was generating for, so the app can persist the
+    /// summary on the right conversation (continuity across restarts and chat
+    /// switches). The ID rides through the request rather than being captured
+    /// in this closure, so overlapping generations cannot cross-attribute a
+    /// summary.
+    var onRollingSummaryUpdate: (@Sendable (String, UUID?) -> Void)?
+
     private let sessionLock = NSLock()
     private let requestGate = AsyncRequestGate()
     private var sessionStorage: Any?
@@ -194,7 +212,7 @@ final class AppleFoundationModelBridge {
         switch availability {
         case .deviceNotEligible, .unsupportedOS:
             return false
-        case .available, .modelNotReady, .appleIntelligenceNotEnabled, .unavailable:
+        case .available, .modelNotReady, .appleIntelligenceNotEnabled, .unsupportedLocale, .unavailable:
             return true
         }
     }
@@ -227,8 +245,8 @@ final class AppleFoundationModelBridge {
         storeSession(instructions: instructions)
     }
 
-    func prewarm(promptPrefix: String? = nil) {
-        guard !requestGate.isBusy else {
+    func prewarm(promptPrefix: String? = nil) async {
+        guard !(await requestGate.isBusy) else {
             return
         }
 
@@ -257,10 +275,12 @@ final class AppleFoundationModelBridge {
             throw LLMError.modelNotAvailable(AppleFoundationModelAvailability.unsupportedOS.engineErrorMessage)
         }
 
-        return try await generateConversationTitleAvailable(
-            userMessage: userMessage,
-            assistantResponse: assistantResponse
-        )
+        return try await requestGate.withExclusiveAccess {
+            try await self.generateConversationTitleAvailable(
+                userMessage: userMessage,
+                assistantResponse: assistantResponse
+            )
+        }
     }
 
     func generateConversationInsights(
@@ -276,10 +296,12 @@ final class AppleFoundationModelBridge {
             throw LLMError.modelNotAvailable(AppleFoundationModelAvailability.unsupportedOS.engineErrorMessage)
         }
 
-        return try await generateConversationInsightsAvailable(
-            userMessage: userMessage,
-            assistantResponse: assistantResponse
-        )
+        return try await requestGate.withExclusiveAccess {
+            try await self.generateConversationInsightsAvailable(
+                userMessage: userMessage,
+                assistantResponse: assistantResponse
+            )
+        }
     }
 
     /// One-shot answer on an isolated session, for App Intents that return
@@ -293,28 +315,30 @@ final class AppleFoundationModelBridge {
             throw LLMError.modelNotAvailable(AppleFoundationModelAvailability.unsupportedOS.engineErrorMessage)
         }
 
-        await requestGate.enter()
-        defer { requestGate.leave() }
-        try Task.checkCancellation()
+        return try await requestGate.withExclusiveAccess {
+            try Task.checkCancellation()
 
-        let session = FoundationModels.LanguageModelSession(
-            model: FoundationModels.SystemLanguageModel.default,
-            instructions: systemPrompt
-        )
-        let responseBudget = Self.adaptiveResponseTokenBudget(
-            requested: 1_024,
-            promptTokens: PromptBudgeter.estimatedTokenCount(prompt),
-            historyTokens: PromptBudgeter.estimatedTokenCount(systemPrompt)
-        )
-        let response = try await session.respond(
-            to: prompt,
-            options: FoundationModels.GenerationOptions(
-                sampling: .greedy,
-                temperature: 0.4,
-                maximumResponseTokens: responseBudget
+            let session = FoundationModels.LanguageModelSession(
+                model: FoundationModels.SystemLanguageModel.default,
+                instructions: systemPrompt
             )
-        )
-        return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            let responseBudget = Self.adaptiveResponseTokenBudget(
+                requested: 1_024,
+                promptTokens: PromptBudgeter.estimatedTokenCount(prompt),
+                historyTokens: PromptBudgeter.estimatedTokenCount(systemPrompt)
+            )
+            let response = try await session.respond(
+                to: prompt,
+                // Greedy decoding is deterministic argmax, so a temperature value
+                // here is silently ignored by the framework. Kept explicitly greedy
+                // for a stable one-shot Shortcuts answer.
+                options: FoundationModels.GenerationOptions(
+                    sampling: .greedy,
+                    maximumResponseTokens: responseBudget
+                )
+            )
+            return response.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
     }
 
     /// Extracts durable user facts from a message for cross-chat memory.
@@ -323,34 +347,35 @@ final class AppleFoundationModelBridge {
         guard availability == .available else { return [] }
         guard #available(iOS 26.0, *) else { return [] }
 
-        await requestGate.enter()
-        defer { requestGate.leave() }
-        try Task.checkCancellation()
+        return try await requestGate.withExclusiveAccess {
+            try Task.checkCancellation()
 
-        let session = FoundationModels.LanguageModelSession(
-            model: FoundationModels.SystemLanguageModel.default,
-            instructions: """
-            You extract facts about the user for a personal assistant's long-term memory.
-            Memory is deliberately minimal. Keep only the user's explicitly stated name,
-            or a fact the user directly asks the assistant to remember. Do not retain
-            ordinary preferences, roles, projects, constraints, requests, relatives,
-            or temporary details unless the user explicitly says to remember them.
-            Copy each fact exactly from the user's message. Never paraphrase, infer, or
-            add words that are not present in the message. Return no fact when an exact
-            supporting excerpt does not exist.
-            """
-        )
-
-        let response = try await session.respond(
-            to: userMessage,
-            generating: FoundationUserFacts.self,
-            options: FoundationModels.GenerationOptions(
-                sampling: .greedy,
-                temperature: 0.1,
-                maximumResponseTokens: 96
+            let session = FoundationModels.LanguageModelSession(
+                model: FoundationModels.SystemLanguageModel.default,
+                instructions: """
+                You extract facts about the user for a personal assistant's long-term memory.
+                Memory is deliberately minimal. Keep only the user's explicitly stated name,
+                or a fact the user directly asks the assistant to remember. Do not retain
+                ordinary preferences, roles, projects, constraints, requests, relatives,
+                or temporary details unless the user explicitly says to remember them.
+                Copy each fact exactly from the user's message. Never paraphrase, infer, or
+                add words that are not present in the message. Return no fact when an exact
+                supporting excerpt does not exist.
+                """
             )
-        )
-        return response.content.facts
+
+            let response = try await session.respond(
+                to: userMessage,
+                generating: FoundationUserFacts.self,
+                // Greedy is deterministic argmax; a temperature would be ignored.
+                // Fact extraction must be as reproducible as possible.
+                options: FoundationModels.GenerationOptions(
+                    sampling: .greedy,
+                    maximumResponseTokens: 96
+                )
+            )
+            return response.content.facts
+        }
     }
 
     func streamResponse(
@@ -361,8 +386,9 @@ final class AppleFoundationModelBridge {
         maxTokens: Int,
         isolated: Bool = false,
         image: UIImage? = nil,
+        conversationID: UUID? = nil,
         onPartialResponse: @escaping @Sendable (String) async -> Bool
-    ) async throws {
+    ) async throws -> String {
         let availability = availability
         guard availability == .available else {
             throw LLMError.modelNotAvailable(availability.engineErrorMessage)
@@ -372,22 +398,32 @@ final class AppleFoundationModelBridge {
             throw LLMError.modelNotAvailable(AppleFoundationModelAvailability.unsupportedOS.engineErrorMessage)
         }
 
-        try await streamResponseAvailable(
-            to: prompt,
-            systemPrompt: systemPrompt,
-            topP: topP,
-            temperature: temperature,
-            maxTokens: maxTokens,
-            isolated: isolated,
-            image: image,
-            onPartialResponse: onPartialResponse
-        )
+        return try await requestGate.withExclusiveAccess {
+            try await self.streamResponseAvailable(
+                to: prompt,
+                systemPrompt: systemPrompt,
+                topP: topP,
+                temperature: temperature,
+                maxTokens: maxTokens,
+                isolated: isolated,
+                image: image,
+                conversationID: conversationID,
+                onPartialResponse: onPartialResponse
+            )
+        }
     }
 
     @available(iOS 26.0, *)
     private func foundationModelAvailability() -> AppleFoundationModelAvailability {
         switch FoundationModels.SystemLanguageModel.default.availability {
         case .available:
+            // The model can be ready yet not support the device's language.
+            // Resolve via supportsLocale rather than raw-matching a language
+            // list, so an unsupported locale routes to a fallback model instead
+            // of generating degraded output.
+            guard FoundationModels.SystemLanguageModel.default.supportsLocale(Locale.current) else {
+                return .unsupportedLocale
+            }
             return .available
         case .unavailable(let reason):
             switch reason {
@@ -421,8 +457,6 @@ final class AppleFoundationModelBridge {
         userMessage: String,
         assistantResponse: String
     ) async throws -> String {
-        await requestGate.enter()
-        defer { requestGate.leave() }
         try Task.checkCancellation()
 
         let session = FoundationModels.LanguageModelSession(
@@ -444,9 +478,9 @@ final class AppleFoundationModelBridge {
             \(assistantResponse)
             """,
             generating: FoundationConversationTitle.self,
+            // Greedy decoding ignores temperature; kept greedy for stable titles.
             options: FoundationModels.GenerationOptions(
                 sampling: .greedy,
-                temperature: 0.2,
                 maximumResponseTokens: 32
             )
         )
@@ -459,8 +493,6 @@ final class AppleFoundationModelBridge {
         userMessage: String,
         assistantResponse: String
     ) async throws -> AppleFoundationConversationInsights {
-        await requestGate.enter()
-        defer { requestGate.leave() }
         try Task.checkCancellation()
 
         let session = FoundationModels.LanguageModelSession(
@@ -483,9 +515,9 @@ final class AppleFoundationModelBridge {
             \(assistantResponse)
             """,
             generating: FoundationConversationInsights.self,
+            // Greedy decoding ignores temperature; kept greedy for stable metadata.
             options: FoundationModels.GenerationOptions(
                 sampling: .greedy,
-                temperature: 0.2,
                 maximumResponseTokens: 96
             )
         )
@@ -506,10 +538,9 @@ final class AppleFoundationModelBridge {
         maxTokens: Int,
         isolated: Bool,
         image: UIImage?,
+        conversationID: UUID?,
         onPartialResponse: @escaping @Sendable (String) async -> Bool
-    ) async throws {
-        await requestGate.enter()
-        defer { requestGate.leave() }
+    ) async throws -> String {
         try Task.checkCancellation()
 
         var session = isolated
@@ -527,7 +558,11 @@ final class AppleFoundationModelBridge {
             let needsCondense = transcriptTokenEstimate >= Self.rollingCondenseThresholdTokens
             sessionLock.unlock()
             if needsCondense,
-               let rolled = try? await rollingCondensedSession(from: session, systemPrompt: systemPrompt) {
+               let rolled = try? await rollingCondensedSession(
+                   from: session,
+                   systemPrompt: systemPrompt,
+                   conversationID: conversationID
+               ) {
                 session = rolled.session
                 sessionLock.lock()
                 sessionStorage = rolled.session
@@ -632,6 +667,11 @@ final class AppleFoundationModelBridge {
                 + Self.transcriptTurnOverheadTokens
         }
         sessionLock.unlock()
+
+        // Return the full final answer so the caller can force-commit it past
+        // its throttled streaming updates; the last streamed chunk would
+        // otherwise be dropped, freezing the visible answer mid-sentence.
+        return combined
     }
 
     @available(iOS 26.0, *)
@@ -682,7 +722,8 @@ final class AppleFoundationModelBridge {
     @available(iOS 26.0, *)
     private func rollingCondensedSession(
         from session: FoundationModels.LanguageModelSession,
-        systemPrompt: String
+        systemPrompt: String,
+        conversationID: UUID?
     ) async throws -> (session: FoundationModels.LanguageModelSession, transcriptTokens: Int)? {
         let conversational = session.transcript.filter { entry in
             switch entry {
@@ -714,20 +755,32 @@ final class AppleFoundationModelBridge {
             Write plain prose under 150 words. No preamble, no headings.
             """
         )
-        let summary = try await summarizer.respond(
+        let rawSummary = try await summarizer.respond(
             to: clippedLog,
+            // Greedy decoding ignores temperature; kept greedy so continuity
+            // summaries are deterministic for the same transcript.
             options: FoundationModels.GenerationOptions(
                 sampling: .greedy,
-                temperature: 0.2,
                 maximumResponseTokens: Self.rollingSummaryResponseTokens
             )
         ).content.trimmingCharacters(in: .whitespacesAndNewlines)
+        // The summary is derived from conversation content and is about to be
+        // promoted into the privileged instructions channel, so strip any
+        // sentence that reads as a directive to the assistant before merging.
+        let summary = PromptBudgeter.sanitizedContinuitySummary(rawSummary)
         guard !summary.isEmpty else { return nil }
+        onRollingSummaryUpdate?(summary, conversationID)
 
+        // Same framing rule as the memory block: presented as silent
+        // background, because the small model otherwise recites whatever
+        // sits in its instructions back at the user every turn instead of
+        // answering the latest message.
         let mergedInstructions = """
         \(systemPrompt)
 
-        Summary of the conversation so far:
+        Earlier parts of this conversation, summarized for continuity. Use \
+        them silently when relevant; never recite or recap this summary. \
+        Always respond to the user's latest message:
         \(summary)
         """
         var entries: [FoundationModels.Transcript.Entry] = [

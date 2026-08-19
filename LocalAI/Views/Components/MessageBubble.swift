@@ -225,11 +225,9 @@ struct MessageBubble: View {
     let onSearchWeb: ((ChatMessage) -> Void)?
     let onFollowUp: ((ChatMessage, String) -> Void)?
     let showsQuickActions: Bool
-    /// When set, this text is displayed instead of `message.content` for the
-    /// streaming assistant bubble. ChatView feeds it the engine's live
-    /// `currentResponse` so the reply renders token-by-token directly, without
-    /// round-tripping every token through history (and a disk write).
-    let liveStreamingContent: String?
+    /// Only the active row observes this object. Completed rows and ChatView
+    /// stay outside the token-by-token invalidation graph.
+    let streamingState: ChatStreamingState?
     @AppStorage("codeTheme") private var codeThemeRaw = CodeTheme.defaultTheme.rawValue
     @AppStorage("messageTextScale") private var messageTextScale: Double = 1.0
     @Environment(SpeechManager.self) private var speechManager
@@ -265,7 +263,7 @@ struct MessageBubble: View {
         onSearchWeb: ((ChatMessage) -> Void)? = nil,
         onFollowUp: ((ChatMessage, String) -> Void)? = nil,
         showsQuickActions: Bool = false,
-        liveStreamingContent: String? = nil
+        streamingState: ChatStreamingState? = nil
     ) {
         self.message = message
         self.showsContinue = showsContinue
@@ -283,17 +281,41 @@ struct MessageBubble: View {
         self.onSearchWeb = onSearchWeb
         self.onFollowUp = onFollowUp
         self.showsQuickActions = showsQuickActions
-        self.liveStreamingContent = liveStreamingContent
+        self.streamingState = streamingState
     }
 
-    /// The text actually shown in the bubble — the live streaming text while the
-    /// engine is producing it, otherwise the persisted message content.
+    /// The message split into reasoning and answer. While the engine is
+    /// producing a reply both the live buffer and the persisted placeholder
+    /// hold the tagged form — history deliberately skips sanitizing on that hot
+    /// path — so the split has to happen here. Rendering either one whole would
+    /// print the chain of thought into the bubble as if it were the answer.
+    private var displayedParts: AssistantOutputSanitizer.Parts {
+        if let streamingState {
+            return AssistantOutputSanitizer.parts(from: streamingState.content)
+        }
+        if message.isStreaming {
+            return AssistantOutputSanitizer.parts(from: message.content)
+        }
+        return AssistantOutputSanitizer.Parts(
+            content: message.content,
+            thinkingContent: message.thinkingContent
+        )
+    }
+
+    /// The text actually shown in the bubble — the live streaming answer while
+    /// the engine is producing it, otherwise the persisted message content.
     private var displayedContent: String {
-        liveStreamingContent ?? message.content
+        displayedParts.content
+    }
+
+    /// Reasoning for the thinking card, live while streaming so the card fills
+    /// in as the model works instead of appearing only once it finishes.
+    private var displayedThinking: String {
+        displayedParts.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     }
 
     var body: some View {
-        let thinkingText = message.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let thinkingText = displayedThinking
         let hasThinking = !thinkingText.isEmpty
         let hasAnswerContent = !displayedContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let sourceTitles = message.sourceTitles
@@ -310,6 +332,23 @@ struct MessageBubble: View {
 
                 if message.role == .user || hasAnswerContent || !hasThinking {
                     messageCard
+                        // Surface the context-menu actions to VoiceOver users
+                        // directly on the message content.
+                        .accessibilityActions {
+                            Button(String(localized: "Copy")) {
+                                copyAndShowToast(message.content)
+                            }
+                            if let onTogglePin {
+                                Button(message.isPinned ? String(localized: "Unpin") : String(localized: "Pin")) {
+                                    onTogglePin(message)
+                                }
+                            }
+                            if let onSpeak, message.role == .assistant {
+                                Button(String(localized: "Speak")) {
+                                    onSpeak(message)
+                                }
+                            }
+                        }
                 }
 
                 if message.role == .assistant && !sourceTitles.isEmpty {
@@ -491,7 +530,7 @@ struct MessageBubble: View {
         .clipShape(Capsule())
         .overlay(
             Capsule()
-                .stroke(Color.white.opacity(0.45), lineWidth: 0.5)
+                .stroke(Color.adaptiveBorder(opacity: 0.45), lineWidth: 0.5)
         )
         .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
         .transition(.opacity.combined(with: .scale(scale: 0.9)))
@@ -542,7 +581,17 @@ struct MessageBubble: View {
                         .contextMenu {
                             messageContextMenuContent
                         } preview: {
+                            // Assistant replies render with a transparent
+                            // background. A context-menu preview inherits that
+                            // transparency, so the dimmed chat behind the lifted
+                            // platter — the *next* message's text — bleeds
+                            // through and reads as ghosting over the preview.
+                            // Give the preview an opaque chat-surface background
+                            // so only this message shows.
                             messageCardChrome
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .background(Color.adaptive(white: 0.98))
                         }
                 }
             }
@@ -974,7 +1023,7 @@ struct MessageBubble: View {
         .clipShape(RoundedRectangle(cornerRadius: 28))
         .overlay(
             RoundedRectangle(cornerRadius: 28)
-                .stroke(Color.white.opacity(0.4), lineWidth: 0.5)
+                .stroke(Color.adaptiveBorder(opacity: 0.4), lineWidth: 0.5)
         )
         .shadow(color: .black.opacity(0.04), radius: 10, y: 5)
         .padding(.trailing, 4)

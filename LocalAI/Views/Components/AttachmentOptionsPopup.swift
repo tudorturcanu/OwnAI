@@ -175,7 +175,7 @@ struct AttachmentOptionsPopup: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 28)
-                .stroke(Color.white.opacity(0.35), lineWidth: 1.5)
+                .stroke(Color.adaptiveBorder(opacity: 0.35), lineWidth: 1.5)
         )
     }
 }

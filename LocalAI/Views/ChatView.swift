@@ -3,6 +3,11 @@ import UniformTypeIdentifiers
 import PhotosUI
 import Shimmer
 
+private struct ChatModelFailure: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
+}
+
 struct ChatView: View {
     @Environment(LLMEngine.self) private var llmEngine
     @Environment(ChatHistoryManager.self) private var historyManager
@@ -10,6 +15,7 @@ struct ChatView: View {
     @Environment(SpeechManager.self) private var speechManager
     @Environment(AssistantMemoryStore.self) private var memoryStore
     @Environment(MonetizationManager.self) private var monetizationManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var documentManager = DocumentManager.shared
 
     /// Binding populated by Siri via ContentView. When non-nil, the query is
@@ -25,7 +31,15 @@ struct ChatView: View {
     @State private var isPhotoPickerPresented = false
     @State private var documentImportState: DocumentImportState = .idle
     @AppStorage("autoRead") private var autoRead = false
-    @AppStorage("voiceConversationMode") private var voiceConversationMode = false
+    private static let isVoiceConversationEnabled = false
+
+    // Deliberately not persisted: a voice session is ephemeral, and restoring
+    // it at launch would present the full-screen voice UI with a live
+    // microphone before the user asked for it.
+    @State private var voiceConversationMode = false
+    /// Message count when the voice session began, so closing the session can
+    /// tell whether it actually produced conversation worth archiving.
+    @State private var voiceSessionStartMessageCount = 0
     @State private var showExportSheet = false
     @FocusState private var isInputFocused: Bool
     @State private var showModelDownloadSheet = false
@@ -37,10 +51,14 @@ struct ChatView: View {
     @State private var voiceError: String?
     @State private var usageLimitToastMessage: String?
     @State private var extractionNoticeMessage: String?
+    @State private var modelRecoveryNoticeMessage: String?
+    @State private var performanceStatusRevision = 0
+    @State private var recentMemoryPressure = false
     @State private var contextLimitWarningDismissed = false
     @State private var streamingPrefix = ""
     @State private var speechStreamingSpokenCharCount: Int = 0
     @State private var selectedImage: UIImage?
+    @State private var selectedImageData: Data?
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var activeStreamingConversationID: UUID?
     @State private var activeStreamingAssistantID: UUID?
@@ -50,15 +68,20 @@ struct ChatView: View {
     @State private var activeMlxVisionImageKey: String?
     @State private var selectedDocumentForSources: ConversationDocument?
     @State private var generatedFollowUpSuggestions: [UUID: [String]] = [:]
-    // Scroll state: a single pending auto-scroll task (coalesced so rapid
-    // triggers, e.g. one per streamed token, collapse into one scroll per
-    // frame instead of stacking up) and whether the view is currently
-    // "pinned" to the bottom. Auto-scroll only fires while pinned, so a user
-    // who scrolls up to re-read history during generation isn't yanked back
-    // down — that fight between the user's scroll and a forced scrollTo was
-    // the main source of the visible jitter.
-    @State private var pendingAutoScrollTask: Task<Void, Never>?
-    @State private var isPinnedToBottom = true
+    @State private var postResponseEnrichmentTask: Task<Void, Never>?
+    @State private var streamingState = ChatStreamingState()
+    // Scroll state: whether the view should follow new content at the
+    // bottom. The list itself lays out naturally from the top; while
+    // "following", streamed content triggers a plain (non-animated)
+    // scrollTo("bottom") so the newest text stays in view. A user who
+    // scrolls up to re-read history stops following and isn't yanked
+    // back down; reaching the bottom again resumes following.
+    @State private var isFollowingBottom = true
+    // Mirrors the scroll geometry's "near bottom" test so the stop-follow
+    // drag gesture can tell a real scroll-up (content moved away from the
+    // bottom) from a keyboard-dismiss swipe (finger moves down but the
+    // content stays at the bottom, so this stays true).
+    @State private var isScrollNearBottom = true
     @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
     @AppStorage("responseCharacterLimit") private var responseCharacterLimit = AIResponseDefaults.responseCharacterLimit
     @AppStorage("smartReplyStylesEnabled") private var smartReplyStylesEnabled = false
@@ -69,6 +92,29 @@ struct ChatView: View {
     @State private var isEditSheetPresented = false
     @State private var inChatSearchText: String = ""
     @State private var isInChatSearchActive = false
+    /// Cached in-chat search matches in conversation order, rebuilt by
+    /// `recomputeInChatSearchMatches()` when `inChatSearchCacheKey` changes.
+    @State private var inChatSearchMatchIDs: [UUID] = []
+    @State private var inChatSearchMatchIDSet: Set<UUID> = []
+    /// Position within `inChatSearchMatchIDs` that the match chevrons point at.
+    @State private var inChatSearchMatchIndex = 0
+
+    /// Set when a history search result is tapped; scrolls the chat to that message.
+    @State private var pendingSearchJump: SearchJumpTarget?
+    /// The message currently flashing after a search jump.
+    @State private var highlightedMessageID: UUID?
+
+    private struct SearchJumpTarget: Equatable {
+        let conversationID: UUID
+        let messageID: UUID
+        let query: String
+        /// Distinguishes repeat taps on the same result, which must re-trigger the jump.
+        let requestID: UUID
+    }
+
+    /// A message the user sent while the selected model was still
+    /// downloading; it auto-sends once a usable model becomes available.
+    @State private var queuedFirstMessage: String?
 
 
     // MARK: - Shared Haptic Generators (avoid per-tap allocation)
@@ -89,6 +135,11 @@ struct ChatView: View {
         var isActive: Bool {
             if case .idle = self { return false }
             return true
+        }
+
+        var canCancel: Bool {
+            if case .extracting = self { return true }
+            return false
         }
 
         var fileName: String? {
@@ -136,11 +187,45 @@ struct ChatView: View {
                         upgradeFeature = .voiceMode
                         return
                     }
+                    speechManager.autoStopAfterSilence = true
+                    voiceSessionStartMessageCount = historyManager.currentMessages.count
+                    // Warm the model now so it loads while the user speaks their
+                    // first sentence, rather than paying that latency after the
+                    // transcript is finalized. Idempotent and guarded.
+                    prewarmModel()
                     startListeningIfPossible()
                 } else {
+                    speechManager.autoStopAfterSilence = false
+                    // Partial transcripts mirror into the input field while
+                    // listening; drop them so ending the session doesn't leave
+                    // half a sentence in the compose box.
+                    if !speechManager.transcribedText.isEmpty,
+                       messageText == speechManager.transcribedText {
+                        messageText = ""
+                    }
                     speechManager.stopListening()
                     speechManager.stopSpeaking()
+                    speechManager.releaseAudioSessionIfIdle()
+                    // Archive the session and open a fresh chat, so the next
+                    // voice conversation starts clean. Streaming that is still
+                    // finishing keeps writing into the archived conversation
+                    // by ID, so it is safe to switch away mid-reply. Skip when
+                    // the session added nothing, so opening and closing the
+                    // voice screen doesn't discard the chat on screen.
+                    if historyManager.currentMessages.count > voiceSessionStartMessageCount {
+                        withAnimation {
+                            historyManager.newConversation()
+                        }
+                    }
                 }
+            }
+            // The voice screen is a cover over the chat, so the conversation
+            // loop handlers on this view keep running behind it.
+            .fullScreenCover(isPresented: $voiceConversationMode) {
+                VoiceConversationView(
+                    isActive: $voiceConversationMode,
+                    onStartListening: startListeningIfPossible
+                )
             }
             .onChange(of: siriPendingQuery) {
                 guard let query = siriPendingQuery,
@@ -149,6 +234,25 @@ struct ChatView: View {
                 siriPendingQuery = nil
                 messageText = query
                 sendMessage()
+            }
+            // First message queued while the model was still downloading:
+            // send it the moment a usable model appears. Also retries when
+            // the engine finishes loading, in case the model became usable
+            // while a prewarm was still holding the send gate closed.
+            .onChange(of: modelManager.selectedModel?.id) {
+                attemptQueuedSend()
+            }
+            .onChange(of: llmEngine.state) {
+                attemptQueuedSend()
+            }
+            // If the download fails, hand the queued text back to the input
+            // instead of leaving it stranded.
+            .onChange(of: pendingSelectedModel?.downloadState) {
+                guard let queued = queuedFirstMessage,
+                      case .error = pendingSelectedModel?.downloadState
+                else { return }
+                queuedFirstMessage = nil
+                messageText = queued
             }
     }
 
@@ -276,6 +380,29 @@ struct ChatView: View {
                         extractionNoticeToast(message: extractionNoticeMessage)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
+
+                    if let modelRecoveryNoticeMessage {
+                        modelRecoveryToast(message: modelRecoveryNoticeMessage)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+
+                    if let status = runtimePerformanceStatus {
+                        runtimePerformancePill(status)
+                    }
+
+                    if let notice = modelManager.lastAutoSelectionNotice {
+                        AutoSelectionToastView(
+                            message: notice.message,
+                            autoDismissAfter: ModelManager.autoSelectionNoticeDuration,
+                            onDismiss: {
+                                withAnimation(.easeOut(duration: 0.2)) {
+                                    modelManager.dismissAutoSelectionNotice(notice.id)
+                                }
+                            }
+                        )
+                        .id(notice.id)
+                        .transition(toastTransition)
+                    }
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 110)
@@ -291,6 +418,8 @@ struct ChatView: View {
             .onDisappear {
                 speechManager.stopSpeaking()
                 cancelDocumentExtraction(showError: false)
+                postResponseEnrichmentTask?.cancel()
+                postResponseEnrichmentTask = nil
             }
             .onChange(of: modelManager.selectedModelID) {
                 invalidateGenerationSessionScope()
@@ -301,6 +430,29 @@ struct ChatView: View {
                     llmEngine.resetSession()
                 }
                 prewarmModel()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)) { _ in
+                performanceStatusRevision += 1
+            }
+            .onReceive(NotificationCenter.default.publisher(for: Notification.Name.NSProcessInfoPowerStateDidChange)) { _ in
+                performanceStatusRevision += 1
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                recentMemoryPressure = true
+                performanceStatusRevision += 1
+                postResponseEnrichmentTask?.cancel()
+                postResponseEnrichmentTask = nil
+                speechManager.prioritizeInteractiveChat(
+                    preserveVoiceFeatures: voiceConversationMode
+                )
+                Task {
+                    await EmbeddingService.shared.unload()
+                }
+                Task {
+                    try? await Task.sleep(for: .seconds(60))
+                    recentMemoryPressure = false
+                    performanceStatusRevision += 1
+                }
             }
             .onChange(of: historyManager.currentConversationID) {
                 speechManager.stopSpeaking()
@@ -316,6 +468,21 @@ struct ChatView: View {
                 if !speechManager.transcribedText.isEmpty {
                     messageText = speechManager.transcribedText
                 }
+                // Barge-in: once the user has clearly started talking (not a
+                // stray phoneme picked up over the reply) while the assistant
+                // is still speaking, cut it off immediately instead of
+                // waiting for the reply to finish.
+                if voiceConversationMode, speechManager.isSpeaking,
+                   speechManager.transcribedText.trimmingCharacters(in: .whitespacesAndNewlines).count >= 4 {
+                    speechManager.stopSpeaking()
+                }
+            }
+            .onChange(of: speechManager.isSpeaking) {
+                guard voiceConversationMode, speechManager.isSpeaking else { return }
+                // Arm the mic the instant the reply starts, rather than after
+                // it finishes, so the user can interrupt by talking over it.
+                guard !speechManager.isListening else { return }
+                startListeningIfPossible()
             }
             .onChange(of: speechManager.finalTranscriptionVersion) {
                 guard voiceConversationMode else { return }
@@ -335,10 +502,6 @@ struct ChatView: View {
                 guard !speechManager.isListening else { return }
                 guard speechManager.isSpeechQueueEmpty else { return }
                 startListeningIfPossible()
-            }
-            .onChange(of: llmEngine.currentResponse) {
-                guard llmEngine.state == .generating else { return }
-                guard voiceConversationMode else { return }
             }
     }
 
@@ -392,7 +555,7 @@ struct ChatView: View {
                     
                     AttachmentOptionsPopup(
                         onPhotoPicker: {
-                            guard guardCanAddAttachment(action: String(localized: "adding a photo")) else { return }
+                            guard guardCanAddPhoto(action: String(localized: "adding a photo")) else { return }
                             dismissKeyboard()
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                                 showAttachmentOptions = false
@@ -400,7 +563,7 @@ struct ChatView: View {
                             isPhotoPickerPresented = true
                         },
                         onDocumentImport: {
-                            guard guardCanAddAttachment(action: String(localized: "adding a document")) else { return }
+                            guard guardCanAddDocument(action: String(localized: "adding a document")) else { return }
                             dismissKeyboard()
                             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                                 showAttachmentOptions = false
@@ -452,6 +615,26 @@ struct ChatView: View {
             inChatSearchText = ""
             isInChatSearchActive = false
         }
+        // A new query, chat, or message restarts stepping from the first hit.
+        .onChange(of: inChatSearchCacheKey, initial: true) {
+            recomputeInChatSearchMatches()
+        }
+        .onChange(of: inChatSearchText) {
+            inChatSearchMatchIndex = 0
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .ownAIConversationSearchMatch)) { notification in
+            guard let conversationID = notification.userInfo?[ConversationSearchMatchKey.conversationID] as? UUID,
+                  let messageID = notification.userInfo?[ConversationSearchMatchKey.messageID] as? UUID
+            else { return }
+
+            let query = notification.userInfo?[ConversationSearchMatchKey.query] as? String ?? ""
+            pendingSearchJump = SearchJumpTarget(
+                conversationID: conversationID,
+                messageID: messageID,
+                query: query,
+                requestID: UUID()
+            )
+        }
     }
 
     private var warmingUpIndicator: some View {
@@ -470,7 +653,7 @@ struct ChatView: View {
         .clipShape(Capsule())
         .overlay(
             Capsule()
-                .stroke(Color.white.opacity(0.45), lineWidth: 1)
+                .stroke(Color.adaptiveBorder(opacity: 0.45), lineWidth: 1)
         )
         .accessibilityLabel(String(localized: "Warming up"))
     }
@@ -488,10 +671,40 @@ struct ChatView: View {
                 .font(.body)
 
             if !inChatSearchText.isEmpty {
-                Text(String(format: String(localized: "%lld matches", defaultValue: "%lld matches"), Int64(inChatSearchMatchCount)))
+                let matchIDs = inChatSearchMatchIDs
+
+                Text(matchIDs.isEmpty
+                     ? String(localized: "No matches")
+                     : "\(inChatSearchMatchIndex + 1)/\(matchIDs.count)")
                     .font(.caption.weight(.semibold))
+                    .monospacedDigit()
                     .foregroundStyle(Color.adaptive(white: 0.5))
                     .fixedSize()
+
+                HStack(spacing: 2) {
+                    Button {
+                        stepInChatSearchMatch(by: -1)
+                    } label: {
+                        Image(systemName: "chevron.up")
+                            .font(.caption.weight(.bold))
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel(String(localized: "Previous match"))
+
+                    Button {
+                        stepInChatSearchMatch(by: 1)
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.bold))
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel(String(localized: "Next match"))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(matchIDs.count > 1 ? Color.blue : Color.adaptive(white: 0.6))
+                .disabled(matchIDs.count < 2)
             }
 
             Button {
@@ -512,16 +725,58 @@ struct ChatView: View {
         .background(.ultraThinMaterial)
     }
 
-    private var inChatSearchMatchCount: Int {
-        guard !inChatSearchText.isEmpty else { return 0 }
-        return historyManager.currentMessages.filter {
-            $0.content.localizedCaseInsensitiveContains(inChatSearchText)
-        }.count
+    /// Recomputes the cached in-chat matches. Every per-message lookup below
+    /// reads the cache, so a render costs one pass over the conversation rather
+    /// than one pass per message.
+    private func recomputeInChatSearchMatches() {
+        let tokens = ConversationSearchEngine.tokens(for: inChatSearchText)
+        guard isInChatSearchActive, !tokens.isEmpty else {
+            inChatSearchMatchIDs = []
+            inChatSearchMatchIDSet = []
+            inChatSearchMatchIndex = 0
+            return
+        }
+
+        inChatSearchMatchIDs = historyManager.currentMessages
+            .filter { ConversationSearchEngine.containsAllTokens($0.content, tokens: tokens) }
+            .map(\.id)
+        inChatSearchMatchIDSet = Set(inChatSearchMatchIDs)
+
+        if inChatSearchMatchIndex >= inChatSearchMatchIDs.count {
+            inChatSearchMatchIndex = 0
+        }
+    }
+
+    /// Invalidates the match cache whenever the query, chat, or message list changes.
+    private var inChatSearchCacheKey: String {
+        let conversationID = historyManager.currentConversationID?.uuidString ?? ""
+        return "\(isInChatSearchActive)|\(inChatSearchText)|\(conversationID)|\(historyManager.currentMessages.count)"
+    }
+
+    /// The match the up/down chevrons are currently parked on.
+    private var inChatSearchActiveMatchID: UUID? {
+        guard inChatSearchMatchIndex < inChatSearchMatchIDs.count else { return nil }
+        return inChatSearchMatchIDs[inChatSearchMatchIndex]
+    }
+
+    /// Moves to the next/previous match, wrapping around at either end.
+    private func stepInChatSearchMatch(by offset: Int) {
+        let count = inChatSearchMatchIDs.count
+        guard count > 0 else { return }
+        Self.lightHaptic.impactOccurred()
+        inChatSearchMatchIndex = ((inChatSearchMatchIndex + offset) % count + count) % count
+    }
+
+    /// True when the message should carry the highlight tint — either the match
+    /// the chevrons are on, or a message just jumped to from history search.
+    private func isSearchFocused(_ message: ChatMessage) -> Bool {
+        if highlightedMessageID == message.id { return true }
+        return inChatSearchActiveMatchID == message.id
     }
 
     private func messageMatchesSearch(_ message: ChatMessage) -> Bool {
         guard isInChatSearchActive, !inChatSearchText.isEmpty else { return true }
-        return message.content.localizedCaseInsensitiveContains(inChatSearchText)
+        return inChatSearchMatchIDSet.contains(message.id)
     }
 
     private var documentErrorBinding: Binding<Bool> {
@@ -622,11 +877,32 @@ struct ChatView: View {
                                     && historyManager.currentMessages.last?.id == message.id
                                     && !message.isStreaming
                                     && canStartChatRequest,
-                                liveStreamingContent: liveStreamingContent(for: message)
+                                // Keep the bubble on the live streaming buffer
+                                // until the message is finalized — the persisted
+                                // message.content stays empty during streaming
+                                // (persistStreamingSnapshot doesn't publish it),
+                                // so gating on the engine-cleared
+                                // activeStreamingAssistantID handed off to an
+                                // empty placeholder for a frame and blanked the
+                                // reply. message.isStreaming flips false exactly
+                                // when the final text is written, so the handoff
+                                // is seamless.
+                                streamingState: message.isStreaming
+                                    && streamingState.assistantID == message.id
+                                    ? streamingState
+                                    : nil
                             )
                                 .id(message.id)
                                 .opacity(messageMatchesSearch(message) ? 1.0 : 0.25)
                                 .animation(.easeInOut(duration: 0.2), value: inChatSearchText)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 18)
+                                        .fill(Color.orange.opacity(isSearchFocused(message) ? 0.16 : 0))
+                                        .padding(.horizontal, -8)
+                                        .padding(.vertical, -6)
+                                )
+                                .animation(.easeInOut(duration: 0.35), value: highlightedMessageID)
+                                .animation(.easeInOut(duration: 0.2), value: inChatSearchActiveMatchID)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                     Button(role: .destructive) {
                                         withAnimation(.spring(response: 0.3)) {
@@ -665,42 +941,52 @@ struct ChatView: View {
                 .padding(.vertical, 20)
             }
             .scrollDismissesKeyboard(.interactively)
-            // Re-pin when the user scrolls (or is auto-scrolled) back near
-            // the bottom. This direction only sets isPinnedToBottom = true —
-            // never false. Driving "false" from geometry too was the bug:
-            // while streaming, each new line wraps and grows contentSize
-            // before contentOffset catches up, so distanceFromBottom spikes
-            // for a frame even though the user did nothing. That false
-            // unpin skipped the next auto-scroll, the content kept growing
-            // underneath, and the eventual catch-up jump was the jitter.
+            // While following, let the system hold the bottom edge in place
+            // as streamed content grows. This happens inside the layout
+            // pass, unlike a scrollTo issued after the fact, so it can't
+            // lag the reflow and flicker. Scoped to .sizeChanges only —
+            // no .alignment role — so the list still lays out naturally
+            // from the top and short conversations aren't bottom-hugging.
+            .defaultScrollAnchor(isFollowingBottom ? .bottom : nil, for: .sizeChanges)
+            // Resume following when the user scrolls (or is auto-scrolled)
+            // back near the bottom. This direction only sets
+            // isFollowingBottom = true — never false. Driving "false" from
+            // geometry too was a past bug: while streaming, each new line
+            // wraps and grows contentSize before contentOffset catches up,
+            // so distanceFromBottom spikes for a frame even though the user
+            // did nothing.
             .onScrollGeometryChange(for: Bool.self) { geometry in
                 let distanceFromBottom = geometry.contentSize.height
                     - geometry.containerSize.height
                     - geometry.contentOffset.y
                 return distanceFromBottom < 48
             } action: { _, isNearBottom in
-                guard isNearBottom, !isPinnedToBottom else { return }
-                chatDiagnostic("scroll pinnedToBottom false -> true (reached bottom)")
-                isPinnedToBottom = true
+                isScrollNearBottom = isNearBottom
+                guard isNearBottom, !isFollowingBottom else { return }
+                chatDiagnostic("scroll followingBottom false -> true (reached bottom)")
+                isFollowingBottom = true
             }
-            // The only thing that should unpin auto-scroll is the user
+            // The only thing that should stop the follow is the user
             // deliberately dragging the list (revealing earlier messages).
             // Tied to an actual touch gesture instead of geometry so it
             // can't be confused with content growing under a stationary
-            // viewport.
+            // viewport. The isScrollNearBottom check filters out the
+            // interactive keyboard-dismiss swipe: that drag also moves
+            // down, but the content never leaves the bottom.
             .simultaneousGesture(
                 DragGesture(minimumDistance: 12)
                     .onChanged { value in
-                        guard value.translation.height > 12, isPinnedToBottom else { return }
-                        chatDiagnostic("scroll pinnedToBottom true -> false (user dragged)")
-                        isPinnedToBottom = false
+                        guard value.translation.height > 12, isFollowingBottom,
+                              !isScrollNearBottom else { return }
+                        chatDiagnostic("scroll followingBottom true -> false (user dragged)")
+                        isFollowingBottom = false
                     }
             )
             .onChange(of: historyManager.currentMessages.count) {
                 // A new message (the user's own send, or the assistant
-                // placeholder that follows it) always re-pins and jumps to
-                // bottom — this is a deliberate, discrete event, not a
-                // continuous stream, so a single animated scroll is correct.
+                // placeholder that follows it) always resumes following and
+                // jumps to bottom — this is a deliberate, discrete event,
+                // so a single animated scroll is correct.
                 scrollToBottomForced(proxy: proxy)
             }
             .onChange(of: llmEngine.state) { oldState, newState in
@@ -726,44 +1012,68 @@ struct ChatView: View {
                 // which is what produced the visible bounce.
             }
             .onChange(of: historyManager.currentConversationID) {
-                isPinnedToBottom = true
+                isFollowingBottom = true
                 scrollToTop(proxy: proxy)
             }
-            .onChange(of: llmEngine.currentResponse) {
-                // Update the last message in history if it's currently streaming
-                if let conversationID = activeStreamingConversationID,
-                   let assistantID = activeStreamingAssistantID,
-                   let message = historyManager.message(id: assistantID, in: conversationID),
-                   message.role == .assistant && message.isStreaming &&
-                   combinedStreamingContent(for: llmEngine.currentResponse) != message.content {
-                    historyManager.updateMessage(
-                        id: assistantID,
-                        in: conversationID,
-                        content: combinedStreamingContent(for: llmEngine.currentResponse),
-                        isStreaming: true
-                    )
+            .onChange(of: pendingSearchJump) { _, target in
+                guard let target else { return }
+                Task { await performSearchJump(target, proxy: proxy) }
+            }
+            // Keep the current in-chat search hit in view as the user steps
+            // through matches (and when the first hit appears while typing).
+            .onChange(of: inChatSearchActiveMatchID) { _, matchID in
+                guard isInChatSearchActive, let matchID else { return }
+                isFollowingBottom = false
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    proxy.scrollTo(matchID, anchor: .center)
                 }
-                requestAutoScroll(proxy: proxy)
             }
         }
     }
 
+    /// Scrolls to the message a history search matched and flashes it briefly.
+    ///
+    /// Runs after a short delay so the conversation switch (which resets the
+    /// scroll to the top) and the sheet dismissal have both settled first.
+    private func performSearchJump(_ target: SearchJumpTarget, proxy: ScrollViewProxy) async {
+        try? await Task.sleep(for: .milliseconds(400))
+        guard pendingSearchJump == target,
+              historyManager.currentConversationID == target.conversationID,
+              historyManager.containsMessage(target.messageID, in: target.conversationID)
+        else { return }
+
+        // The target is usually above the bottom, so stop following the tail —
+        // otherwise the next layout pass would yank the view back down.
+        isFollowingBottom = false
+
+        if inChatSearchEnabled, !target.query.isEmpty {
+            inChatSearchText = target.query
+            isInChatSearchActive = true
+        }
+
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+            proxy.scrollTo(target.messageID, anchor: .center)
+        }
+        highlightedMessageID = target.messageID
+
+        try? await Task.sleep(for: .seconds(2.2))
+        guard highlightedMessageID == target.messageID else { return }
+        highlightedMessageID = nil
+        pendingSearchJump = nil
+    }
+
     private func scrollToTop(proxy: ScrollViewProxy) {
-        pendingAutoScrollTask?.cancel()
-        pendingAutoScrollTask = nil
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
             proxy.scrollTo("top", anchor: .top)
         }
     }
 
     /// Discrete, user-driven jump to bottom (new message sent/received,
-    /// conversation switched). Always runs, re-pins, and cancels any
-    /// in-flight streaming auto-scroll so the two never fight.
+    /// conversation switched). Always runs and resumes following, so the
+    /// streaming that follows keeps the newest text in view.
     private func scrollToBottomForced(proxy: ScrollViewProxy, animated: Bool = true) {
         chatDiagnostic("scroll forced bottom (animated=\(animated))")
-        pendingAutoScrollTask?.cancel()
-        pendingAutoScrollTask = nil
-        isPinnedToBottom = true
+        isFollowingBottom = true
         let scrollAction = { proxy.scrollTo("bottom", anchor: .bottom) }
         if animated {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
@@ -774,34 +1084,6 @@ struct ChatView: View {
         }
     }
 
-    /// Continuous, content-driven follow during streaming. Only acts while
-    /// the user is pinned to the bottom, and coalesces rapid-fire calls
-    /// (one per streamed token) into a single scroll per frame instead of
-    /// queuing one delayed scroll per token — the prior queuing is what let
-    /// several scrollTo calls land out of order while the content was still
-    /// reflowing, producing visible jitter.
-    private func requestAutoScroll(proxy: ScrollViewProxy) {
-        guard isPinnedToBottom else {
-            chatDiagnostic("scroll auto-scroll skipped (not pinned to bottom)")
-            return
-        }
-        pendingAutoScrollTask?.cancel()
-        pendingAutoScrollTask = Task { @MainActor in
-            // One frame's worth of coalescing window, not a fixed artificial delay.
-            try? await Task.sleep(for: .milliseconds(16))
-            guard !Task.isCancelled else {
-                chatDiagnostic("scroll auto-scroll coalesced (superseded by a newer request)")
-                return
-            }
-            // No animation: an animated scrollTo competing with the content
-            // above it growing every token is exactly what produced the
-            // bounce. Snapping keeps the bottom anchor glued in place while
-            // streaming; the discrete jumps above stay animated.
-            chatDiagnostic("scroll auto-scroll fired")
-            proxy.scrollTo("bottom", anchor: .bottom)
-        }
-    }
-
     // MARK: - Empty State
     
     private var emptyStateView: some View {
@@ -809,6 +1091,8 @@ struct ChatView: View {
             isInputFocused: isInputFocused,
             selectedModelName: modelManager.selectedModel?.name,
             downloadingModelName: activeDownloadingModel?.name,
+            downloadProgress: activeDownloadingModel?.progress,
+            downloadDetail: downloadDetailText,
             isWarmingUp: llmEngine.isPrewarming,
             isAppleIntelligenceAvailable: modelManager.isAppleIntelligenceAvailable,
             personalityLabel: currentPersonalityLabel,
@@ -818,7 +1102,16 @@ struct ChatView: View {
             onSuggestion: { text in
                 messageText = text
                 sendMessage()
-            }
+            },
+            onVoiceConversation: Self.isVoiceConversationEnabled ? {
+                guard monetizationManager.canUse(.voiceMode) else {
+                    upgradeFeature = .voiceMode
+                    return
+                }
+                dismissKeyboard()
+                speechManager.stopListening()
+                voiceConversationMode = true
+            } : nil
         )
     }
 
@@ -828,12 +1121,38 @@ struct ChatView: View {
         }
     }
 
-    private var activeDownloadingModel: (name: String, progress: Double?)? {
+    private var activeDownloadingModel: (name: String, progress: Double?, speed: Double?, sizeGB: Double)? {
         guard let pendingSelectedModel else { return nil }
-        if case .downloading(let progress, _) = pendingSelectedModel.downloadState {
-            return (pendingSelectedModel.name, progress)
+        if case .downloading(let progress, let speed) = pendingSelectedModel.downloadState {
+            return (pendingSelectedModel.name, progress, speed, pendingSelectedModel.sizeGB)
+        }
+        if case .validating(let progress) = pendingSelectedModel.downloadState {
+            return (pendingSelectedModel.name, progress, nil, pendingSelectedModel.sizeGB)
         }
         return nil
+    }
+
+    /// "42% · about 3 min left" while downloading, when speed is known.
+    private var downloadDetailText: String? {
+        guard let download = activeDownloadingModel, let progress = download.progress else { return nil }
+        let percent = Int(progress * 100)
+        guard let speed = download.speed, speed > 0, download.sizeGB > 0, progress < 1 else {
+            return String(format: String(localized: "%lld%%", defaultValue: "%lld%%"), Int64(percent))
+        }
+        let remainingBytes = download.sizeGB * 1_000_000_000 * (1 - progress)
+        let secondsLeft = remainingBytes / speed
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .short
+        formatter.allowedUnits = secondsLeft >= 3600 ? [.hour, .minute] : (secondsLeft >= 60 ? [.minute] : [.second])
+        formatter.maximumUnitCount = 2
+        guard let timeText = formatter.string(from: max(secondsLeft, 1)) else {
+            return String(format: String(localized: "%lld%%", defaultValue: "%lld%%"), Int64(percent))
+        }
+        return String(
+            format: String(localized: "%lld%% · about %@ left", defaultValue: "%lld%% · about %@ left"),
+            Int64(percent),
+            timeText
+        )
     }
 
     // MARK: - Input View
@@ -845,16 +1164,16 @@ struct ChatView: View {
             }
             
             VStack(spacing: 8) {
+                if let queuedFirstMessage {
+                    queuedMessageBanner(queuedFirstMessage)
+                }
+
                 if llmEngine.state == .loading {
                     modelLoadingBanner
                 }
 
                 if shouldShowContextLimitWarning {
                     contextLimitBanner
-                }
-
-                if voiceConversationMode {
-                    voiceModeBanner
                 }
 
                 // Documents scoped to the current chat
@@ -866,12 +1185,14 @@ struct ChatView: View {
                         Text(documentImportState.statusText)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
-                        Button(String(localized: "Cancel")) {
-                            cancelDocumentExtraction(showError: false)
+                        if documentImportState.canCancel {
+                            Button(String(localized: "Cancel")) {
+                                cancelDocumentExtraction(showError: false)
+                            }
+                            .font(.caption2.weight(.semibold))
+                            .buttonStyle(.plain)
+                            .foregroundStyle(.blue)
                         }
-                        .font(.caption2.weight(.semibold))
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.blue)
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 12)
@@ -887,7 +1208,7 @@ struct ChatView: View {
 
                 HStack(spacing: 10) {
                     Button {
-                        guard guardCanAddAttachment(action: String(localized: "adding an attachment")) else { return }
+                        guard guardCanStartAttachment(action: String(localized: "adding an attachment")) else { return }
                         dismissKeyboard()
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                             showAttachmentOptions = true
@@ -917,7 +1238,7 @@ struct ChatView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 24))
                     .overlay(
                         RoundedRectangle(cornerRadius: 24)
-                            .stroke(Color.white.opacity(0.5), lineWidth: 0.5)
+                            .stroke(Color.adaptiveBorder(opacity: 0.5), lineWidth: 0.5)
                     )
                     
                     if llmEngine.state == .generating {
@@ -1009,8 +1330,18 @@ struct ChatView: View {
     
     private var canSend: Bool {
         let hasInput = !messageText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !currentConversationDocuments.isEmpty || selectedImage != nil
+        // A downloading model counts: sending then queues the message.
         let hasModel = modelManager.selectedModel != nil
+            || (activeDownloadingModel != nil && queuedFirstMessage == nil)
         return hasInput && hasModel && canStartChatRequest && !monetizationManager.hasReachedFreeDailyMessageLimit
+    }
+
+    private var runtimePerformanceStatus: RuntimePerformanceStatus? {
+        _ = performanceStatusRevision
+        return RuntimePerformanceStatus.current(
+            appLowPowerMode: llmEngine.lowPowerMode,
+            recentMemoryPressure: recentMemoryPressure
+        )
     }
 
     private var canStartChatRequest: Bool {
@@ -1019,16 +1350,6 @@ struct ChatView: View {
 
     private var canStartAttachment: Bool {
         canStartChatRequest && !speechManager.isListening
-    }
-
-    private var currentChatHasAttachment: Bool {
-        selectedImage != nil || !currentConversationDocuments.isEmpty || currentChatHasSentImageAttachment
-    }
-
-    private var currentChatHasSentImageAttachment: Bool {
-        historyManager.messages(in: historyManager.currentConversationID).contains { message in
-            message.imageFileName != nil
-        }
     }
 
     private func guardCanStartChatRequest(action: String) -> Bool {
@@ -1047,10 +1368,23 @@ struct ChatView: View {
         return true
     }
 
-    private func guardCanAddAttachment(action: String) -> Bool {
+    private func guardCanAddPhoto(action: String) -> Bool {
         guard guardCanStartAttachment(action: action) else { return false }
-        guard !currentChatHasAttachment else {
+        guard selectedImage == nil && currentConversationDocuments.isEmpty else {
             showExtractionNotice(String(format: String(localized: "Remove the current attachment before %@."), action))
+            return false
+        }
+        return true
+    }
+
+    private func guardCanAddDocument(action: String) -> Bool {
+        guard guardCanStartAttachment(action: action) else { return false }
+        guard selectedImage == nil else {
+            showExtractionNotice(String(format: String(localized: "Remove the current attachment before %@."), action))
+            return false
+        }
+        guard currentConversationDocuments.isEmpty || monetizationManager.canUse(.unlimitedDocuments) else {
+            upgradeFeature = .unlimitedDocuments
             return false
         }
         return true
@@ -1184,6 +1518,45 @@ struct ChatView: View {
 
     // Large models take seconds to load into memory; without this the send
     // button just silently refuses and the app reads as frozen.
+    private func queuedMessageBanner(_ text: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "clock.badge.checkmark")
+                .foregroundStyle(.blue)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(String(localized: "Ready to send"))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.adaptive(white: 0.15))
+                Text(text)
+                    .font(.caption2)
+                    .foregroundStyle(Color.adaptive(white: 0.5))
+                    .lineLimit(2)
+                Text(String(localized: "Sends automatically once the model finishes downloading."))
+                    .font(.caption2)
+                    .foregroundStyle(Color.adaptive(white: 0.5))
+            }
+
+            Spacer()
+
+            Button(String(localized: "Cancel")) {
+                queuedFirstMessage = nil
+                messageText = text
+            }
+            .font(.caption.weight(.semibold))
+            .buttonStyle(.plain)
+            .foregroundStyle(.blue)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .transition(.opacity)
+        .accessibilityElement(children: .combine)
+        .accessibilityAction(named: String(localized: "Cancel queued message")) {
+            queuedFirstMessage = nil
+            messageText = text
+        }
+    }
+
     private var modelLoadingBanner: some View {
         HStack(spacing: 10) {
             ProgressView()
@@ -1250,65 +1623,68 @@ struct ChatView: View {
         .transition(.opacity)
     }
 
-    private var voiceModeBanner: some View {
-        HStack(spacing: 10) {
-            Image(systemName: speechManager.isListening ? "waveform.circle.fill" : "waveform.circle")
-                .foregroundStyle(speechManager.isListening ? .red : .blue)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(String(localized: "Conversation Mode"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.adaptive(white: 0.15))
-                Text(speechManager.isListening ? String(localized: "Listening for your next turn") : String(localized: "Replies are spoken and listening restarts automatically"))
-                    .font(.caption2)
-                    .foregroundStyle(Color.adaptive(white: 0.5))
-            }
-
-            Spacer()
-
-            Toggle(String(localized: "Conversation Mode"), isOn: $voiceConversationMode)
-                .labelsHidden()
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
+    /// Slide-up for the toasts, collapsing to a plain fade when the user has
+    /// Reduce Motion enabled.
+    private var toastTransition: AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .move(edge: .bottom).combined(with: .opacity)
     }
 
     private func usageLimitToast(message: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.circle.fill")
-                .foregroundStyle(.orange)
-
-            Text(message)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(Color.white)
-                .multilineTextAlignment(.leading)
-
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(Color.black.opacity(0.88))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.18), radius: 12, y: 8)
+        toastCard(icon: "exclamationmark.circle.fill", tint: .orange, message: message)
     }
 
     private func extractionNoticeToast(message: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
+        toastCard(icon: "exclamationmark.triangle.fill", tint: .orange, message: message)
+    }
+
+    private func modelRecoveryToast(message: String) -> some View {
+        toastCard(icon: "arrow.triangle.2.circlepath.circle.fill", tint: .yellow, message: message)
+    }
+
+    /// Shared light-mode notification card used by the chat toasts.
+    private func toastCard(icon: String, tint: Color, message: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(tint)
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(tint.opacity(0.12)))
+                .accessibilityHidden(true)
 
             Text(message)
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(Color.white)
+                .foregroundStyle(Color.adaptive(white: 0.15))
                 .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
-        .background(Color.orange.opacity(0.92))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.18), radius: 12, y: 8)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.regularMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.adaptiveBorder(opacity: 0.6), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(message)
+    }
+
+    private func runtimePerformancePill(_ status: RuntimePerformanceStatus) -> some View {
+        Label(status.message, systemImage: status.symbolName)
+            .font(.caption.weight(.medium))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.thinMaterial, in: Capsule())
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(status.message)
     }
 
     private func speakReplyButton(for message: ChatMessage) -> some View {
@@ -1395,36 +1771,46 @@ struct ChatView: View {
 
     private var microphoneControls: some View {
         HStack(spacing: 8) {
-            if voiceConversationMode {
-                Button {
-                    voiceConversationMode = false
-                } label: {
-                    Image(systemName: "waveform.slash")
-                        .font(.body.weight(.semibold))
-                        .foregroundStyle(Color.adaptive(white: 0.35))
-                        .frame(width: 36, height: 36)
-                        .background(Color.adaptiveCard.opacity(0.9))
-                        .clipShape(Circle())
-                }
-                .accessibilityLabel(String(localized: "Turn off conversation mode"))
-            }
-
+            // Dictation: transcribe into the text field.
             Button {
-                if voiceConversationMode {
-                    startListeningIfPossible()
-                } else {
-                    toggleListening()
-                }
+                toggleListening()
             } label: {
-                Image(systemName: voiceConversationMode ? "waveform" : "mic.fill")
+                Image(systemName: "mic.fill")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(.white)
                     .frame(width: 36, height: 36)
-                    .background(Color.black)
+                    .background(speechManager.isListening ? Color.red : Color.black)
                     .clipShape(Circle())
             }
-            .accessibilityLabel(String(localized: "Start voice input"))
+            .accessibilityLabel(speechManager.isListening
+                ? String(localized: "Stop voice input")
+                : String(localized: "Start voice input"))
+
+            // Hands-free voice conversation (full-screen).
+            if Self.isVoiceConversationEnabled {
+                voiceConversationButton
+            }
         }
+    }
+
+    private var voiceConversationButton: some View {
+        Button {
+            guard monetizationManager.canUse(.voiceMode) else {
+                upgradeFeature = .voiceMode
+                return
+            }
+            dismissKeyboard()
+            speechManager.stopListening()
+            voiceConversationMode = true
+        } label: {
+            Image(systemName: "waveform")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
+                .frame(width: 36, height: 36)
+                .background(Color.blue)
+                .clipShape(Circle())
+        }
+        .accessibilityLabel(String(localized: "Start voice conversation"))
     }
     
     // MARK: - Actions
@@ -1432,7 +1818,7 @@ struct ChatView: View {
     private func handleFileImport(result: Result<[URL], Error>) {
         guard case .success(let urls) = result, let url = urls.first else { return }
         guard let conversationID = historyManager.currentConversationID else { return }
-        guard guardCanAddAttachment(action: String(localized: "adding a document")) else { return }
+        guard guardCanAddDocument(action: String(localized: "adding a document")) else { return }
 
         cancelDocumentExtraction(showError: false)
         
@@ -1445,8 +1831,12 @@ struct ChatView: View {
                 let document = try await documentManager.processFile(at: url)
                 try Task.checkCancellation()
                 transitionDocumentImportToIndexing(extractionID)
-                await documentManager.addDocumentToConversation(from: document, conversationID: conversationID)
-                try Task.checkCancellation()
+                let didCommit = await documentManager.addDocumentToConversation(
+                    from: document,
+                    conversationID: conversationID,
+                    allowsMultipleDocuments: monetizationManager.canUse(.unlimitedDocuments)
+                )
+                guard didCommit else { throw CancellationError() }
                 chatDiagnostic("document import stored id=\(extractionID) file=\(fileName) chars=\(document.content.count)")
                 if let warning = document.ocrWarningText {
                     showExtractionNotice(warning)
@@ -1472,11 +1862,17 @@ struct ChatView: View {
 
     private func cancelDocumentExtraction(showError: Bool) {
         switch documentImportState {
-        case .extracting(let id, let fileName, let task), .indexing(let id, let fileName, let task):
+        case .extracting(let id, let fileName, let task):
             chatDiagnostic("document import cancel requested id=\(id) file=\(fileName) showError=\(showError)")
             task.cancel()
+        case .indexing(let id, let fileName, _):
+            // Indexing begins only after the final cancellation check. From this
+            // point the document is committed, so cancelling would make the UI
+            // claim failure after storage has already changed.
+            chatDiagnostic("document import cancel ignored after commit id=\(id) file=\(fileName)")
+            return
         case .idle:
-            break
+            return
         }
         documentManager.extractionProgress = 0
         if showError {
@@ -1521,6 +1917,8 @@ struct ChatView: View {
                 isStreaming: false
             )
         }
+        llmEngine.onStreamingUpdate = nil
+        streamingState.reset(assistantID: activeStreamingAssistantID)
         llmEngine.stopGeneration()
         streamingPrefix = ""
     }    
@@ -1532,10 +1930,19 @@ struct ChatView: View {
         }
     }
 
+    /// Arms the mic. Unlike a plain "record my next message" start, this is
+    /// also called while the assistant is mid-reply (see the `isSpeaking`
+    /// onChange below): SpeechManager's barge-in session lets recording and
+    /// TTS playback run at once, so the mic can already be capturing before
+    /// the user starts talking over the reply.
     private func startListeningIfPossible() {
-        guard llmEngine.state != .generating else { return }
-        guard !speechManager.isSpeaking else { return }
-        guard speechManager.isSpeechQueueEmpty else { return }
+        // Block arming the mic while the model is still silently "thinking"
+        // (nothing audible yet to interrupt). Once streaming TTS has started
+        // speaking, generation is very often still running concurrently
+        // (later sentences keep streaming in while the first is spoken), so
+        // `isSpeaking` overrides the block - that concurrent window is
+        // exactly when barge-in needs to be armed.
+        guard llmEngine.state != .generating || speechManager.isSpeaking else { return }
         do {
             try speechManager.startListening()
         } catch {
@@ -1544,9 +1951,36 @@ struct ChatView: View {
         }
     }
     
+    /// Sends the message queued during a model download once a usable model
+    /// exists and the engine can accept a request.
+    private func attemptQueuedSend() {
+        guard let queued = queuedFirstMessage,
+              modelManager.selectedModel != nil,
+              canStartChatRequest
+        else { return }
+        queuedFirstMessage = nil
+        messageText = queued
+        sendMessage()
+    }
+
     private func sendMessage() {
+        prioritizeInteractiveChat()
         if monetizationManager.hasReachedFreeDailyMessageLimit {
+            // The toast renders under the voice cover; end the session first
+            // so the user sees it instead of a silently stalled voice loop.
+            if voiceConversationMode { voiceConversationMode = false }
             showUsageLimitToast()
+            return
+        }
+        // No usable model yet, but one is on its way: queue the message so
+        // the first-run download wait isn't dead time.
+        if modelManager.selectedModel == nil, activeDownloadingModel != nil {
+            let trimmed = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { return }
+            Self.lightHaptic.impactOccurred()
+            queuedFirstMessage = trimmed
+            messageText = ""
+            isInputFocused = false
             return
         }
         guard guardCanStartChatRequest(action: String(localized: "sending")) else { return }
@@ -1555,6 +1989,8 @@ struct ChatView: View {
 
         guard let model = modelManager.selectedModel else { return }
         if !hasConsent(for: model.id) {
+            // A sheet cannot present over the voice cover; dismiss it first.
+            if voiceConversationMode { voiceConversationMode = false }
             shouldSendAfterConsent = true
             showModelConsentSheet = true
             return
@@ -1589,7 +2025,12 @@ struct ChatView: View {
         // Save image and create message
         let messageID = UUID()
         var imageFileName: String?
-        if let imageToSend {
+        if let preparedImageData = selectedImageData {
+            imageFileName = ImageAttachmentManager.shared.savePreparedImageData(
+                preparedImageData,
+                for: messageID
+            )
+        } else if let imageToSend {
             imageFileName = ImageAttachmentManager.shared.saveImage(imageToSend, for: messageID)
         }
         
@@ -1603,12 +2044,19 @@ struct ChatView: View {
         
         messageText = ""
         selectedImage = nil
+        selectedImageData = nil
         selectedPhotoItem = nil
         isInputFocused = false
         
         // Generate response
         Task {
-            guard let model = modelManager.selectedModel else { return }
+            guard let model = await modelManager.modelForRequest(
+                prompt: displayText,
+                hasImage: imageToSend != nil,
+                hasDocuments: !currentConversationDocuments.isEmpty,
+                warmModelID: llmEngine.readyModelID,
+                lowPowerMode: llmEngine.lowPowerMode
+            ) else { return }
             let promptContext = await buildPromptContext(
                 userText: text.isEmpty && imageToSend != nil ? displayText : text,
                 conversationID: conversationID,
@@ -1657,7 +2105,7 @@ struct ChatView: View {
     }
 
     private func showUsageLimitToast() {
-        let message = String(localized: "Free plan limit reached.")
+        let message = String(localized: "Daily free limit reached — more messages tomorrow.")
         showUsageToast(message)
     }
 
@@ -1715,7 +2163,29 @@ struct ChatView: View {
         }
     }
 
+    private func showModelRecoveryNotice(_ message: String) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            modelRecoveryNoticeMessage = message
+        }
+        Task {
+            try? await Task.sleep(for: .seconds(4))
+            if modelRecoveryNoticeMessage == message {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    modelRecoveryNoticeMessage = nil
+                }
+            }
+        }
+    }
+
+    private func isRecoverableModelFailure(_ message: String) -> Bool {
+        let normalized = message.lowercased()
+        return !normalized.contains("cancel") &&
+            !normalized.contains("stopped") &&
+            !normalized.contains("daily free limit")
+    }
+
     private func chatDiagnostic(_ message: String) {
+        PerformanceLogger.diagnostic("ChatView \(message)")
     }
 
     private func wordCount(in content: String) -> Int {
@@ -1750,23 +2220,69 @@ struct ChatView: View {
         retryPromptSeed: String? = nil,
         shouldChargeUsage: Bool = false,
         autoContinuationCount: Int = 0,
-        generationOverrides: LLMEngine.GenerationOverrides? = nil
+        generationOverrides: LLMEngine.GenerationOverrides? = nil,
+        recoveryAttempted: Bool = false
     ) async {
+        prioritizeInteractiveChat()
+        modelManager.suspendBackgroundDownloadsForChat()
+        let chatLease = await ChatWorkloadCoordinator.shared.beginChat()
         defer {
+            Task { @MainActor in
+                let becameIdle = await ChatWorkloadCoordinator.shared.endChat(chatLease)
+                if becameIdle {
+                    modelManager.resumeBackgroundDownloadsAfterChat()
+                }
+            }
+        }
+        let responsePerformanceInterval = PerformanceLogger.begin(
+            "ChatResponse",
+            label: "Chat response",
+            metadata: "prompt_characters=\(prompt.count) image=\(image != nil) retry=\(missingAnswerRetryCount)"
+        )
+        var responsePerformanceStatus = "failed"
+        var responseOutputCharacters = 0
+        var responseModelID = "none"
+        defer {
+            responseOutputCharacters = max(responseOutputCharacters, llmEngine.currentResponse.count)
             finalizeStreamingMessageIfNeeded(
                 assistantID: assistantID,
                 conversationID: conversationID,
                 assistantSourceTitles: assistantSourceTitles
             )
+            PerformanceLogger.end(
+                responsePerformanceInterval,
+                status: responsePerformanceStatus,
+                metadata: "model=\(responseModelID) output_characters=\(responseOutputCharacters)"
+            )
         }
 
         do {
-            guard let model = modelManager.selectedModel else {
+            guard var model = await modelManager.modelForRequest(
+                prompt: prompt,
+                hasImage: image != nil,
+                hasDocuments: !assistantSourceTitles.isEmpty,
+                warmModelID: llmEngine.readyModelID,
+                lowPowerMode: llmEngine.lowPowerMode
+            ) else {
                 chatDiagnostic("response blocked no-model assistantID=\(assistantID) conversation=\(conversationID?.uuidString ?? "nil")")
                 let errorMessage = ChatMessage(role: .assistant, content: String(localized: "Please select or download a model first (Settings > Models)."))
                 historyManager.addMessage(errorMessage, to: conversationID)
                 return
             }
+            if !recoveryAttempted,
+               let fasterModel = await modelManager.slowRecoveryModel(
+                   for: model,
+                   requiresVision: image != nil
+               ) {
+                let slowModel = model
+                modelManager.activateRecoveryModel(fasterModel)
+                model = fasterModel
+                showModelRecoveryNotice(String(format: String(
+                    localized: "%@ has been consistently slow here. Using %@ instead.",
+                    defaultValue: "%@ has been consistently slow here. Using %@ instead."
+                ), slowModel.name, fasterModel.name))
+            }
+            responseModelID = model.id
 
             chatDiagnostic("response start assistantID=\(assistantID) conversation=\(conversationID?.uuidString ?? "nil") model=\(model.id) engine=\(model.engine.rawValue) promptChars=\(prompt.count) retry=\(missingAnswerRetryCount)")
             streamingPrefix = existingPrefix
@@ -1776,6 +2292,21 @@ struct ChatView: View {
             llmEngine.currentResponse = ""
             activeStreamingConversationID = conversationID
             activeStreamingAssistantID = assistantID
+            streamingState.begin(assistantID: assistantID, initialContent: existingPrefix)
+            llmEngine.onStreamingUpdate = { response in
+                let combined = existingPrefix.isEmpty ? response : existingPrefix + response
+                streamingState.update(combined, assistantID: assistantID)
+                if let conversationID {
+                    historyManager.persistStreamingSnapshot(
+                        messageID: assistantID,
+                        conversationID: conversationID,
+                        content: combined
+                    )
+                }
+                if voiceConversationMode {
+                    maybeEnqueueSpeechWhileStreaming()
+                }
+            }
 
             if historyManager.containsMessage(assistantID, in: conversationID) {
                 historyManager.updateMessage(
@@ -1832,7 +2363,8 @@ struct ChatView: View {
                 ? promptIncludingRecentTranscript(
                     prompt,
                     conversationID: conversationID,
-                    assistantID: assistantID
+                    assistantID: assistantID,
+                    model: model
                 )
                 : prompt
 
@@ -1843,14 +2375,27 @@ struct ChatView: View {
                 image: image
             )
             chatDiagnostic("response generate begin assistantID=\(assistantID) shouldReset=\(shouldResetSession)")
+            // Persist any summary rolling condensation produces during a
+            // generation on the conversation that generation was started for
+            // (delivered back by the engine), so continuity survives
+            // conversation switches and app restarts.
+            llmEngine.onRollingSummaryUpdate = { summary, summaryConversationID in
+                historyManager.updateRollingSummary(summary, for: summaryConversationID)
+            }
             try await llmEngine.generate(
                 prompt: budgetedGenerationPrompt(
                     promptWithResponseLimit(continuityPrompt, existingPrefix: existingPrefix),
                     model: model
                 ),
                 overrides: effectiveOverrides,
-                image: image
+                image: image,
+                conversationID: conversationID
             )
+            responseOutputCharacters = llmEngine.currentResponse.count
+            responsePerformanceStatus = {
+                if case .error = llmEngine.state { return "failed" }
+                return "success"
+            }()
             chatDiagnostic("response generate end assistantID=\(assistantID) state=\(diagnosticDescription(for: llmEngine.state)) streamedChars=\(llmEngine.currentResponse.count) streamedWords=\(wordCount(in: llmEngine.currentResponse))")
 
             if generationOverrides == nil, case .ready = llmEngine.state, let maxTokensUsed = effectiveOverrides.maxTokens {
@@ -1864,25 +2409,8 @@ struct ChatView: View {
             }
 
             if case .error(let message) = llmEngine.state {
-                let errorText = userFacingErrorText(from: message)
                 chatDiagnostic("response engine error assistantID=\(assistantID) error=\(message)")
-                let fallbackContent = failureContent(
-                    assistantID: assistantID,
-                    conversationID: conversationID,
-                    existingPrefix: existingPrefix,
-                    errorText: errorText
-                )
-                historyManager.updateMessage(
-                    id: assistantID,
-                    in: conversationID,
-                    content: fallbackContent,
-                    isStreaming: false,
-                    sourceTitles: assistantSourceTitles
-                )
-                llmEngine.currentResponse = ""
-                streamingPrefix = ""
-                invalidateGenerationSessionScope()
-                return
+                throw ChatModelFailure(message: message)
             }
 
             let finalizedContent = enforcedResponseLimit(
@@ -1943,7 +2471,11 @@ struct ChatView: View {
                 isStreaming: false,
                 sourceTitles: assistantSourceTitles
             )
+            // A quiet cue that the reply landed - mirrors the tap-to-send
+            // haptic so the round trip feels answered, not just displayed.
+            Self.lightHaptic.impactOccurred()
             chatDiagnostic("response finalized assistantID=\(assistantID) contentChars=\(finalizedContent.count) contentWords=\(wordCount(in: finalizedContent))")
+            modelManager.markModelUsed(model.id)
             activeGenerationSessionScope = nextSessionScope
             lastGenerationWasEphemeral = isEphemeral
             if let mlxVisionImageKey {
@@ -1952,26 +2484,81 @@ struct ChatView: View {
                 activeMlxVisionImageKey = nil
             }
 
-            await refineConversationInsightsIfNeeded(
+            schedulePostResponseEnrichment(
                 conversationID: conversationID,
                 model: model,
                 assistantID: assistantID
             )
-            rememberUserFactsIfNeeded(conversationID: conversationID, assistantID: assistantID)
 
             llmEngine.currentResponse = ""
             streamingPrefix = ""
 
-            let spokenReply = historyManager.message(id: assistantID, in: conversationID)?
-                .content
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if voiceConversationMode, !spokenReply.isEmpty {
-                speechManager.speak(spokenReply)
-            } else if voiceConversationMode {
+            // Speak only the visible answer: stored content can still carry
+            // <think> reasoning and control markers, which must never be
+            // read aloud. Most sentences were already enqueued sentence-by-
+            // sentence while streaming (maybeEnqueueSpeechWhileStreaming), so
+            // only the trailing fragment after the last spoken boundary is
+            // left to say — enqueue that instead of the whole reply, or the
+            // already-playing queue would be wiped and restarted from zero.
+            let spokenReply = AssistantOutputSanitizer
+                .sanitize(historyManager.message(id: assistantID, in: conversationID)?.content ?? "")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let alreadySpokenCount = min(speechStreamingSpokenCharCount, spokenReply.count)
+            let remainingStart = spokenReply.index(spokenReply.startIndex, offsetBy: alreadySpokenCount)
+            let remainingTail = String(spokenReply[remainingStart...])
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            speechStreamingSpokenCharCount = 0
+            if voiceConversationMode, !remainingTail.isEmpty {
+                speechManager.enqueueSpeak(remainingTail)
+            } else if voiceConversationMode, speechManager.isSpeechQueueEmpty {
                 startListeningIfPossible()
             }
         } catch {
             chatDiagnostic("response failed assistantID=\(assistantID) error=\(error.localizedDescription)")
+            if !recoveryAttempted,
+               isRecoverableModelFailure(error.localizedDescription),
+               let failedModel = modelManager.models.first(where: { $0.id == responseModelID }),
+               let recoveryModel = modelManager.recoveryModel(
+                   excluding: failedModel.id,
+                   requiresVision: image != nil
+               ) {
+                let failedResult = ModelQuickTestResult(
+                    modelID: failedModel.id,
+                    success: false,
+                    responseSnippet: error.localizedDescription,
+                    durationMs: 0,
+                    timestamp: Date(),
+                    operatingSystem: ProcessInfo.processInfo.operatingSystemVersionString
+                )
+                modelManager.saveQuickTestResult(failedResult)
+                modelManager.activateRecoveryModel(recoveryModel)
+                llmEngine.unloadModel()
+                llmEngine.currentResponse = ""
+                streamingPrefix = ""
+                invalidateGenerationSessionScope()
+                showModelRecoveryNotice(String(format: String(
+                    localized: "%@ could not continue. Retrying once with %@.",
+                    defaultValue: "%@ could not continue. Retrying once with %@."
+                ), failedModel.name, recoveryModel.name))
+                responsePerformanceStatus = "recovered"
+                await runAssistantResponse(
+                    prompt: prompt,
+                    conversationID: conversationID,
+                    resetSession: true,
+                    assistantID: assistantID,
+                    existingPrefix: existingPrefix,
+                    placeholderContent: placeholderContent,
+                    missingAnswerRetryCount: missingAnswerRetryCount,
+                    image: image,
+                    assistantSourceTitles: assistantSourceTitles,
+                    retryPromptSeed: retryPromptSeed,
+                    shouldChargeUsage: false,
+                    autoContinuationCount: autoContinuationCount,
+                    generationOverrides: generationOverrides,
+                    recoveryAttempted: true
+                )
+                return
+            }
             let errorText = userFacingErrorText(from: error.localizedDescription)
             if historyManager.containsMessage(assistantID, in: conversationID) {
                 let fallbackContent = failureContent(
@@ -2032,15 +2619,16 @@ struct ChatView: View {
             activeStreamingConversationID = nil
             activeStreamingAssistantID = nil
         }
+        streamingState.reset(assistantID: assistantID)
+        llmEngine.onStreamingUpdate = nil
         llmEngine.currentResponse = ""
         streamingPrefix = ""
         ReviewPromptManager.noteSuccessfulResponse()
     }
 
-    // Fire-and-forget cross-chat memory extraction from the latest user
-    // message. Runs on an isolated on-device session, so it never blocks the
-    // reply and does nothing on devices without Apple Intelligence.
-    private func rememberUserFactsIfNeeded(conversationID: UUID?, assistantID: UUID) {
+    // Cross-chat memory extraction from the latest user message. Its caller
+    // owns the cancellable, delayed enrichment task so a new chat can preempt it.
+    private func rememberUserFactsIfNeeded(conversationID: UUID?, assistantID: UUID) async {
         guard memoryStore.isEnabled else { return }
         guard let conversation = historyManager.conversation(id: conversationID),
               let userMessage = conversation.messages.last(where: { $0.role == .user }) else {
@@ -2050,18 +2638,62 @@ struct ChatView: View {
         // Very short messages ("thanks", "continue") never contain durable facts.
         guard text.count >= 25 else { return }
         // Only messages where the user talks about themselves can contain
-        // durable user facts.
+        // durable user facts. Without this, the extractor turned messages
+        // about other people (or nothing at all) into invented "facts".
         guard AssistantMemoryStore.containsSelfReference(text) else { return }
 
+        guard let facts = try? await llmEngine.extractUserFacts(from: text),
+              !facts.isEmpty,
+              !Task.isCancelled else { return }
+        // The extractor is generative, so accept only verbatim evidence
+        // from the user's message. This prevents invented preferences or
+        // topics from poisoning every later model's system prompt.
+        let grounded = AssistantMemoryStore.verifiedExtractedFacts(facts, from: text)
+        guard !grounded.isEmpty else { return }
+        memoryStore.add(grounded)
+    }
+
+    private func prioritizeInteractiveChat() {
+        postResponseEnrichmentTask?.cancel()
+        postResponseEnrichmentTask = nil
+
+        guard DeviceResourcePolicy.current.isLowMemoryPhone else { return }
+        speechManager.prioritizeInteractiveChat(
+            preserveVoiceFeatures: voiceConversationMode
+        )
         Task {
-            guard let facts = try? await llmEngine.extractUserFacts(from: text),
-                  !facts.isEmpty else { return }
-            // The extractor is generative, so accept only verbatim evidence
-            // from the user's message. This prevents invented preferences or
-            // topics from poisoning every later model's system prompt.
-            let grounded = AssistantMemoryStore.verifiedExtractedFacts(facts, from: text)
-            guard !grounded.isEmpty else { return }
-            memoryStore.add(grounded)
+            await EmbeddingService.shared.unload()
+        }
+    }
+
+    private func schedulePostResponseEnrichment(
+        conversationID: UUID?,
+        model: ModelInfo,
+        assistantID: UUID
+    ) {
+        postResponseEnrichmentTask?.cancel()
+        guard DeviceResourcePolicy.current.shouldRunPostResponseEnrichment else {
+            postResponseEnrichmentTask = nil
+            return
+        }
+
+        postResponseEnrichmentTask = Task { @MainActor in
+            // Give the composer and model a quiet window. Starting another
+            // answer cancels this task before it can contend with chat.
+            try? await Task.sleep(for: .seconds(4))
+            await ChatWorkloadCoordinator.shared.waitUntilChatIsIdle()
+            guard !Task.isCancelled, llmEngine.state == .ready else { return }
+
+            await refineConversationInsightsIfNeeded(
+                conversationID: conversationID,
+                model: model,
+                assistantID: assistantID
+            )
+            guard !Task.isCancelled, llmEngine.state == .ready else { return }
+            await rememberUserFactsIfNeeded(
+                conversationID: conversationID,
+                assistantID: assistantID
+            )
         }
     }
 
@@ -2140,6 +2772,7 @@ struct ChatView: View {
             Button {
                 withAnimation(.spring(response: 0.3)) {
                     selectedImage = nil
+                    selectedImageData = nil
                     selectedPhotoItem = nil
                 }
             } label: {
@@ -2167,7 +2800,7 @@ struct ChatView: View {
 
     private func handlePhotoSelection() {
         guard let item = selectedPhotoItem else { return }
-        guard guardCanAddAttachment(action: String(localized: "adding a photo")) else {
+        guard guardCanAddPhoto(action: String(localized: "adding a photo")) else {
             selectedPhotoItem = nil
             return
         }
@@ -2181,10 +2814,12 @@ struct ChatView: View {
 
         Task {
             if let data = try? await item.loadTransferable(type: Data.self),
-               let uiImage = UIImage(data: data) {
+               let preparedData = await ImageAttachmentManager.shared.prepareImageData(data),
+               let uiImage = UIImage(data: preparedData) {
                 await MainActor.run {
                     withAnimation(.spring(response: 0.3)) {
                         selectedImage = uiImage
+                        selectedImageData = preparedData
                     }
                 }
             }
@@ -2201,12 +2836,13 @@ struct ChatView: View {
             speechManager.stopListening()
         }
 
-        let text = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = AssistantOutputSanitizer.sanitize(message.content)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         speechManager.speak(text, messageID: message.id)
     }
 
-    private func maybeEnqueueKokoroSpeechWhileStreaming() {
+    private func maybeEnqueueSpeechWhileStreaming() {
         // SpeechManager handles the actual synthesis/playback queue; here we only decide *what* chunk to enqueue.
         let visibleText = AssistantOutputSanitizer
             .sanitize(combinedStreamingContent(for: llmEngine.currentResponse))
@@ -2638,10 +3274,15 @@ struct ChatView: View {
 
     private func branchConversation(from message: ChatMessage) {
         guard llmEngine.state != .generating else { return }
-        historyManager.branchConversation(from: message.id)
-        llmEngine.resetSession()
-        Self.mediumHaptic.impactOccurred()
-        showUsageToast(String(localized: "Branched to a new conversation"))
+        Task {
+            if await historyManager.branchConversation(from: message.id) {
+                llmEngine.resetSession()
+                Self.mediumHaptic.impactOccurred()
+                showUsageToast(String(localized: "Branched to a new conversation"))
+            } else {
+                showUsageToast(String(localized: "Could not branch because an image attachment was unavailable."))
+            }
+        }
     }
 
     private func retryAction(for message: ChatMessage) -> MessageBubble.RecoveryAction? {
@@ -2748,15 +3389,12 @@ struct ChatView: View {
     }
 
     private func rawAssistantContent(for message: ChatMessage) -> String {
-        let thinking = message.thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let answer = message.content
-        if thinking.isEmpty {
-            return answer
-        }
-        if answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return "<think>\(thinking)</think>"
-        }
-        return "<think>\(thinking)</think>\n\(answer)"
+        AssistantOutputSanitizer.canonicalized(
+            AssistantOutputSanitizer.Parts(
+                content: message.content,
+                thinkingContent: message.thinkingContent
+            )
+        )
     }
 
     private func combinedStreamingContent(for response: String) -> String {
@@ -2764,20 +3402,6 @@ struct ChatView: View {
             return response
         }
         return streamingPrefix + response
-    }
-
-    /// Live text for the assistant bubble currently being generated. Reading
-    /// `llmEngine.currentResponse` here makes the enclosing row re-render on every
-    /// token tick, so the reply streams in directly from the engine — bypassing
-    /// the per-token history write that otherwise batched updates into one render.
-    private func liveStreamingContent(for message: ChatMessage) -> String? {
-        guard llmEngine.state == .generating,
-              message.role == .assistant,
-              message.isStreaming,
-              message.id == activeStreamingAssistantID else {
-            return nil
-        }
-        return combinedStreamingContent(for: llmEngine.currentResponse)
     }
 
     private func failureContent(
@@ -2874,11 +3498,27 @@ struct ChatView: View {
             return true
         }
 
-        guard trimmed.count >= 80 else { return false }
+        guard trimmed.count >= 60 else { return false }
 
         if let lastScalar = trimmed.unicodeScalars.last {
             let inconclusiveCharacters = CharacterSet(charactersIn: ",:;-(")
-            return inconclusiveCharacters.contains(lastScalar)
+            if inconclusiveCharacters.contains(lastScalar) {
+                return true
+            }
+            // A long reply that simply stops on an ordinary word - no
+            // terminal punctuation, no emoji, no closing fence - is far more
+            // often a cut generation than a deliberate ending. Exclude list
+            // items and headings, which legitimately end this way.
+            let lastLine = trimmed.split(separator: "\n").last.map(String.init) ?? trimmed
+            let lastLineTrimmed = lastLine.trimmingCharacters(in: .whitespaces)
+            let looksLikeListOrHeading = lastLineTrimmed.hasPrefix("- ")
+                || lastLineTrimmed.hasPrefix("* ")
+                || lastLineTrimmed.hasPrefix("#")
+                || (lastLineTrimmed.first?.isNumber == true && lastLineTrimmed.contains(". "))
+            if !looksLikeListOrHeading,
+               CharacterSet.letters.contains(lastScalar) || CharacterSet.decimalDigits.contains(lastScalar) {
+                return true
+            }
         }
 
         return false
@@ -2929,6 +3569,9 @@ struct ChatView: View {
         visibleContent: String,
         autoContinuationCount: Int
     ) -> Bool {
+        // On 4 GB phones one bounded pass is safer than chaining up to four
+        // generations and growing the session cache for extra detail.
+        guard !DeviceResourcePolicy.current.isLowMemoryPhone else { return false }
         guard autoContinuationCount < 3 else { return false }
         guard responseCharacterLimit == 0 else { return false }
 
@@ -3030,16 +3673,12 @@ struct ChatView: View {
     }
 
     private func reconstructedAssistantContent(visibleContent: String, thinkingContent: String?) -> String {
-        let trimmedVisibleContent = visibleContent.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedThinkingContent = thinkingContent?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-        if trimmedThinkingContent.isEmpty {
-            return trimmedVisibleContent
-        }
-        if trimmedVisibleContent.isEmpty {
-            return "<think>\(trimmedThinkingContent)</think>"
-        }
-        return "<think>\(trimmedThinkingContent)</think>\n\(trimmedVisibleContent)"
+        AssistantOutputSanitizer.canonicalized(
+            AssistantOutputSanitizer.Parts(
+                content: visibleContent.trimmingCharacters(in: .whitespacesAndNewlines),
+                thinkingContent: thinkingContent
+            )
+        )
     }
 
     private func trimmedResponseContent(_ content: String, limit: Int) -> String {
@@ -3099,38 +3738,77 @@ struct ChatView: View {
     private func promptIncludingRecentTranscript(
         _ prompt: String,
         conversationID: UUID?,
-        assistantID: UUID
+        assistantID: UUID,
+        model: ModelInfo
     ) -> String {
-        var priorMessages = historyManager.messages(in: conversationID)
-            .filter { message in
-                message.id != assistantID && !message.isStreaming
-            }
+        var priorMessages = historyManager.recentCompletedMessages(
+            in: conversationID,
+            excluding: assistantID,
+            limit: 10
+        )
 
         if priorMessages.last?.role == .user {
             priorMessages.removeLast()
         }
 
-        let transcript = priorMessages
-            .suffix(8)
-            .compactMap { message -> String? in
-                let role = message.role == .user ? "User" : "Assistant"
-                let content = AssistantOutputSanitizer
-                    .sanitize(message.content)
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                guard !content.isEmpty else { return nil }
-                return "\(role): \(content)"
-            }
-            .joined(separator: "\n\n")
+        let configuration = promptBudgetConfiguration(for: model)
+        let promptTokens = PromptBudgeter.estimatedTokenCount(prompt)
+        let deviceCap = DeviceResourcePolicy.current.isLowMemoryPhone ? 600 : 1_200
+        var remainingTranscriptTokens = max(
+            180,
+            min(deviceCap, (configuration.inputTokenBudget - promptTokens) / 2)
+        )
+        var transcriptBlocks: [String] = []
+        transcriptBlocks.reserveCapacity(8)
+        for message in priorMessages.suffix(8).reversed() {
+            guard remainingTranscriptTokens >= 60 else { break }
+            let role = message.role == .user ? "User" : "Assistant"
+            let boundedRaw = PromptBudgeter.boundedChatText(
+                message.content,
+                maxTokens: min(remainingTranscriptTokens, 260)
+            )
+            let content = AssistantOutputSanitizer
+                .sanitize(boundedRaw)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !content.isEmpty else { continue }
+            let block = "\(role): \(content)"
+            transcriptBlocks.insert(block, at: 0)
+            remainingTranscriptTokens -= PromptBudgeter.estimatedTokenCount(block) + 8
+        }
+        let transcript = transcriptBlocks.joined(separator: "\n\n")
 
-        guard !transcript.isEmpty else { return prompt }
+        // A summary persisted by an earlier rolling condensation covers the
+        // turns that are too old for the transcript window below — without
+        // it, reopening a long chat only remembers the last few messages.
+        let storedSummaryRaw = historyManager.conversation(id: conversationID)?
+            .rollingSummary?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let storedSummary = PromptBudgeter.boundedChatText(
+            storedSummaryRaw,
+            maxTokens: DeviceResourcePolicy.current.isLowMemoryPhone ? 240 : 420
+        )
 
-        return """
-        Recent conversation context, for continuity only:
-        \(transcript)
+        guard !transcript.isEmpty || !storedSummary.isEmpty else { return prompt }
 
+        var sections: [String] = []
+        if !storedSummary.isEmpty {
+            sections.append("""
+            Summary of the earlier conversation, for continuity only. Use it \
+            silently; never recite or recap it:
+            \(storedSummary)
+            """)
+        }
+        if !transcript.isEmpty {
+            sections.append("""
+            Recent conversation context, for continuity only:
+            \(transcript)
+            """)
+        }
+        sections.append("""
         Current turn:
         \(prompt)
-        """
+        """)
+        return sections.joined(separator: "\n\n")
     }
 
     private func buildPromptContext(
@@ -3360,6 +4038,74 @@ struct ChatView: View {
         }
     }
 
+}
+
+// MARK: - Auto Selection Toast
+
+/// The auto model-selection toast. Owns a draining progress line so the
+/// remaining time is legible, dismisses on tap, and honors Reduce Motion.
+private struct AutoSelectionToastView: View {
+    let message: String
+    let autoDismissAfter: TimeInterval
+    let onDismiss: () -> Void
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var progress: CGFloat = 1
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 12) {
+                Image(systemName: "wand.and.stars")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.purple)
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(Color.purple.opacity(0.12)))
+                    .accessibilityHidden(true)
+
+                Text(message)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Color.adaptive(white: 0.15))
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 0)
+            }
+
+            if !reduceMotion {
+                GeometryReader { geo in
+                    Capsule()
+                        .fill(Color.purple.opacity(0.35))
+                        .frame(width: max(0, geo.size.width * progress))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(height: 3)
+                .accessibilityHidden(true)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.regularMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.adaptiveBorder(opacity: 0.6), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
+        .contentShape(RoundedRectangle(cornerRadius: 16))
+        .onTapGesture(perform: onDismiss)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(message)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(Text(String(localized: "Tap to dismiss")))
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.linear(duration: autoDismissAfter)) {
+                progress = 0
+            }
+        }
+    }
 }
 
 // MARK: - Send Button Style

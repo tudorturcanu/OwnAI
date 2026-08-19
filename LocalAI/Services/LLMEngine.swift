@@ -85,7 +85,37 @@ private struct LocalAITokenizer: MLXLMCommon.Tokenizer {
 final class LLMEngine {
     
     // MARK: - Properties
-    
+
+    /// The app's single engine instance, for App Intents that run in-process
+    /// and must reuse the already-loaded model instead of instantiating a
+    /// second engine (and a second copy of the weights) in the same process.
+    private(set) static weak var shared: LLMEngine?
+
+    init() {
+        LLMEngine.shared = self
+    }
+
+    /// Whether MLX (Metal) work is currently allowed. App Intents that continue
+    /// in the foreground poll this until the scene-activation event lands.
+    var isForegroundActive: Bool { isSceneActive }
+
+    /// The loaded, ready MLX model, if any — lets App Intents answer with the
+    /// model that's already in memory rather than loading another one.
+    var readyMLXModel: ModelInfo? {
+        guard state == .ready,
+              let model = currentModel,
+              model.engine == .mlx,
+              model.downloadState.isDownloaded else { return nil }
+        return model
+    }
+
+    /// The model already resident in the engine, regardless of backend. Auto
+    /// Mode uses this to avoid paying an unnecessary model-switch cost.
+    var readyModelID: String? {
+        guard state == .ready || state == .generating else { return nil }
+        return currentModel?.id
+    }
+
     var state: LLMEngineState = .idle
     var currentResponse: String = ""
     var streamingMessageID = UUID()
@@ -99,6 +129,17 @@ final class LLMEngine {
     
     // Apple Foundation
     private let appleFoundationBridge = AppleFoundationModelBridge()
+
+    /// Called on the main actor with each rolling-condensation summary (from
+    /// either engine) and the conversation ID the triggering generation was
+    /// started for, so the UI layer can persist the summary on that
+    /// conversation. The ID travels through the generate call rather than
+    /// being captured in this closure, so a generation that outlives a
+    /// conversation switch still attributes its summary correctly.
+    var onRollingSummaryUpdate: ((String, UUID?) -> Void)?
+    /// Narrow sink for the active message bubble. The parent chat view does
+    /// not need to observe the full engine for every streamed snapshot.
+    var onStreamingUpdate: ((String) -> Void)?
     
     #if !targetEnvironment(simulator)
     // MLX
@@ -116,8 +157,35 @@ final class LLMEngine {
     private var currentModel: ModelInfo?
     private var lastLoadedAppleFoundationInstructions: String?
     private var isSceneActive = true
+    // Set when resetSession() is called while backgrounded (no GPU access):
+    // the MLX session recreation is deferred to the next scene activation.
+    private var pendingMlxSessionReset = false
+    private var pendingMlxMemoryPressureTrim = false
+
+    #if !targetEnvironment(simulator)
+    // Rolling memory for the persistent MLX session, mirroring the Apple
+    // Foundation bridge: the ChatSession's KV cache grows every turn with no
+    // window management of its own, so long chats would silently overflow the
+    // model's context and lose their beginning. We track each completed
+    // exchange and, past a threshold, fold the older turns into a
+    // model-written summary and re-hydrate the session as
+    // instructions-plus-summary followed by the recent turns verbatim.
+    private struct MlxSessionTurn {
+        let role: String
+        let text: String
+    }
+    private var mlxSessionTurns: [MlxSessionTurn] = []
+    private var mlxTranscriptTokenEstimate = 0
+    private var mlxRollingSummary: String?
+
+    private static let mlxRollingRecentTurnsToKeep = 4
+    private static let mlxRollingSummaryResponseTokens = 200
+    private static let mlxRollingSummaryInputBudgetTokens = 2_000
+    #endif
     var streamingTokensPerSecond: Double = 0
     private var streamingStartTime: Date?
+    private var activeGenerationPerformanceInterval: PerformanceLogger.Interval?
+    private var didLogFirstToken = false
     private var lastMlxRequestFingerprint: MlxRequestFingerprint?
     private var lastMlxGenerationMetrics: MlxGenerationMetrics?
     
@@ -184,6 +252,11 @@ final class LLMEngine {
         // instructions are otherwise stuck until the model is reloaded.
         if state == .ready && currentModel?.id == model.id {
             if model.engine != .appleFoundation {
+                PerformanceLogger.event(
+                    "ModelWarmHit",
+                    label: "Model warm hit",
+                    metadata: "model=\(model.id) engine=\(model.engine.rawValue)"
+                )
                 return
             }
             // Compare the BASE prompt only: memory facts learned mid-chat must
@@ -192,6 +265,11 @@ final class LLMEngine {
             // facts apply when the next session is created.
             let instructions = UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
             if instructions == lastLoadedAppleFoundationInstructions {
+                PerformanceLogger.event(
+                    "ModelWarmHit",
+                    label: "Model warm hit",
+                    metadata: "model=\(model.id) engine=\(model.engine.rawValue)"
+                )
                 return
             }
         }
@@ -209,6 +287,11 @@ final class LLMEngine {
         }
         
         loadingModelID = model.id
+        let performanceInterval = PerformanceLogger.begin(
+            "ModelLoad",
+            label: "Model load",
+            metadata: "model=\(model.id) engine=\(model.engine.rawValue) size_gb=\(model.sizeGB)"
+        )
         let taskID = UUID()
         loadTaskID = taskID
         let task = Task { [weak self] in
@@ -231,10 +314,22 @@ final class LLMEngine {
             try await MemoryProfiler.measure("LLMEngine.loadModel(\(model.id))") {
                 try await task.value
             }
+            PerformanceLogger.end(
+                performanceInterval,
+                metadata: "resident_mb=\(MemoryProfiler.currentResidentMemory / 1_048_576)"
+            )
             resetIdleTimer()
         } catch is CancellationError {
+            PerformanceLogger.end(performanceInterval, status: "cancelled")
             // Canceled loads shouldn't surface as errors.
             return
+        } catch {
+            PerformanceLogger.end(
+                performanceInterval,
+                status: "failed",
+                metadata: "error_type=\(String(describing: type(of: error)))"
+            )
+            throw error
         }
     }
     
@@ -268,6 +363,9 @@ final class LLMEngine {
         mlxSession = nil
         mlxModelContainer = nil
         mlxModelID = nil
+        pendingMlxSessionReset = false
+        pendingMlxMemoryPressureTrim = false
+        resetMlxSessionTracking(instructions: nil)
         #endif
         loadTask?.cancel()
         loadTask = nil
@@ -288,22 +386,242 @@ final class LLMEngine {
     func resetSession() {
         appleFoundationBridge.resetSession()
         #if !targetEnvironment(simulator)
-        guard isSceneActive else { return }
+        guard isSceneActive else {
+            // GPU work is off-limits in the background, but silently keeping
+            // the old MLX session would resurface its stale history later —
+            // e.g. a watch exchange appended to the conversation while the
+            // phone is locked would stay invisible to the model. Do the
+            // recreation on the next scene activation instead.
+            pendingMlxSessionReset = mlxModelContainer != nil
+            return
+        }
+        pendingMlxSessionReset = false
         // Recreate MLX session with same model to clear conversation history
         if let container = mlxModelContainer, let modelID = mlxModelID {
             mlxSession = nil
             MLX.GPU.clearCache()
-            mlxSession = ChatSession(container, instructions: mlxSessionInstructions(for: modelID))
+            let instructions = mlxSessionInstructions(for: modelID)
+            mlxSession = ChatSession(
+                container,
+                instructions: instructions,
+                additionalContext: Self.mlxTemplateContext(
+                    thinkingEnabled: ModelInfo.resolvedThinkingEnabled(modelID: modelID)
+                )
+            )
+            resetMlxSessionTracking(instructions: instructions)
         }
         #endif
     }
+
+    #if !targetEnvironment(simulator)
+    /// Rough context window for an MLX model, aligned with the input budgets
+    /// PromptBudgeter assumes for the same model classes. The estimate lives
+    /// there so the two cannot drift apart.
+    private func mlxContextWindowEstimate(for model: ModelInfo) -> Int {
+        PromptBudgeter.mlxContextWindow(for: model)
+    }
+
+    private func resetMlxSessionTracking(instructions: String?) {
+        mlxSessionTurns = []
+        mlxRollingSummary = nil
+        mlxTranscriptTokenEstimate = PromptBudgeter.estimatedTokenCount(instructions ?? "")
+    }
+
+    /// Records one completed exchange on the persistent MLX session so the
+    /// rolling condensation knows what the session's KV cache contains.
+    func recordMlxSessionTurn(userPrompt: String, assistantResponse: String) {
+        let response = AssistantOutputSanitizer.sanitize(assistantResponse)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        mlxSessionTurns.append(MlxSessionTurn(role: "User", text: userPrompt))
+        if !response.isEmpty {
+            mlxSessionTurns.append(MlxSessionTurn(role: "Assistant", text: response))
+        }
+        mlxTranscriptTokenEstimate += PromptBudgeter.estimatedTokenCount(userPrompt)
+            + PromptBudgeter.estimatedTokenCount(response)
+            + 32
+    }
+
+    /// Folds older turns of the persistent MLX session into a model-written
+    /// summary once the transcript nears the context window, and re-hydrates
+    /// the session as instructions-plus-summary followed by the recent turns.
+    /// On any failure the old session stays as-is — worse than condensed, but
+    /// never worse than before this existed.
+    func condenseMlxSessionIfNeeded(
+        model: ModelInfo,
+        conversationID: UUID? = nil,
+        additionalPromptTokens: Int = 0
+    ) async {
+        guard isSceneActive,
+              let container = mlxModelContainer,
+              let modelID = mlxModelID,
+              mlxSession != nil else { return }
+        let window = mlxContextWindowEstimate(for: model)
+        let policy = DeviceResourcePolicy.current
+        let condensationFraction = policy.isLowMemoryPhone ? 0.50 : 0.68
+        guard mlxTranscriptTokenEstimate + additionalPromptTokens >= Int(Double(window) * condensationFraction) else { return }
+        let recentTurnsToKeep = policy.isLowMemoryPhone ? 2 : Self.mlxRollingRecentTurnsToKeep
+        guard mlxSessionTurns.count > recentTurnsToKeep + 1 else { return }
+
+        // Keep whole exchanges: the retained tail must start with a user turn.
+        var recent = Array(mlxSessionTurns.suffix(recentTurnsToKeep))
+        while let first = recent.first, first.role != "User" {
+            recent.removeFirst()
+        }
+        let older = mlxSessionTurns.dropLast(recent.count)
+        guard !older.isEmpty else { return }
+
+        var log = older
+            .map { "\($0.role): \($0.text)" }
+            .joined(separator: "\n\n")
+        if let mlxRollingSummary {
+            log = "Summary of even earlier conversation:\n\(mlxRollingSummary)\n\n" + log
+        }
+        let clippedLog = PromptBudgeter.snippetSizedText(
+            log,
+            maxTokens: Self.mlxRollingSummaryInputBudgetTokens
+        )
+
+        let summary: String
+        if policy.isLowMemoryPhone {
+            // Avoid allocating a second generation cache just to summarize.
+            // A clipped, sanitized continuity excerpt is deterministic and
+            // preserves enough older context for a constrained device.
+            summary = PromptBudgeter.sanitizedContinuitySummary(
+                PromptBudgeter.boundedChatText(clippedLog, maxTokens: 360)
+            )
+        } else {
+            let summarizer = ChatSession(
+                container,
+                instructions: """
+                You summarize conversations so an assistant can continue them later.
+                Capture key facts, names, decisions, preferences, and open questions.
+                Write plain prose under 120 words. No preamble, no headings.
+                """,
+                generateParameters: makeMlxGenerateParameters(
+                    topP: 0.8,
+                    temperature: 0.2,
+                    maxTokens: Self.mlxRollingSummaryResponseTokens,
+                    modelID: modelID
+                ),
+                additionalContext: Self.mlxTemplateContext(thinkingEnabled: false)
+            )
+            do {
+            // Reasoning models answer with their chain of thought attached, so
+            // drop it here too — otherwise the "summary" promoted into the
+            // instructions channel below is mostly the model thinking aloud.
+            let rawSummary = AssistantOutputSanitizer
+                .sanitize(
+                    Self.rawOutputSeed(modelID: modelID, thinkingEnabled: false)
+                        + (try await summarizer.respond(to: clippedLog))
+                )
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            // The summary is derived from conversation content and is about to
+            // be promoted into the privileged instructions channel, so strip
+            // any sentence that reads as a directive to the assistant. This
+            // also covers rebuildMlxSessionAfterFailure, which reuses the
+            // stored mlxRollingSummary set below.
+                summary = PromptBudgeter.sanitizedContinuitySummary(rawSummary)
+            } catch {
+                MemoryProfiler.log("LLMEngine", message: "MLX rolling condense failed: \(error.localizedDescription)")
+                return
+            }
+        }
+        guard !summary.isEmpty else { return }
+
+        let baseInstructions = mlxSessionInstructions(for: modelID) ?? ""
+        // Same framing rule as the memory block and the Apple bridge summary:
+        // silent background, or small models recite it back every turn.
+        let mergedInstructions = """
+        \(baseInstructions)
+
+        Earlier parts of this conversation, summarized for continuity. Use \
+        them silently when relevant; never recite or recap this summary. \
+        Always respond to the user's latest message:
+        \(summary)
+        """
+
+        let history = recent.map { turn in
+            turn.role == "User" ? Chat.Message.user(turn.text) : Chat.Message.assistant(turn.text)
+        }
+        mlxSession = nil
+        MLX.GPU.clearCache()
+        mlxSession = ChatSession(
+            container,
+            instructions: mergedInstructions,
+            history: history,
+            additionalContext: Self.mlxTemplateContext(
+                thinkingEnabled: ModelInfo.resolvedThinkingEnabled(modelID: modelID)
+            )
+        )
+        mlxRollingSummary = summary
+        mlxSessionTurns = recent
+        mlxTranscriptTokenEstimate = PromptBudgeter.estimatedTokenCount(mergedInstructions)
+            + recent.reduce(0) { $0 + PromptBudgeter.estimatedTokenCount($1.text) + 16 }
+        onRollingSummaryUpdate?(summary, conversationID)
+        MemoryProfiler.log("LLMEngine", message: "MLX rolling condense: folded \(older.count) turns, kept \(recent.count).")
+    }
+
+    /// Emergency context recovery after a failed generation on the persistent
+    /// MLX session — most often the accumulated transcript colliding with the
+    /// model's real context limit when the token estimate undershot it.
+    /// Deterministic on purpose (no model call, so it cannot fail the same
+    /// way): keeps the rolling summary already in hand plus the most recent
+    /// exchange, drops the rest. Returns nil when the session held no context
+    /// worth shedding, so unrelated failures still surface as errors.
+    func rebuildMlxSessionAfterFailure() -> ChatSession? {
+        guard let container = mlxModelContainer,
+              let modelID = mlxModelID,
+              mlxSession != nil,
+              !mlxSessionTurns.isEmpty || mlxRollingSummary != nil else { return nil }
+
+        var recent = Array(mlxSessionTurns.suffix(2))
+        while let first = recent.first, first.role != "User" {
+            recent.removeFirst()
+        }
+
+        let baseInstructions = mlxSessionInstructions(for: modelID) ?? ""
+        let mergedInstructions: String
+        if let mlxRollingSummary {
+            mergedInstructions = """
+            \(baseInstructions)
+
+            Earlier parts of this conversation, summarized for continuity. Use \
+            them silently when relevant; never recite or recap this summary. \
+            Always respond to the user's latest message:
+            \(mlxRollingSummary)
+            """
+        } else {
+            mergedInstructions = baseInstructions
+        }
+
+        let history = recent.map { turn in
+            turn.role == "User" ? Chat.Message.user(turn.text) : Chat.Message.assistant(turn.text)
+        }
+        mlxSession = nil
+        MLX.GPU.clearCache()
+        let rebuilt = ChatSession(
+            container,
+            instructions: mergedInstructions,
+            history: history,
+            additionalContext: Self.mlxTemplateContext(
+                thinkingEnabled: ModelInfo.resolvedThinkingEnabled(modelID: modelID)
+            )
+        )
+        mlxSession = rebuilt
+        mlxSessionTurns = recent
+        mlxTranscriptTokenEstimate = PromptBudgeter.estimatedTokenCount(mergedInstructions)
+            + recent.reduce(0) { $0 + PromptBudgeter.estimatedTokenCount($1.text) + 16 }
+        return rebuilt
+    }
+    #endif
     
     /// Generate a response for the given prompt with streaming and throttling
     func generate(
         prompt: String,
         systemPrompt: String = AIResponseDefaults.defaultSystemPrompt,
         overrides: GenerationOverrides? = nil,
-        image: UIImage? = nil
+        image: UIImage? = nil,
+        conversationID: UUID? = nil
     ) async throws {
         if state == .loading, let task = loadTask {
             _ = try? await task.value
@@ -335,20 +653,40 @@ final class LLMEngine {
         currentResponse = ""
         streamingMessageID = UUID() // New unique ID for this generation session
         lastUpdate = .distantPast
-        adaptiveThrottleInterval = lowPowerMode ? 0.16 : 0.08
+        adaptiveThrottleInterval = lowPowerMode
+            ? 0.16
+            : DeviceResourcePolicy.current.streamingUpdateInterval
         estimatedTokenCount = 0
         lastTokenCountTextLength = 0
         lastStreamingUpdateLength = 0
         streamingStartTime = Date()
         streamingTokensPerSecond = 0
+        didLogFirstToken = false
+        let generationPerformanceInterval = PerformanceLogger.begin(
+            "Generation",
+            label: "Generation",
+            metadata: "model=\(model.id) engine=\(model.engine.rawValue) prompt_characters=\(prompt.count) image=\(image != nil)"
+        )
+        activeGenerationPerformanceInterval = generationPerformanceInterval
 
         
         let usesEphemeralMlxSession = model.engine == .mlx && (
             !mlxModelSupportsSystemRole(modelID: model.id)
         )
-        var effectiveSystemPrompt = storedSystemPrompt(fallback: systemPrompt)
+        var effectiveSystemPrompt = systemPromptWithRuntimeIdentity(
+            storedSystemPrompt(fallback: systemPrompt),
+            model: model
+        )
         if image != nil {
             effectiveSystemPrompt += "\n\nImportant: You are analyzing an image. Keep your answer very short and concise."
+        }
+        // Forward Apple-bridge condensation summaries to the engine-level
+        // callback on the main actor. (The MLX path calls it directly.)
+        appleFoundationBridge.onRollingSummaryUpdate = { [weak self] summary, summaryConversationID in
+            guard let self else { return }
+            Task { @MainActor in
+                self.onRollingSummaryUpdate?(summary, summaryConversationID)
+            }
         }
         let effectiveMlxPrompt = mlxPrompt(
             from: prompt,
@@ -381,18 +719,55 @@ final class LLMEngine {
         let currentMaxTokens = overrides?.maxTokens ?? self.maxTokens
         let effectiveTopP = lowPowerMode ? min(currentTopP, 0.9) : currentTopP
         let effectiveTemperature = lowPowerMode ? min(currentTemperature, 0.6) : currentTemperature
-        let effectiveMaxTokens = overrides?.maxTokens ?? (lowPowerMode ? min(currentMaxTokens, 768) : currentMaxTokens)
+        let devicePolicy = DeviceResourcePolicy.current
+        let effectiveMaxTokens = min(
+            overrides?.maxTokens ?? currentMaxTokens,
+            devicePolicy.generationTokenLimit(
+                lowPowerMode: lowPowerMode || ProcessInfo.processInfo.isLowPowerModeEnabled,
+                thermalState: ProcessInfo.processInfo.thermalState
+            )
+        )
         #if !targetEnvironment(simulator)
+        // Rolling memory: fold older turns into a summary before the window
+        // fills, so long MLX chats keep their context instead of silently
+        // overflowing it. Runs rarely (past ~70% of the window estimate),
+        // and before the response budget below so the freed window counts.
+        if model.engine == .mlx, !usesEphemeralMlxSession {
+            await condenseMlxSessionIfNeeded(
+                model: model,
+                conversationID: conversationID,
+                additionalPromptTokens: PromptBudgeter.estimatedTokenCount(effectiveMlxPrompt)
+            )
+        }
+        // Size the response cap to what the window can still hold once the
+        // session transcript and this prompt are accounted for, mirroring
+        // the Apple bridge's adaptive budget. A fixed cap on a long chat
+        // collides with the window mid-response and truncates the answer.
+        var mlxResponseTokenBudget = effectiveMaxTokens
+        if model.engine == .mlx, !usesEphemeralMlxSession {
+            let window = mlxContextWindowEstimate(for: model)
+            let promptTokens = PromptBudgeter.estimatedTokenCount(effectiveMlxPrompt)
+            let available = window - mlxTranscriptTokenEstimate - promptTokens - 256
+            mlxResponseTokenBudget = max(256, min(effectiveMaxTokens, available))
+        }
         let mlxGenerateParameters = makeMlxGenerateParameters(
             topP: effectiveTopP,
             temperature: effectiveTemperature,
-            maxTokens: effectiveMaxTokens,
+            maxTokens: mlxResponseTokenBudget,
             modelID: model.id
         )
         #endif
         // Capture state on MainActor
         #if !targetEnvironment(simulator)
         let currentMlxSession = self.mlxSession
+        // The reused session streams with whatever parameters it holds, and it
+        // was created with library defaults — so temperature, topP, and the
+        // response token budget only ever applied to ephemeral sessions.
+        // Apply this request's parameters before generation starts (safe: the
+        // session is idle here; generation hasn't been kicked off yet).
+        if model.engine == .mlx, !usesEphemeralMlxSession {
+            currentMlxSession?.generateParameters = mlxGenerateParameters
+        }
         let freshMlxSession = usesEphemeralMlxSession
             ? try await self.makeFreshMlxSession(
                 modelID: model.id,
@@ -403,6 +778,9 @@ final class LLMEngine {
         #endif
         
         // Run on detached task to avoid blocking UI
+        let generationPeakSampling = model.engine == .mlx
+            ? MemoryProfiler.startPeakSampling()
+            : nil
         let task = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self else { return }
             let generationStartedAt = Date()
@@ -414,13 +792,14 @@ final class LLMEngine {
                 if model.engine == .appleFoundation {
                     // Apple Foundation Path
 
-                    try await self.appleFoundationBridge.streamResponse(
+                    let finalAppleContent = try await self.appleFoundationBridge.streamResponse(
                         to: prompt,
                         systemPrompt: effectiveSystemPrompt,
                         topP: effectiveTopP,
                         temperature: effectiveTemperature,
                         maxTokens: effectiveMaxTokens,
-                        image: image
+                        image: image,
+                        conversationID: conversationID
                     ) { [weak self] content in
                         guard let self else { return true }
                         self.postStreamingUpdate(content)
@@ -429,11 +808,16 @@ final class LLMEngine {
                         // mention markers like </s> literally.
                         return false
                     }
+                    // Streaming updates above are throttled and fire-and-forget,
+                    // so the final chunk can be dropped — freezing the visible
+                    // answer mid-sentence. Force-commit the complete answer, the
+                    // same way the MLX path does below.
+                    await self.updateResponseIfNeeded(finalAppleContent, force: true)
                 } else if model.engine == .mlx {
                     #if targetEnvironment(simulator)
                     throw LLMError.generationFailed("MLX is not available on the simulator.")
                     #else
-                    let session: ChatSession
+                    var session: ChatSession
                     if usesEphemeralMlxSession {
                         guard let freshMlxSession else {
                             throw LLMError.modelNotLoaded
@@ -444,46 +828,73 @@ final class LLMEngine {
                     } else {
                         throw LLMError.modelNotLoaded
                     }
-                    
+
                     // Stream MLX output so users see first tokens sooner and keep MLX errors throwable.
-                    var rawContent = ""
-                    var lastContent = ""
-                    let stream: AsyncThrowingStream<String, Error>
-                    
-                    // For VLM models (e.g. Qwen2-VL), pass the image directly via Transcript.ImageSegment
-                    if model.supportsVision, let image {
-                        stream = session.streamResponse(
-                            to: effectiveMlxPrompt,
-                            image: try Self.makeMlxInputImage(from: image)
-                        )
-                    } else {
-                        stream = session.streamResponse(to: effectiveMlxPrompt)
-                    }
-                    
-                    for try await chunk in stream {
-                        if Task.isCancelled { break }
-                        if firstTokenAt == nil, !chunk.isEmpty {
-                            firstTokenAt = Date()
-                        }
-                        // Accumulate the raw model output and sanitize only a copy
-                        // for display. Sanitizing into the buffer would strip any
-                        // control marker the model emits as literal text, so the
-                        // stop check below could never see it — freezing the visible
-                        // answer mid-sentence while generation keeps running.
-                        rawContent += chunk
-                        lastContent = Self.trimRepeatedLoopIfNeeded(in: rawContent)
-                        // Fire-and-forget so draining the model stream never blocks
-                        // on a per-token main-actor hop (which batched updates).
-                        self.postStreamingUpdate(lastContent)
-                        if Self.shouldStopStreaming(content: rawContent) {
+                    var attemptedContextRecovery = false
+                    while true {
+                        do {
+                            var rawContent = Self.rawOutputSeed(modelID: model.id, session: session)
+                            var lastContent = ""
+                            let stream: AsyncThrowingStream<String, Error>
+
+                            // For VLM models (e.g. Qwen2-VL), pass the image directly via Transcript.ImageSegment
+                            if model.supportsVision, let image {
+                                stream = session.streamResponse(
+                                    to: effectiveMlxPrompt,
+                                    image: try Self.makeMlxInputImage(from: image)
+                                )
+                            } else {
+                                stream = session.streamResponse(to: effectiveMlxPrompt)
+                            }
+
+                            for try await chunk in stream {
+                                if Task.isCancelled { break }
+                                if firstTokenAt == nil, !chunk.isEmpty {
+                                    firstTokenAt = Date()
+                                }
+                                // Accumulate the raw model output and sanitize only a copy
+                                // for display. Sanitizing into the buffer would strip any
+                                // control marker the model emits as literal text, so the
+                                // stop check below could never see it — freezing the visible
+                                // answer mid-sentence while generation keeps running.
+                                rawContent += chunk
+                                lastContent = Self.trimRepeatedLoopIfNeeded(in: rawContent)
+                                // Fire-and-forget so draining the model stream never blocks
+                                // on a per-token main-actor hop (which batched updates).
+                                self.postStreamingUpdate(lastContent)
+                                if Self.shouldStopStreaming(content: rawContent) {
+                                    break
+                                }
+                                // Let the consumer interleave with the synchronous MLX
+                                // producer so tokens surface as they are generated.
+                                await Task.yield()
+                            }
+                            finalMlxContent = lastContent
+                            await self.updateResponseIfNeeded(lastContent, force: true)
                             break
+                        } catch {
+                            // A failed turn on the long-running session is most often
+                            // the transcript colliding with the model's real context
+                            // limit (the token estimate is heuristic and can
+                            // undershoot). Retry once on a rebuilt session that keeps
+                            // the rolling summary and the latest exchange; anything
+                            // else — or a second failure — surfaces as the error it is.
+                            guard !attemptedContextRecovery,
+                                  !usesEphemeralMlxSession,
+                                  !(error is CancellationError),
+                                  !Task.isCancelled,
+                                  let rebuilt = await self.rebuildMlxSessionAfterFailure() else {
+                                throw error
+                            }
+                            attemptedContextRecovery = true
+                            rebuilt.generateParameters = mlxGenerateParameters
+                            session = rebuilt
+                            MemoryProfiler.log(
+                                "LLMEngine",
+                                message: "MLX generation failed (\(error.localizedDescription)); retrying on condensed session."
+                            )
                         }
-                        // Let the consumer interleave with the synchronous MLX
-                        // producer so tokens surface as they are generated.
-                        await Task.yield()
                     }
-                    finalMlxContent = lastContent
-                    await self.updateResponseIfNeeded(lastContent, force: true)
                     #endif
                 }
                 
@@ -499,6 +910,16 @@ final class LLMEngine {
                 // typically continues the conversation, so we keep the bounded
                 // buffer cache warm (see configureMlxGPUMemoryIfNeeded) for faster
                 // first tokens on the next turn. Teardown paths below still clear.
+                #if !targetEnvironment(simulator)
+                if model.engine == .mlx, !usesEphemeralMlxSession {
+                    // The reused session's KV cache now contains this exchange;
+                    // mirror it in the rolling-memory turn log.
+                    await self.recordMlxSessionTurn(
+                        userPrompt: prompt,
+                        assistantResponse: finalMlxContent
+                    )
+                }
+                #endif
                 if model.engine == .mlx, let mlxFingerprint {
                     let metrics = MlxGenerationMetrics(
                         requestKey: mlxFingerprint.requestKey,
@@ -552,6 +973,41 @@ final class LLMEngine {
         await MemoryProfiler.measure("LLMEngine.generate(\(model.id))") {
             await task.value
         }
+        #if !targetEnvironment(simulator)
+        if pendingMlxMemoryPressureTrim, model.engine == .mlx {
+            pendingMlxMemoryPressureTrim = false
+            _ = rebuildMlxSessionAfterFailure()
+            MLX.GPU.clearCache()
+        }
+        #endif
+        let generationStatus: String
+        if case .error = state {
+            generationStatus = "failed"
+        } else if Task.isCancelled {
+            generationStatus = "cancelled"
+        } else {
+            generationStatus = "success"
+        }
+        if let generationPeakSampling {
+            let peak = generationPeakSampling.stop()
+            if generationStatus == "success" {
+                ModelHealthStore.shared.recordRuntimeMemoryPeak(
+                    modelID: model.id,
+                    peakResidentMemoryBytes: peak
+                )
+            }
+        }
+        let generationDurationSeconds = max(
+            0.001,
+            PerformanceLogger.elapsedMilliseconds(since: generationPerformanceInterval) / 1_000
+        )
+        let completedTokensPerSecond = Double(estimatedTokenCount) / generationDurationSeconds
+        PerformanceLogger.end(
+            generationPerformanceInterval,
+            status: generationStatus,
+            metadata: "output_characters=\(currentResponse.count) estimated_tokens=\(estimatedTokenCount) effective_tps=\(String(format: "%.1f", completedTokensPerSecond))"
+        )
+        activeGenerationPerformanceInterval = nil
         resetIdleTimer()
     }
 
@@ -591,6 +1047,9 @@ final class LLMEngine {
             #if targetEnvironment(simulator)
             throw LLMError.modelNotAvailable("MLX is not available on the simulator.")
             #else
+            if model.exceedsDeviceMemoryBudget {
+                throw LLMError.modelNotAvailable("This model needs more memory than this device has. Choose a smaller model in Settings > Models.")
+            }
             if UIDevice.current.userInterfaceIdiom == .phone && model.requiresLargeDeviceOnPhone {
                 throw LLMError.modelNotAvailable("This model requires an iPad Pro or Mac. It exceeds the practical memory budget for iPhone.")
             }
@@ -608,7 +1067,9 @@ final class LLMEngine {
         state = .generating
         IdleTimerCoordinator.shared.setReason("llmGenerating", enabled: true)
         currentResponse = ""
-        adaptiveThrottleInterval = lowPowerMode ? 0.16 : 0.08
+        adaptiveThrottleInterval = lowPowerMode
+            ? 0.16
+            : DeviceResourcePolicy.current.streamingUpdateInterval
         estimatedTokenCount = 0
         lastTokenCountTextLength = 0
         streamingStartTime = nil
@@ -640,7 +1101,10 @@ final class LLMEngine {
         let currentMaxTokens = overrides?.maxTokens ?? self.maxTokens
         let effectiveTopP = lowPowerMode ? min(currentTopP, 0.9) : currentTopP
         let effectiveTemperature = lowPowerMode ? min(currentTemperature, 0.6) : currentTemperature
-        let effectiveMaxTokens = lowPowerMode ? min(currentMaxTokens, 768) : currentMaxTokens
+        let effectiveMaxTokens = min(
+            lowPowerMode ? min(currentMaxTokens, 768) : currentMaxTokens,
+            DeviceResourcePolicy.current.maximumGenerationTokens
+        )
         #if !targetEnvironment(simulator)
         let mlxGenerateParameters = makeMlxGenerateParameters(
             topP: effectiveTopP,
@@ -684,7 +1148,7 @@ final class LLMEngine {
             }
 
             let stream = session.streamResponse(to: effectiveMlxPrompt)
-            var rawResponse = ""
+            var rawResponse = Self.rawOutputSeed(modelID: model.id, session: session)
             for try await chunk in stream {
                 if Task.isCancelled { break }
                 // Keep the raw output for the stop check; sanitize only the copy we
@@ -771,8 +1235,20 @@ final class LLMEngine {
 
         let now = Date()
         if force || now.timeIntervalSince(lastUpdate) >= throttleInterval {
+            if !didLogFirstToken,
+               !content.isEmpty,
+               let interval = activeGenerationPerformanceInterval {
+                didLogFirstToken = true
+                let latency = PerformanceLogger.elapsedMilliseconds(since: interval)
+                PerformanceLogger.event(
+                    "FirstToken",
+                    label: "First token",
+                    metadata: "latency_ms=\(String(format: "%.1f", latency)) \(interval.metadata)"
+                )
+            }
             let uiStart = Date()
             self.currentResponse = content
+            self.onStreamingUpdate?(content)
             self.lastUpdate = now
             if let start = self.streamingStartTime {
                 let elapsed = max(0.001, now.timeIntervalSince(start))
@@ -791,8 +1267,13 @@ final class LLMEngine {
             let uiDuration = Date().timeIntervalSince(uiStart)
             if uiDuration > 0.03 {
                 self.adaptiveThrottleInterval = min(0.5, self.adaptiveThrottleInterval + 0.05)
-            } else if self.adaptiveThrottleInterval > (lowPowerMode ? 0.16 : 0.08) {
-                self.adaptiveThrottleInterval = max(lowPowerMode ? 0.16 : 0.08, self.adaptiveThrottleInterval - 0.02)
+            } else {
+                let baseline = lowPowerMode
+                    ? 0.16
+                    : DeviceResourcePolicy.current.streamingUpdateInterval
+                if self.adaptiveThrottleInterval > baseline {
+                    self.adaptiveThrottleInterval = max(baseline, self.adaptiveThrottleInterval - 0.02)
+                }
             }
         }
     }
@@ -812,7 +1293,8 @@ final class LLMEngine {
         streamingTokensPerSecond = 0
         // Note: The UI layer (ChatView) will handle cleaning up the history message 
         // when currentResponse is cleared or via its own observation.
-        currentResponse = "" 
+        currentResponse = ""
+        onStreamingUpdate?("")
         #if !targetEnvironment(simulator)
         MLX.GPU.clearCache()
         #endif
@@ -823,7 +1305,13 @@ final class LLMEngine {
         let isActive = phase == .active
         isSceneActive = isActive
 
-        guard !isActive else { return }
+        guard !isActive else {
+            if pendingMlxSessionReset {
+                pendingMlxSessionReset = false
+                resetSession()
+            }
+            return
+        }
 
         generationTask?.cancel()
         generationTask = nil
@@ -836,6 +1324,7 @@ final class LLMEngine {
         streamingStartTime = nil
         streamingTokensPerSecond = 0
         currentResponse = ""
+        onStreamingUpdate?("")
 
         if state == .generating || state == .loading {
             state = hasLoadedSession(for: currentModel) ? .ready : .idle
@@ -853,6 +1342,9 @@ final class LLMEngine {
         MemoryProfiler.log("LLMEngine", message: "Memory warning received (state: \(state))")
         #if !targetEnvironment(simulator)
         MLX.GPU.clearCache()
+        if state == .generating, currentModel?.engine == .mlx {
+            pendingMlxMemoryPressureTrim = true
+        }
         #endif
         guard state != .generating, state != .loading else { return }
         unloadModel()
@@ -908,8 +1400,74 @@ final class LLMEngine {
 // MARK: - Quick Test
 
 extension LLMEngine {
+    /// Full real-device release test. Evaluation models remain outside the
+    /// shipping catalog even after passing; a developer must review this report
+    /// and explicitly move the definition into `releasedModels`.
+    func runMobileReadinessSuite(model: ModelInfo) async -> ModelMobileReadinessReport {
+        var checks = Dictionary(uniqueKeysWithValues: ModelReleaseGate.requiredChecks.map { ($0, false) })
+        var notes: [String] = []
+        let memoryBefore = MemoryProfiler.currentResidentMemory
+        checks["artifacts"] = model.isAppleFoundation || MLXStorage.validationReport(for: model.id).isValid
+
+        do {
+            let start = Date()
+            try await loadModel(model)
+            checks["load"] = state == .ready
+
+            try await generate(
+                prompt: "Remember the code 739 and reply only: OK.",
+                overrides: GenerationOverrides(temperature: 0, topP: 1, maxTokens: 24)
+            )
+            let firstOutput = AssistantOutputSanitizer.sanitize(currentResponse)
+            checks["firstResponse"] = Date().timeIntervalSince(start) < 30
+            checks["output"] = !firstOutput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
+            currentResponse = ""
+            try await generate(
+                prompt: "What code did I ask you to remember? Reply only with the digits.",
+                overrides: GenerationOverrides(temperature: 0, topP: 1, maxTokens: 24)
+            )
+            checks["multiTurn"] = AssistantOutputSanitizer.sanitize(currentResponse).contains("739")
+
+            let cancellationTask = Task {
+                try? await self.generate(
+                    prompt: "Write a long detailed essay about local computing.",
+                    overrides: GenerationOverrides(temperature: 0.2, topP: 1, maxTokens: 256)
+                )
+            }
+            try? await Task.sleep(for: .milliseconds(150))
+            stopGeneration()
+            await cancellationTask.value
+            checks["cancellation"] = state != .generating && state != .loading
+
+            handleScenePhaseChange(.background)
+            resetSession()
+            handleScenePhaseChange(.active)
+            checks["backgroundRecovery"] = isForegroundActive
+
+            let peakMemory = max(memoryBefore, MemoryProfiler.currentResidentMemory)
+            checks["memory"] = peakMemory < UInt64(Double(ProcessInfo.processInfo.physicalMemory) * 0.8)
+        } catch {
+            notes.append(error.localizedDescription)
+        }
+
+        let report = ModelMobileReadinessReport(
+            modelID: model.id,
+            timestamp: Date(),
+            checks: checks,
+            notes: notes,
+            operatingSystem: ProcessInfo.processInfo.operatingSystemVersionString
+        )
+        ModelHealthStore.shared.saveReadinessReport(report)
+        return report
+    }
+
     func runQuickTest(model: ModelInfo) async -> ModelQuickTestResult {
         let start = Date()
+        let memoryBefore = MemoryProfiler.currentResidentMemory
+        let peakSampling = MemoryProfiler.startPeakSampling()
+        let policy = DeviceResourcePolicy.current
+        defer { peakSampling.task.cancel() }
 
         if state == .generating || state == .loading {
             return ModelQuickTestResult(
@@ -923,7 +1481,10 @@ extension LLMEngine {
 
         let previousResponse = currentResponse
         do {
+            let loadStart = Date()
             try await loadModel(model)
+            let loadDurationMs = Int(Date().timeIntervalSince(loadStart) * 1000.0)
+            let generationStart = Date()
             try await generate(
                 prompt: "Reply with a single word: OK.",
                 overrides: GenerationOverrides(temperature: 0.2, topP: 1.0, maxTokens: 16)
@@ -931,14 +1492,24 @@ extension LLMEngine {
             let response = AssistantOutputSanitizer.sanitize(currentResponse)
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let durationMs = Int(Date().timeIntervalSince(start) * 1000.0)
+            let generationDurationMs = Int(Date().timeIntervalSince(generationStart) * 1000.0)
             let success = response.lowercased().contains("ok")
+            let summary = await PerformanceMetricsStore.shared.dashboardData().modelSummaries
+                .first(where: { $0.modelID == model.id })
             currentResponse = previousResponse
             return ModelQuickTestResult(
                 modelID: model.id,
                 success: success,
                 responseSnippet: String(response.prefix(60)),
                 durationMs: durationMs,
-                timestamp: Date()
+                timestamp: Date(),
+                loadDurationMs: loadDurationMs,
+                generationDurationMs: generationDurationMs,
+                medianFirstTokenMs: summary?.medianFirstTokenMilliseconds.map { Int($0) },
+                peakResidentMemoryBytes: max(memoryBefore, peakSampling.stop()),
+                physicalMemoryBytes: policy.physicalMemoryBytes,
+                hardwareIdentifier: policy.hardwareIdentifier,
+                operatingSystem: ProcessInfo.processInfo.operatingSystemVersionString
             )
         } catch {
             currentResponse = previousResponse
@@ -947,7 +1518,11 @@ extension LLMEngine {
                 success: false,
                 responseSnippet: error.localizedDescription,
                 durationMs: Int(Date().timeIntervalSince(start) * 1000.0),
-                timestamp: Date()
+                timestamp: Date(),
+                peakResidentMemoryBytes: max(memoryBefore, peakSampling.stop()),
+                physicalMemoryBytes: policy.physicalMemoryBytes,
+                hardwareIdentifier: policy.hardwareIdentifier,
+                operatingSystem: ProcessInfo.processInfo.operatingSystemVersionString
             )
         }
     }
@@ -960,7 +1535,7 @@ extension LLMEngine {
             let startedAt = Date()
 
             if currentModel?.id == model.id {
-                appleFoundationBridge.prewarm()
+                await appleFoundationBridge.prewarm()
             } else {
                 try? await loadModel(model)
             }
@@ -1132,7 +1707,10 @@ private extension LLMEngine {
             if availability == .available {
                 let baseInstructions = UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
                 try appleFoundationBridge.loadSession(
-                    instructions: AssistantMemoryStore.augmentedSystemPrompt(baseInstructions)
+                    instructions: systemPromptWithRuntimeIdentity(
+                        AssistantMemoryStore.augmentedSystemPrompt(baseInstructions),
+                        model: model
+                    )
                 )
                 lastLoadedAppleFoundationInstructions = baseInstructions
                 #if !targetEnvironment(simulator)
@@ -1157,6 +1735,11 @@ private extension LLMEngine {
                 state = .error(message: message)
                 throw LLMError.modelNotAvailable(message)
             }
+            if model.exceedsDeviceMemoryBudget {
+                let message = "This model needs more memory than this device has. Choose a smaller model in Settings > Models."
+                state = .error(message: message)
+                throw LLMError.modelNotAvailable(message)
+            }
             if UIDevice.current.userInterfaceIdiom == .phone && model.requiresLargeDeviceOnPhone {
                 let message = "This model requires an iPad Pro or Mac. It exceeds the practical memory budget for iPhone."
                 state = .error(message: message)
@@ -1173,7 +1756,15 @@ private extension LLMEngine {
                     try ensureGPUWorkAllowed(for: model)
                     let container = try await loadMlxContainer(modelID: model.id)
                     mlxModelContainer = container
-                    mlxSession = ChatSession(container, instructions: mlxSessionInstructions(for: model.id))
+                    let instructions = mlxSessionInstructions(for: model)
+                    mlxSession = ChatSession(
+                        container,
+                        instructions: instructions,
+                        additionalContext: Self.mlxTemplateContext(
+                            thinkingEnabled: ModelInfo.resolvedThinkingEnabled(modelID: model.id)
+                        )
+                    )
+                    resetMlxSessionTracking(instructions: instructions)
                     try ensureGPUWorkAllowed(for: model)
                     mlxModelID = model.id
                 }
@@ -1193,6 +1784,12 @@ private extension LLMEngine {
 
     func ensureGPUWorkAllowed(for model: ModelInfo) throws {
         guard model.engine == .mlx else { return }
+        // Last line of defense on A13-class GPUs: MLX's kernels fail to compile
+        // there and the runtime aborts the process with an uncatchable fatal
+        // error, so the device gate must run before any MLX GPU work starts.
+        guard DeviceResourcePolicy.supportsMLXCompute else {
+            throw LLMError.deviceCannotRunMLX
+        }
         guard isSceneActive else {
             throw LLMError.backgroundGPUWorkNotAllowed
         }
@@ -1213,14 +1810,37 @@ private extension LLMEngine {
         }
     }
 
-    func mlxSessionInstructions(for modelID: String) -> String? {
-        guard mlxModelSupportsSystemRole(modelID: modelID) else {
+    func mlxSessionInstructions(for model: ModelInfo) -> String? {
+        guard mlxModelSupportsSystemRole(modelID: model.id) else {
             return nil
         }
 
-        return AssistantMemoryStore.augmentedSystemPrompt(
-            UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
+        return systemPromptWithRuntimeIdentity(
+            AssistantMemoryStore.augmentedSystemPrompt(
+                UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
+            ),
+            model: model
         )
+    }
+
+    /// Session maintenance only retains the model ID. Resolve it back to the
+    /// catalog entry so rebuilt sessions keep the same runtime identity.
+    func mlxSessionInstructions(for modelID: String) -> String? {
+        guard let model = ModelInfo.allModels.first(where: { $0.id == modelID }) else {
+            return nil
+        }
+        return mlxSessionInstructions(for: model)
+    }
+
+    /// Local models do not reliably know the name of the checkpoint currently
+    /// loaded by the app. Ground that answer in runtime state instead of their
+    /// pretraining, which can otherwise make one model claim to be another.
+    private func systemPromptWithRuntimeIdentity(_ prompt: String, model: ModelInfo) -> String {
+        """
+        \(prompt)
+
+        Runtime identity: You are responding locally through \(model.name) (model ID: \(model.id)). If the user asks what model is responding, identify yourself as \(model.name). Do not claim to be a different model, provider, or organization based on your training data.
+        """
     }
 
     private func storedSystemPrompt(fallback: String) -> String {
@@ -1272,7 +1892,14 @@ private extension LLMEngine {
             return trimmed.isEmpty ? nil : trimmed
         }()
 
-        return ChatSession(container, instructions: instructions, generateParameters: generateParameters)
+        return ChatSession(
+            container,
+            instructions: instructions,
+            generateParameters: generateParameters,
+            additionalContext: Self.mlxTemplateContext(
+                thinkingEnabled: ModelInfo.resolvedThinkingEnabled(modelID: modelID)
+            )
+        )
     }
 
     /// Bound the MLX Metal buffer cache once per process. The cache lets scratch
@@ -1284,28 +1911,33 @@ private extension LLMEngine {
     private static func configureMlxGPUMemoryIfNeeded() {
         guard !didConfigureGPUMemory else { return }
         didConfigureGPUMemory = true
-        let physical = ProcessInfo.processInfo.physicalMemory
-        // ~5% of RAM, clamped to a sane window for on-device inference.
-        let floorBytes: UInt64 = 64 * 1024 * 1024
-        let capBytes: UInt64 = 384 * 1024 * 1024
-        let fivePercent: UInt64 = physical / 20
-        let clamped: UInt64 = min(max(fivePercent, floorBytes), capBytes)
-        let cacheLimit = Int(clamped)
+        let cacheLimit = Int(DeviceResourcePolicy.current.mlxCacheLimitBytes)
         MLX.Memory.cacheLimit = cacheLimit
     }
 
     private func loadMlxContainer(modelID: String) async throws -> ModelContainer {
         Self.configureMlxGPUMemoryIfNeeded()
+
+        var modelPath: URL?
         let persistentPath = MLXStorage.modelDirectory(for: modelID)
         if FileManager.default.fileExists(atPath: persistentPath.path) {
+            MLXStorage.normalizeConfigIfNeeded(in: persistentPath)
+            modelPath = persistentPath
+        } else if let bundledPath = MLXStorage.bundledModelDirectory(for: modelID) {
+            // Starter model shipped inside the app bundle — load in place,
+            // no copy to writable storage needed.
+            modelPath = bundledPath
+        }
+
+        if let modelPath {
             if ModelInfo.vlmMLXModelIDs.contains(modelID) {
                 return try await VLMModelFactory.shared.loadContainer(
-                    from: persistentPath,
+                    from: modelPath,
                     using: LocalAITokenizerLoader()
                 )
             }
 
-            return try await loadModelContainer(from: persistentPath, using: LocalAITokenizerLoader())
+            return try await loadModelContainer(from: modelPath, using: LocalAITokenizerLoader())
         }
 
         // The model isn't downloaded locally — surface a clear error rather than
@@ -1320,13 +1952,50 @@ private extension LLMEngine {
         modelID: String
     ) -> GenerateParameters {
         let isVisionModel = ModelInfo.vlmMLXModelIDs.contains(modelID)
+        let lowMemoryPhone = DeviceResourcePolicy.current.isLowMemoryPhone
         return GenerateParameters(
             maxTokens: isVisionModel && UIDevice.current.userInterfaceIdiom == .phone ? min(maxTokens, 192) : maxTokens,
-            maxKVSize: isVisionModel ? 512 : nil,
+            maxKVSize: isVisionModel ? 512 : (lowMemoryPhone ? 2_048 : nil),
             kvBits: isVisionModel ? 4 : nil,
             temperature: Float(temperature),
             topP: Float(topP),
-            prefillStepSize: isVisionModel ? 128 : 512
+            prefillStepSize: isVisionModel ? 128 : (lowMemoryPhone ? 256 : 512)
+        )
+    }
+#endif
+
+    /// Chat-template variables for an MLX session. Reasoning models otherwise
+    /// default to thinking *on* and spend the whole response budget on hidden
+    /// chain of thought before the first word of the answer appears — minutes
+    /// of a blank bubble on a phone. `enable_thinking` makes the stored
+    /// per-model preference (off unless the user turns it on) actually reach
+    /// the template, which nothing did before.
+    nonisolated static func mlxTemplateContext(thinkingEnabled: Bool) -> [String: any Sendable] {
+        ["enable_thinking": thinkingEnabled]
+    }
+
+    /// Opening tag to seed the raw output buffer with for models whose chat
+    /// template left a `<think>` block open at the end of the generation prompt
+    /// (see `ModelInfo.opensResponseInsideReasoningBlock`). Those models emit
+    /// only the closing tag, so without the seed the sanitizer cannot tell
+    /// reasoning from the answer until `</think>` finally arrives — and the
+    /// whole chain of thought streams into the bubble in the meantime. Seeding
+    /// makes the buffer self-describing from the first token.
+    private nonisolated static func rawOutputSeed(modelID: String, thinkingEnabled: Bool) -> String {
+        ModelInfo.opensResponseInsideReasoningBlock(
+            modelID: modelID,
+            thinkingEnabled: thinkingEnabled
+        ) ? "<think>" : ""
+    }
+
+#if !targetEnvironment(simulator)
+    /// Seed read back from the session's own template context, so it always
+    /// describes the prompt that was actually rendered — including a long-lived
+    /// session built before the user last flipped the thinking toggle.
+    private nonisolated static func rawOutputSeed(modelID: String, session: ChatSession) -> String {
+        rawOutputSeed(
+            modelID: modelID,
+            thinkingEnabled: (session.additionalContext?["enable_thinking"] as? Bool) ?? false
         )
     }
 #endif
@@ -1339,15 +2008,24 @@ private extension LLMEngine {
         return detectRepeatedLoop(in: content) != nil
     }
 
+    /// Trims a runaway repetition from the visible answer while keeping the
+    /// reasoning block attached. The chain of thought has to survive: the UI
+    /// streams it into the "Thinking…" card, and a response that ends while
+    /// still reasoning is only recognizable as one if the block is still there.
     private nonisolated static func trimRepeatedLoopIfNeeded(in content: String) -> String {
-        let sanitized = AssistantOutputSanitizer.sanitize(content)
-        guard let loop = detectRepeatedLoop(in: sanitized) else {
-            return sanitized
+        let parts = AssistantOutputSanitizer.parts(from: content)
+        guard let loop = detectRepeatedLoop(in: parts.content) else {
+            return AssistantOutputSanitizer.canonicalized(parts)
         }
 
-        let visiblePrefix = sanitized[..<loop.range.lowerBound]
+        let visiblePrefix = parts.content[..<loop.range.lowerBound]
         let separator = visiblePrefix.last.map(\.isWhitespace) == true ? "" : " "
-        return String(visiblePrefix) + separator + loop.repeatedUnit
+        return AssistantOutputSanitizer.canonicalized(
+            AssistantOutputSanitizer.Parts(
+                content: String(visiblePrefix) + separator + loop.repeatedUnit,
+                thinkingContent: parts.thinkingContent
+            )
+        )
     }
 
     private nonisolated static func detectRepeatedLoop(in rawContent: String) -> RepetitionLoop? {
@@ -1453,7 +2131,8 @@ enum LLMError: LocalizedError {
     case engineBusy
     case generationFailed(String)
     case backgroundGPUWorkNotAllowed
-    
+    case deviceCannotRunMLX
+
     var errorDescription: String? {
         switch self {
         case .modelNotLoaded:
@@ -1466,6 +2145,8 @@ enum LLMError: LocalizedError {
             return "Generation failed: \(message)"
         case .backgroundGPUWorkNotAllowed:
             return "Bring the app to the foreground before using a local MLX model."
+        case .deviceCannotRunMLX:
+            return "This device's chip can't run downloadable models. They need an A14 chip or newer — iPhone 12, iPhone SE (3rd generation), or later."
         }
     }
 }

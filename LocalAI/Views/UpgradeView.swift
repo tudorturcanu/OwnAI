@@ -156,6 +156,27 @@ struct UpgradeView: View {
         }
     }
 
+    /// Every Pro feature sits downstream of a local model: the catalog, vision,
+    /// document chat, personality, and voice mode all need one, and folders and
+    /// export only organize chats the device cannot produce. On a GPU that
+    /// cannot run MLX there is nothing to sell, so the plans are replaced with
+    /// an explanation rather than letting the purchase go through and become a
+    /// refund.
+    @ViewBuilder
+    private var unsupportedDeviceNotice: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(String(localized: "Pro isn't available on this device"))
+                .font(.subheadline.weight(.semibold))
+            Text(String(localized: "Pro features all rely on a local AI model, and this device's chip can't run one. Models need an A14 chip or newer — iPhone 12, iPhone SE (3rd generation), or later."))
+                .font(.caption)
+                .foregroundStyle(Color.adaptive(white: 0.5))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .background(Color.adaptiveCard)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+    }
+
     @ViewBuilder
     private var productsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -163,7 +184,9 @@ struct UpgradeView: View {
                 .font(.headline)
                 .foregroundStyle(Color.adaptive(white: 0.2))
 
-            if monetizationManager.isLoadingProducts {
+            if !DeviceResourcePolicy.supportsMLXCompute {
+                unsupportedDeviceNotice
+            } else if monetizationManager.isLoadingProducts {
                 ProgressView(String(localized: "Loading plans…"))
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(24)

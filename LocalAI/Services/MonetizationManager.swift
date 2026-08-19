@@ -89,10 +89,12 @@ enum PremiumFeature: String, CaseIterable, Identifiable {
 @Observable
 final class MonetizationManager {
 //    static let proEnabledByDefault = true
-    static let freeInstallMessageLimit = 5
+    static let freeDailyMessageLimit = 5
 
     private enum StorageKey {
+        // Key name predates the daily reset; kept for continuity.
         static let freeInstallMessageCount = "monetization.freeInstallMessageCount"
+        static let freeMessageCountDay = "monetization.freeMessageCountDay"
         static let didWarnAtThreeLeftOnInstall = "monetization.didWarnAtThreeLeftOnInstall"
         static let cachedPurchasedProductIDs = "monetization.cachedPurchasedProductIDs"
         #if DEBUG
@@ -108,7 +110,10 @@ final class MonetizationManager {
 
     static let freeModelIDs: Set<String> = [
         ModelInfo.appleFoundation.id,
-        ModelInfo.gemma2_2b_4bit.id
+        ModelInfo.gemma2_2b_4bit.id,
+        // The bundled starter model must stay free: it is the instant
+        // first-run experience on devices without Apple Intelligence.
+        ModelInfo.qwen3_0_6b_4bit.id
     ]
 
     var products: [Product] = []
@@ -118,6 +123,10 @@ final class MonetizationManager {
     var purchaseErrorMessage: String?
     var freeInstallMessageCount = 0
     var didWarnAtThreeLeftOnInstall = false
+    /// Start of the day the current count belongs to; nil before the first
+    /// counted message (or for users upgrading from the per-install scheme,
+    /// who get a fresh allowance).
+    private var freeMessageCountDay: Date?
     #if DEBUG
     var debugProEnabled = false {
         didSet {
@@ -148,6 +157,8 @@ final class MonetizationManager {
     init() {
         freeInstallMessageCount = defaults.integer(forKey: StorageKey.freeInstallMessageCount)
         didWarnAtThreeLeftOnInstall = defaults.bool(forKey: StorageKey.didWarnAtThreeLeftOnInstall)
+        freeMessageCountDay = defaults.object(forKey: StorageKey.freeMessageCountDay) as? Date
+        resetDailyAllowanceIfNeeded()
         purchasedProductIDs = loadCachedPurchasedProductIDs()
         #if DEBUG
         debugProEnabled = defaults.bool(forKey: StorageKey.debugProEnabled)
@@ -237,33 +248,54 @@ final class MonetizationManager {
         }
     }
 
+    /// True when the stored count belongs to today. When it doesn't, the
+    /// counters read as zero even before the lazy reset persists — so a user
+    /// blocked at 23:59 is unblocked at midnight without any mutation.
+    private var isCountFromToday: Bool {
+        guard let freeMessageCountDay else { return false }
+        return Calendar.current.isDateInToday(freeMessageCountDay)
+    }
+
     var freeMessagesUsedToday: Int {
-        freeInstallMessageCount
+        isCountFromToday ? freeInstallMessageCount : 0
     }
 
     var freeMessagesRemainingToday: Int {
-        max(0, Self.freeInstallMessageLimit - freeMessagesUsedToday)
+        max(0, Self.freeDailyMessageLimit - freeMessagesUsedToday)
     }
 
     var hasReachedFreeDailyMessageLimit: Bool {
-        !hasPro && freeMessagesUsedToday >= Self.freeInstallMessageLimit
+        !hasPro && freeMessagesUsedToday >= Self.freeDailyMessageLimit
     }
 
     var shouldShowThreeMessagesLeftWarning: Bool {
-        !hasPro && freeMessagesRemainingToday == 3 && !didWarnAtThreeLeftOnInstall
+        !hasPro && freeMessagesRemainingToday == 3 && !(isCountFromToday && didWarnAtThreeLeftOnInstall)
     }
 
-    /// Returns true when the message consumed one of the free messages.
+    /// Clears the counter and warning flag when the stored count belongs to a
+    /// previous day (or to the old per-install scheme, which stored no day).
+    private func resetDailyAllowanceIfNeeded() {
+        guard !isCountFromToday else { return }
+        freeInstallMessageCount = 0
+        didWarnAtThreeLeftOnInstall = false
+        freeMessageCountDay = Calendar.current.startOfDay(for: Date.now)
+        defaults.set(freeInstallMessageCount, forKey: StorageKey.freeInstallMessageCount)
+        defaults.set(didWarnAtThreeLeftOnInstall, forKey: StorageKey.didWarnAtThreeLeftOnInstall)
+        defaults.set(freeMessageCountDay, forKey: StorageKey.freeMessageCountDay)
+    }
+
+    /// Returns true when the message consumed one of today's free messages.
     @discardableResult
     func registerFreeMessageIfNeeded(for messageText: String = "") -> Bool {
         guard !hasPro else { return false }
+        resetDailyAllowanceIfNeeded()
         // Don't spend the small free allowance on greetings and
         // acknowledgements — let the limit arrive after real use, not before.
         let trimmed = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty, trimmed.count < 25 {
             return false
         }
-        guard freeInstallMessageCount < Self.freeInstallMessageLimit else { return false }
+        guard freeInstallMessageCount < Self.freeDailyMessageLimit else { return false }
         freeInstallMessageCount += 1
         defaults.set(freeInstallMessageCount, forKey: StorageKey.freeInstallMessageCount)
         return true

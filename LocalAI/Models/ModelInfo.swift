@@ -7,7 +7,6 @@
 
 import Foundation
 import UIKit
-import Darwin
 
 enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
     case appleIntelligence
@@ -20,6 +19,9 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
     case holo
     case deepSeek
     case llama
+    case muse
+    case nemotron
+    case miniCPM
     case phi
     case smol
 
@@ -47,6 +49,12 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return String(localized: "DeepSeek")
         case .llama:
             return String(localized: "Llama")
+        case .muse:
+            return String(localized: "Muse")
+        case .nemotron:
+            return String(localized: "Nemotron")
+        case .miniCPM:
+            return String(localized: "MiniCPM")
         case .phi:
             return String(localized: "Phi")
         case .smol:
@@ -76,6 +84,12 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return String(localized: "Compact reasoning-style models")
         case .llama:
             return String(localized: "Meta's local instruction models")
+        case .muse:
+            return String(localized: "Meta's local agentic models")
+        case .nemotron:
+            return String(localized: "NVIDIA's efficient hybrid models")
+        case .miniCPM:
+            return String(localized: "OpenBMB's compact on-device models")
         case .phi:
             return String(localized: "Microsoft's efficient reasoning models")
         case .smol:
@@ -105,6 +119,12 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "brain.head.profile"
         case .llama:
             return "bubble.left.and.bubble.right.fill"
+        case .muse:
+            return "sparkles.rectangle.stack.fill"
+        case .nemotron:
+            return "square.stack.3d.up.fill"
+        case .miniCPM:
+            return "cpu"
         case .phi:
             return "function"
         case .smol:
@@ -134,6 +154,12 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "ModelLogoDeepSeek"
         case .llama:
             return "ModelLogoMeta"
+        case .muse:
+            return "ModelLogoMeta"
+        case .nemotron:
+            return "ModelLogoNvidia"
+        case .miniCPM:
+            return nil
         case .phi:
             return "ModelLogoMicrosoft"
         case .smol:
@@ -154,7 +180,11 @@ enum ModelDeviceFit: Equatable {
         case .supported:
             return String(localized: "May be slower")
         case .unsupported:
-            return String(localized: "Heavy")
+            // "Heavy" fits models that outgrow the device's memory; a GPU that
+            // cannot compile MLX kernels at all is a different statement.
+            return DeviceResourcePolicy.supportsMLXCompute
+                ? String(localized: "Heavy")
+                : String(localized: "Unsupported")
         }
     }
 
@@ -271,33 +301,6 @@ enum ModelBadge: Equatable, Hashable {
     }
 }
 
-private struct CurrentDeviceProfile {
-    let idiom: UIUserInterfaceIdiom
-    let hardwareIdentifier: String
-
-    var phoneMajorVersion: Int? {
-        guard hardwareIdentifier.hasPrefix("iPhone") else { return nil }
-        let suffix = hardwareIdentifier.dropFirst("iPhone".count)
-        guard let majorText = suffix.split(separator: ",").first else { return nil }
-        return Int(majorText)
-    }
-
-    static let current = CurrentDeviceProfile(
-        idiom: UIDevice.current.userInterfaceIdiom,
-        hardwareIdentifier: Self.resolveHardwareIdentifier()
-    )
-
-    private static func resolveHardwareIdentifier() -> String {
-        var systemInfo = utsname()
-        uname(&systemInfo)
-        return withUnsafePointer(to: &systemInfo.machine) { pointer in
-            pointer.withMemoryRebound(to: CChar.self, capacity: 1) { charPointer in
-                String(cString: charPointer)
-            }
-        }
-    }
-}
-
 /// Represents the type of model engine
 enum ModelEngine: String, Equatable {
     case appleFoundation = "apple"
@@ -362,28 +365,50 @@ struct ModelInfo: Identifiable, Equatable {
         false
     }
 
+    /// True when this model's weights are too large for the current device's
+    /// RAM budget and would risk an out-of-memory (jetsam) termination at load
+    /// or inference time. This is the real constraint on low-RAM devices such
+    /// as the 4 GB iPhone 11, which chip-generation and disk-size gating miss.
+    var exceedsDeviceMemoryBudget: Bool {
+        guard engine == .mlx else { return false }
+        return sizeGB > DeviceResourcePolicy.current.usableModelBudgetGB
+    }
+
     var currentDeviceFit: ModelDeviceFit {
         guard engine == .mlx else { return .recommended }
         if requiresUnsupportedMLXQuantization { return .unsupported }
 
-        let device = CurrentDeviceProfile.current
+        // A13-class GPUs (iPhone 11, SE 2nd gen) cannot compile MLX's Metal
+        // kernels; loading any MLX model there aborts the process.
+        if !DeviceResourcePolicy.supportsMLXCompute { return .unsupported }
 
-        switch device.idiom {
-        case .phone:
+        let device = DeviceResourcePolicy.current
+
+        // Physical-RAM ceiling first: a model that overruns the device memory
+        // budget will be jetsam-killed regardless of chip or free disk, so it is
+        // never selectable/auto-routable on this device.
+        if sizeGB > device.usableModelBudgetGB { return .unsupported }
+
+        if device.isPhone {
             if sizeGB > 4.5 { return .unsupported }
-            let major = device.phoneMajorVersion ?? 0
+            let major: Int = {
+                guard device.hardwareIdentifier.hasPrefix("iPhone"),
+                      let text = device.hardwareIdentifier
+                        .dropFirst("iPhone".count)
+                        .split(separator: ",")
+                        .first else { return 0 }
+                return Int(text) ?? 0
+            }()
             if sizeGB <= 1.6 { return major >= 14 ? .recommended : .supported }
             if sizeGB <= 2.6 { return major >= 15 ? .recommended : .supported }
             return major >= 17 ? .recommended : .supported
-
-        case .pad:
+        }
+        if device.isPad {
             if sizeGB <= 2.6 { return .recommended }
             if sizeGB <= 4.6 { return .supported }
             return .unsupported
-
-        default:
-            return .recommended
         }
+        return .recommended
     }
 
     var recommendationTagText: String? {
@@ -393,7 +418,7 @@ struct ModelInfo: Identifiable, Equatable {
         case .supported:
             return nil
         case .unsupported:
-            return "Heavy"
+            return DeviceResourcePolicy.supportsMLXCompute ? "Heavy" : "Unsupported"
         }
     }
 
@@ -414,6 +439,9 @@ struct ModelInfo: Identifiable, Equatable {
         if lowercasedID.contains("holo") || lowercasedID.contains("hcompany") {
             return "H Company (Holo)"
         }
+        if lowercasedID.contains("muse-glimmer") {
+            return "Meta Platforms, Inc. (Muse)"
+        }
         if lowercasedID.contains("qwen") {
             return "Alibaba Cloud (Qwen)"
         }
@@ -428,6 +456,12 @@ struct ModelInfo: Identifiable, Equatable {
         }
         if lowercasedID.contains("exaone") {
             return "LG AI Research (EXAONE)"
+        }
+        if lowercasedID.contains("nemotron") {
+            return "NVIDIA (Nemotron)"
+        }
+        if lowercasedID.contains("minicpm") {
+            return "OpenBMB (MiniCPM)"
         }
         if lowercasedID.contains("tinyllama") {
             return "TinyLlama Project"
@@ -444,17 +478,44 @@ struct ModelInfo: Identifiable, Equatable {
         return "Model publisher"
     }
 
-    var supportsThinkingToggle: Bool {
-        let lowercasedID = id.lowercased()
+    /// Whether to offer the thinking pill. The toggle is only honest for
+    /// models whose chat template reads `enable_thinking` — flipping it has to
+    /// actually change the rendered prompt.
+    static func supportsThinkingToggle(modelID: String) -> Bool {
+        if optionalReasoningPrefixMLXModelIDs.contains(modelID) { return true }
+        let lowercasedID = modelID.lowercased()
         return lowercasedID.contains("qwen3") || lowercasedID.contains("gemma-4") || lowercasedID.contains("bonsai")
     }
 
-    var thinkingPreferenceKey: String {
-        "modelThinkingEnabled.\(id)"
+    var supportsThinkingToggle: Bool {
+        ModelInfo.supportsThinkingToggle(modelID: id)
     }
 
+    static func thinkingPreferenceKey(modelID: String) -> String {
+        "modelThinkingEnabled.\(modelID)"
+    }
+
+    var thinkingPreferenceKey: String {
+        ModelInfo.thinkingPreferenceKey(modelID: id)
+    }
+
+    static let defaultThinkingEnabled = false
+
     var defaultThinkingEnabled: Bool {
-        false
+        ModelInfo.defaultThinkingEnabled
+    }
+
+    /// The thinking mode a generation should run in, resolved from the stored
+    /// per-model preference. Keyed by model ID so the engine can resolve it
+    /// without a `ModelInfo` in hand. Models without the toggle never reason:
+    /// a phone-sized model burning its whole response budget on hidden
+    /// reasoning reads as a hung app.
+    static func resolvedThinkingEnabled(modelID: String) -> Bool {
+        guard supportsThinkingToggle(modelID: modelID) else { return false }
+        let defaults = UserDefaults.standard
+        let key = thinkingPreferenceKey(modelID: modelID)
+        guard defaults.object(forKey: key) != nil else { return defaultThinkingEnabled }
+        return defaults.bool(forKey: key)
     }
 
     var privacyLabel: String {
@@ -474,11 +535,56 @@ struct ModelInfo: Identifiable, Equatable {
         "mlx-community/SmolVLM2-500M-Video-Instruct-mlx",
         "mlx-community/SmolVLM2-2.2B-Instruct-mlx",
         "Hcompany/Holo-3.1-0.8B",
-        "Hcompany/Holo-3.1-4B"
+        "Hcompany/Holo-3.1-4B",
+        "mlx-community/Muse-Glimmer-30B-4bit"
     ]
 
     var supportsVision: Bool {
         engine == .appleFoundation || ModelInfo.vlmMLXModelIDs.contains(id)
+    }
+
+    /// MLX models whose chat template pre-fills an opening `<think>` into the
+    /// generation prompt when thinking is on, so the response begins *inside*
+    /// the reasoning block and the model only ever emits the closing
+    /// `</think>`. Their raw output has to be treated as reasoning from the
+    /// very first token, or the chain of thought streams into the bubble as if
+    /// it were the answer. With `enable_thinking: false` these same templates
+    /// emit a closed `<think></think>` instead, so the response is the answer.
+    static let optionalReasoningPrefixMLXModelIDs: Set<String> = [
+        "mlx-community/MiniCPM5-1B-OptiQ-4bit",
+        "mlx-community/NVIDIA-Nemotron-3-Nano-4B-OptiQ-4bit",
+        "mlx-community/Qwen3.5-0.8B-OptiQ-4bit",
+        "mlx-community/Qwen3.5-2B-OptiQ-4bit",
+        "mlx-community/Qwen3.5-4B-OptiQ-4bit",
+        "mlx-community/Qwen3.5-9B-OptiQ-4bit",
+        "catalystsec/GLM-5.1-4bit",
+        "Hcompany/Holo-3.1-0.8B",
+        "Hcompany/Holo-3.1-4B"
+    ]
+
+    /// Same pre-filled `<think>`, except these templates have no thinking
+    /// switch at all — they always open the block, so their responses are
+    /// always reasoning-first no matter what the preference says.
+    static let alwaysReasoningPrefixMLXModelIDs: Set<String> = [
+        "mlx-community/DeepSeek-R1-Distill-Qwen-1.5B-4bit",
+        "mlx-community/DeepSeek-R1-Distill-Qwen-7B-4bit",
+        "mlx-community/LFM2.5-2.6B-4bit"
+    ]
+
+    static func opensResponseInsideReasoningBlock(modelID: String, thinkingEnabled: Bool) -> Bool {
+        if alwaysReasoningPrefixMLXModelIDs.contains(modelID) { return true }
+        return thinkingEnabled && optionalReasoningPrefixMLXModelIDs.contains(modelID)
+    }
+
+    /// MLX models whose weights ship inside the app bundle (BundledModels/), so they
+    /// work with no download. Deleting one hides it until the user adds it back; the
+    /// weights themselves stay in the app, so no storage is freed.
+    static let bundledMLXModelIDs: Set<String> = [
+        qwen3_0_6b_4bit.id
+    ]
+
+    var isBundled: Bool {
+        ModelInfo.bundledMLXModelIDs.contains(id)
     }
 
     /// Whether this model is experimental and should only be shown on macOS.
@@ -493,6 +599,9 @@ struct ModelInfo: Identifiable, Equatable {
     var sizeLabel: String {
         if engine == .appleFoundation {
             return String(localized: "No download")
+        }
+        if isBundled {
+            return String(localized: "Included")
         }
         return String(format: "%.1f GB", sizeGB)
     }
@@ -705,6 +814,22 @@ extension ModelInfo {
         shortDescription: "Reasoning-first LFM 2.5 model with a compact download.",
         recommendedFor: "Best when you want the LFM 2.5 reasoning variant for technical prompts.",
         badges: [.bestForCoding, .reasoning, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// LFM2.5 2.6B MLX (4-bit)
+    static let lfm25_2_6b_4bit = ModelInfo(
+        id: "mlx-community/LFM2.5-2.6B-4bit",
+        name: "LFM 2.5 2.6B",
+        description: "Liquid AI's current mid-size LFM 2.5 model, offering stronger multilingual chat, reasoning, coding, and instruction following while remaining practical on newer iPhones and iPads.",
+        family: .lfm,
+        sizeGB: 1.54,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/LFM2.5-2.6B-4bit"),
+        privacyURL: nil,
+        shortDescription: "Stronger multilingual LFM model with an iPhone-friendly footprint.",
+        recommendedFor: "Best when you want a noticeable quality step up from the smallest LFM models without moving to a large download.",
+        badges: [.recommended, .everydayChat, .multilingual, .reasoning, .higherQuality, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -996,6 +1121,22 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// NVIDIA Nemotron 3 Nano 4B (4-bit MLX, OptiQ mixed precision)
+    static let nemotron3_nano_4b_optiq_4bit = ModelInfo(
+        id: "mlx-community/NVIDIA-Nemotron-3-Nano-4B-OptiQ-4bit",
+        name: "Nemotron 3 Nano 4B",
+        description: "NVIDIA's hybrid Mamba-Transformer model, built for efficient long-context work on-device. Runs fully on-device — your data never leaves your device for AI processing.",
+        family: .nemotron,
+        sizeGB: 3.08,
+        engine: .mlx,
+        termsURL: URL(string: "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-nemotron-open-model-license/"),
+        privacyURL: nil,
+        shortDescription: "Efficient hybrid model that stays fast over long chats.",
+        recommendedFor: "Best when you want strong quality on longer conversations on a newer iPhone or iPad.",
+        badges: [.higherQuality, .reasoning, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// Llama 3.2 3B Instruct (4-bit MLX)
     static let llama32_3b_4bit = ModelInfo(
         id: "mlx-community/Llama-3.2-3B-Instruct-4bit",
@@ -1137,6 +1278,22 @@ extension ModelInfo {
         shortDescription: "Fast and surprisingly capable for its small size.",
         recommendedFor: "Best for quick on-device replies with a minimal download.",
         badges: [.fastest, .smallDownload, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// MiniCPM5 1B OptiQ (mixed 4/8-bit MLX)
+    static let miniCPM5_1b_optiq_4bit = ModelInfo(
+        id: "mlx-community/MiniCPM5-1B-OptiQ-4bit",
+        name: "MiniCPM5 1B OptiQ",
+        description: "OpenBMB's compact MiniCPM5 model with sensitivity-aware mixed-precision MLX quantization, hybrid reasoning, and strong coding performance for its size.",
+        family: .miniCPM,
+        sizeGB: 0.92,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/MiniCPM5-1B-OptiQ-4bit"),
+        privacyURL: nil,
+        shortDescription: "Tiny modern model with optional reasoning and strong compact coding ability.",
+        recommendedFor: "Best when you want a very small English and Chinese model that can switch between quick replies and deeper reasoning.",
+        badges: [.smallDownload, .bestForCoding, .multilingual, .reasoning, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -1332,7 +1489,23 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
-    static let allModels: [ModelInfo] = [
+    /// Muse Glimmer 30B (4-bit MLX)
+    static let muse_glimmer_30b_4bit = ModelInfo(
+        id: "mlx-community/Muse-Glimmer-30B-4bit",
+        name: "Muse Glimmer 30B",
+        description: "Meta's multimodal agentic model for long-horizon reasoning, coding, tool use, and image understanding on high-memory Apple Silicon Macs.",
+        family: .muse,
+        sizeGB: 21.38,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/meta-models/Muse-Glimmer-30B"),
+        privacyURL: nil,
+        shortDescription: "High-end multimodal agent for demanding local workflows.",
+        recommendedFor: "Best for coding, complex reasoning, and image-aware agentic work on Macs with at least 32 GB of unified memory.",
+        badges: [.images, .vision, .bestForCoding, .reasoning, .multilingual, .higherQuality, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    static let releasedModels: [ModelInfo] = [
         .appleFoundation,  // Default - first in list
         // Ultra-light and compact (0.1–1.1 GB)
         .lfm25_230m_4bit,
@@ -1343,6 +1516,7 @@ extension ModelInfo {
         .llama32_1b_4bit,
         .gemma3_1b_qat_4bit,
         .granite4_0_h_1b_4bit,
+        .miniCPM5_1b_optiq_4bit,
         .smolLM2_1_7b_4bit,
         .qwen25_1_5b_instruct_4bit,
         .qwen3_1_7b_4bit,
@@ -1365,12 +1539,14 @@ extension ModelInfo {
         .smolLM3_3b_4bit,
         .lfm25_1_2b_instruct_4bit,
         .lfm25_1_2b_thinking_4bit,
+        .lfm25_2_6b_4bit,
         .exaone35_2_4b_instruct_4bit,
         .qwen35_2b_optiq_4bit,
         .qwen35_4b_optiq_4bit,
         .qwen25_3b_instruct_4bit,
         .qwen3_coder_next_4bit,
         .llama32_3b_4bit,
+        .nemotron3_nano_4b_optiq_4bit,
         .phi3_mini_128k_4bit,
         .phi3_mini_4k_4bit,
         .phi4_mini_4bit,
@@ -1388,6 +1564,13 @@ extension ModelInfo {
         .qwen3_8b_4bit,
         .qwen35_9b_optiq_4bit,
         .gemma4_e4b_it_4bit,
-        .holo31_4b
+        .holo31_4b,
+        .muse_glimmer_30b_4bit
     ]
+
+    /// Definitions retained for compatibility and real-device readiness work.
+    /// They are intentionally unavailable to the production catalog and router.
+    static let evaluationModels: [ModelInfo] = []
+
+    static let allModels: [ModelInfo] = releasedModels
 }

@@ -7,6 +7,7 @@
 
 import Foundation
 import CoreImage
+import ImageIO
 import PDFKit
 import UniformTypeIdentifiers
 import Vision
@@ -154,6 +155,20 @@ final class DocumentManager {
         
         let ext = url.pathExtension.lowercased()
         Self.documentDiagnostic("process start file=\(url.lastPathComponent) ext=\(ext) size=\(fileSize) ocrMode=\(pdfOCRMode.rawValue) processingMode=\(documentProcessingMode.rawValue)")
+        let performanceInterval = PerformanceLogger.begin(
+            "DocumentExtraction",
+            label: "Document extraction",
+            metadata: "extension=\(ext) bytes=\(fileSize) ocr=\(pdfOCRMode.rawValue) mode=\(documentProcessingMode.rawValue)"
+        )
+        var performanceStatus = "failed"
+        var performanceResult = ""
+        defer {
+            PerformanceLogger.end(
+                performanceInterval,
+                status: performanceStatus,
+                metadata: performanceResult
+            )
+        }
 
         do {
             let attachedDocument = try await MemoryProfiler.measure("DocumentManager.processFile(\(url.lastPathComponent))") {
@@ -194,8 +209,11 @@ final class DocumentManager {
             }
 
             Self.documentDiagnostic("process success file=\(url.lastPathComponent) chars=\(attachedDocument.content.count) pages=\(attachedDocument.extractedPages)/\(attachedDocument.totalPages)")
+            performanceStatus = "success"
+            performanceResult = "characters=\(attachedDocument.content.count) pages=\(attachedDocument.extractedPages)/\(attachedDocument.totalPages)"
             return attachedDocument
         } catch {
+            performanceResult = "error_type=\(String(describing: type(of: error)))"
             Self.documentDiagnostic("process failed file=\(url.lastPathComponent) error=\(error.localizedDescription)")
             throw error
         }
@@ -258,6 +276,7 @@ final class DocumentManager {
 
     nonisolated
     private static func documentDiagnostic(_ message: String) {
+        PerformanceLogger.diagnostic("DocumentManager \(message)")
     }
 
     func documents(for conversationID: UUID?) -> [ConversationDocument] {
@@ -318,16 +337,25 @@ final class DocumentManager {
         hasDocuments(in: conversationID) || (librarySearchEnabled && hasLibraryDocuments)
     }
 
-    func addDocumentToConversation(from attachedDocument: AttachedDocument, conversationID: UUID) async {
+    @discardableResult
+    func addDocumentToConversation(
+        from attachedDocument: AttachedDocument,
+        conversationID: UUID,
+        allowsMultipleDocuments: Bool = false
+    ) async -> Bool {
+        // This is the commit boundary for imports. Callers may cancel extraction
+        // before entering, but once storage changes below, completion is reported
+        // as committed even if later indexing work observes cancellation.
+        guard !Task.isCancelled else { return false }
         let maxStoredCharacters = Self.currentDocumentProcessingMode().maxStoredCharacters
         let document = ConversationDocument(from: attachedDocument, maxCharacters: maxStoredCharacters)
         guard !document.content.isEmpty else {
-            return
+            return false
         }
 
 
         var documents = documentsByConversationID[conversationID] ?? []
-        let keepsSingleChatDocument = conversationID != Self.libraryScopeID
+        let keepsSingleChatDocument = conversationID != Self.libraryScopeID && !allowsMultipleDocuments
         if let existingIndex = documents.firstIndex(where: {
             $0.name == document.name && $0.content == document.content
         }) {
@@ -355,7 +383,7 @@ final class DocumentManager {
                     conversationID: conversationID
                 )
             }
-            return
+            return true
         }
 
         let replacedDocuments = keepsSingleChatDocument ? documents : []
@@ -380,6 +408,7 @@ final class DocumentManager {
                 conversationID: conversationID
             )
         }
+        return true
     }
 
     func removeDocument(id: UUID, from conversationID: UUID) {
@@ -401,6 +430,42 @@ final class DocumentManager {
         savePersistedDocuments()
         Task {
             await ragEngine.clearConversation(conversationID)
+        }
+    }
+
+    /// Copies immutable document values into a new conversation scope and
+    /// duplicates their retrieval entries so a branch can answer follow-ups
+    /// without depending on the source conversation remaining intact.
+    func cloneDocuments(from sourceConversationID: UUID, to targetConversationID: UUID) async {
+        guard let sourceDocuments = documentsByConversationID[sourceConversationID],
+              !sourceDocuments.isEmpty else { return }
+
+        documentsByConversationID[targetConversationID] = sourceDocuments
+        let pruned = enforceStorageBudget()
+        savePersistedDocuments()
+
+        if pruned {
+            await reindexAllDocuments()
+            return
+        }
+
+        let clonedDocumentIDs = await ragEngine.cloneConversationIndex(
+            from: sourceConversationID,
+            to: targetConversationID,
+            documentIDs: Set(sourceDocuments.map(\.id))
+        )
+        let documentsNeedingIndex = sourceDocuments.filter { !clonedDocumentIDs.contains($0.id) }
+        if !documentsNeedingIndex.isEmpty {
+            Task {
+                for document in documentsNeedingIndex {
+                    await ragEngine.ingest(
+                        text: document.content,
+                        sections: document.sections,
+                        documentID: document.id,
+                        conversationID: targetConversationID
+                    )
+                }
+            }
         }
     }
 
@@ -1157,7 +1222,10 @@ final class DocumentManager {
 
     nonisolated
     private static func currentDocumentProcessingMode() -> DocumentProcessingMode {
-        DocumentProcessingMode(
+        if DeviceResourcePolicy.current.isLowMemoryPhone {
+            return .fast
+        }
+        return DocumentProcessingMode(
             rawValue: UserDefaults.standard.string(forKey: DocumentProcessingMode.storageKey) ?? DocumentProcessingMode.fast.rawValue
         ) ?? .fast
     }
@@ -1231,11 +1299,75 @@ final class ImageAttachmentManager: Sendable {
         }
     }
 
+    /// Downsamples encoded source bytes before UIKit ever sees the image. This
+    /// avoids decoding a multi-megapixel photo on the main actor merely to
+    /// display a small preview and send a bounded vision input.
+    func prepareImageData(_ data: Data) async -> Data? {
+        let maxPixelSize = DeviceResourcePolicy.current.isLowMemoryPhone ? 768 : Int(maxDimension)
+        let quality = compressionQuality
+        return await Task.detached(priority: .userInitiated) {
+            autoreleasepool {
+                guard let source = CGImageSourceCreateWithData(data as CFData, [
+                    kCGImageSourceShouldCache: false
+                ] as CFDictionary) else { return nil }
+                let options: CFDictionary = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceCreateThumbnailWithTransform: true,
+                    kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+                    kCGImageSourceShouldCacheImmediately: false
+                ] as CFDictionary
+                guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options) else { return nil }
+                let destination = NSMutableData()
+                guard let writer = CGImageDestinationCreateWithData(
+                        destination as CFMutableData,
+                        UTType.jpeg.identifier as CFString,
+                        1,
+                        nil
+                ) else { return nil }
+                CGImageDestinationAddImage(writer, image, [
+                    kCGImageDestinationLossyCompressionQuality: quality
+                ] as CFDictionary)
+                guard CGImageDestinationFinalize(writer) else { return nil }
+                return destination as Data
+            }
+        }.value
+    }
+
+    func savePreparedImageData(_ data: Data, for messageID: UUID) -> String? {
+        let fileName = "\(messageID.uuidString).jpg"
+        do {
+            try data.write(
+                to: imagesDirectory.appendingPathComponent(fileName),
+                options: .atomic
+            )
+            return fileName
+        } catch {
+            return nil
+        }
+    }
+
     /// Load an image by file name.
     func loadImage(named fileName: String) -> UIImage? {
         let fileURL = imagesDirectory.appendingPathComponent(fileName)
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return nil }
         return UIImage(contentsOfFile: fileURL.path)
+    }
+
+    /// Copies the stored bytes to a new resource name for an independently
+    /// owned branched message. Returns nil without modifying the source.
+    func duplicateImage(named fileName: String) -> String? {
+        let sourceURL = imagesDirectory.appendingPathComponent(fileName)
+        guard FileManager.default.fileExists(atPath: sourceURL.path) else { return nil }
+
+        let fileExtension = sourceURL.pathExtension.isEmpty ? "jpg" : sourceURL.pathExtension
+        let duplicatedFileName = "\(UUID().uuidString).\(fileExtension)"
+        let destinationURL = imagesDirectory.appendingPathComponent(duplicatedFileName)
+        do {
+            try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+            return duplicatedFileName
+        } catch {
+            return nil
+        }
     }
 
     /// Delete a single image by file name.

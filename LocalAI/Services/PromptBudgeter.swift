@@ -6,7 +6,11 @@ enum PromptBudgeter {
         let maxOutputTokens: Int
 
         init(model: ModelInfo, maxOutputTokens: Int, lowPowerMode: Bool) {
-            let outputTokens = lowPowerMode ? min(maxOutputTokens, 768) : maxOutputTokens
+            let deviceLimit = DeviceResourcePolicy.current.generationTokenLimit(
+                lowPowerMode: lowPowerMode || ProcessInfo.processInfo.isLowPowerModeEnabled,
+                thermalState: ProcessInfo.processInfo.thermalState
+            )
+            let outputTokens = min(maxOutputTokens, deviceLimit)
             self.maxOutputTokens = max(outputTokens, 128)
 
             var baseBudget: Int
@@ -18,16 +22,7 @@ enum PromptBudgeter {
                 // mid-response with exceededContextWindowSize.
                 baseBudget = model.supportsVision ? 3_500 : 4_096
             case .mlx:
-                if model.supportsVision {
-                    baseBudget = 2_800
-                } else if model.id.localizedCaseInsensitiveContains("128k") ||
-                            model.id.localizedCaseInsensitiveContains("long") {
-                    baseBudget = 8_000
-                } else if model.sizeGB >= 4.0 {
-                    baseBudget = 5_500
-                } else {
-                    baseBudget = 3_800
-                }
+                baseBudget = PromptBudgeter.mlxContextWindow(for: model)
                 if !lowPowerMode {
                     let adaptiveBonus = UserDefaults.standard.integer(forKey: "mlxAdaptiveInputBudgetBonus")
                     baseBudget += min(max(adaptiveBonus, 0), 2_000)
@@ -39,6 +34,28 @@ enum PromptBudgeter {
             let reserved = self.maxOutputTokens + 384
             self.inputTokenBudget = max(900, baseBudget - reserved)
         }
+    }
+
+    /// Rough context window for an MLX model.
+    ///
+    /// Single source of truth: LLMEngine sizes its response budget and triggers
+    /// rolling condensation against the same number. If the two drift, the
+    /// engine condenses the transcript against a window the prompt was never
+    /// budgeted for. `128k` matches the released Phi 3 Mini 128K build; `long`
+    /// is reserved for future long-context identifiers.
+    nonisolated static func mlxContextWindow(for model: ModelInfo) -> Int {
+        let modelWindow: Int
+        if model.supportsVision {
+            modelWindow = 2_800
+        } else if model.id.localizedCaseInsensitiveContains("128k") ||
+            model.id.localizedCaseInsensitiveContains("long") {
+            modelWindow = 8_000
+        } else if model.sizeGB >= 4.0 {
+            modelWindow = 5_500
+        } else {
+            modelWindow = 3_800
+        }
+        return min(modelWindow, DeviceResourcePolicy.current.maximumContextTokens)
     }
 
     struct DocumentSnippet {
@@ -179,6 +196,10 @@ enum PromptBudgeter {
         return String(text[start..<text.endIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    nonisolated static func boundedChatText(_ text: String, maxTokens: Int) -> String {
+        clippedTextPreservingEdges(text, maxTokens: maxTokens)
+    }
+
     nonisolated private static func clippedText(_ text: String, maxTokens: Int) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard maxTokens > 0, estimatedTokenCount(trimmed) > maxTokens else {
@@ -209,5 +230,64 @@ enum PromptBudgeter {
 
         \(tail)
         """
+    }
+
+    // Substrings that mark a sentence as a directive aimed at the assistant
+    // rather than a fact about the conversation, across the app's supported
+    // languages (en/de/es/fr). Compared against a lowercased, diacritic-folded
+    // copy of each sentence.
+    nonisolated private static let continuityInjectionMarkers: [String] = [
+        // English
+        "ignore previous", "ignore all previous", "ignore the above",
+        "disregard previous", "disregard the above", "disregard your",
+        "system prompt", "your instructions", "these instructions",
+        "you must", "you are now", "from now on you", "act as", "pretend to be",
+        "reveal your", "override your", "new instructions",
+        // German
+        "ignoriere", "vergiss die", "systemaufforderung", "du musst",
+        "ab jetzt bist", "tu so als", "neue anweisung",
+        // Spanish
+        "ignora las", "ignora todo", "olvida las", "instrucciones del sistema",
+        "a partir de ahora", "actua como", "haz de cuenta", "nuevas instrucciones",
+        // French
+        "ignore les", "oublie les", "invite systeme", "tu dois",
+        "desormais tu", "fais comme si", "nouvelles instructions"
+    ]
+
+    /// Neutralizes a model-written continuity summary before it is merged into
+    /// privileged session instructions. The summary is derived from
+    /// conversation content, so a user could try to smuggle a directive
+    /// ("ignore your rules") into it and have it promoted to the instructions
+    /// channel on the next rolling condense. This drops sentences that read as
+    /// instructions to the assistant. Defense-in-depth: the low-temperature
+    /// greedy summarizer rarely emits such text, and the merge frame already
+    /// tells the model to treat this block as silent background, not commands.
+    nonisolated static func sanitizedContinuitySummary(_ summary: String) -> String {
+        let normalizedWhitespace = summary
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\n", with: " ")
+
+        var sentences: [String] = []
+        var current = ""
+        for character in normalizedWhitespace {
+            current.append(character)
+            if character == "." || character == "!" || character == "?" {
+                sentences.append(current)
+                current = ""
+            }
+        }
+        if !current.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            sentences.append(current)
+        }
+
+        let kept = sentences.filter { sentence in
+            let folded = sentence
+                .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            return !continuityInjectionMarkers.contains { folded.contains($0) }
+        }
+
+        return kept
+            .joined()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

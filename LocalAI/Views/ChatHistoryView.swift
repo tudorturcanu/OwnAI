@@ -12,6 +12,10 @@ struct ChatHistoryView: View {
     @Environment(ChatHistoryManager.self) private var historyManager
     @Environment(MonetizationManager.self) private var monetizationManager
 
+    /// True when shown as the persistent sidebar of an iPad split layout:
+    /// no own NavigationStack, no Done button, and selection must not dismiss.
+    var isEmbedded: Bool = false
+
     @State private var asyncWordCount: String = "0"
     @State private var searchText = ""
     @State private var selectedFolderID: UUID? = nil    // nil = "All"
@@ -22,16 +26,38 @@ struct ChatHistoryView: View {
     @State private var isNewFolderPresented = false
     @State private var newFolderName = ""
     @State private var newFolderEmoji = "📁"
+    @State private var folderToEdit: ChatFolder?
+    @State private var isEditFolderPresented = false
+    @State private var editFolderName = ""
+    @State private var editFolderEmoji = ""
     @State private var isMoveToFolderPresented = false
     @State private var conversationToMove: ChatConversation?
     @State private var isRenamePresented = false
     @State private var conversationToRename: ChatConversation?
     @State private var renameText = ""
+    @State private var conversationForMemory: ChatConversation?
     @State private var showPinnedMessages = false
+
+    /// Matches for `resolvedSearchQuery`, keyed by conversation ID. Scanning the
+    /// whole history is done off the main actor so typing stays responsive.
+    @State private var searchHits: [UUID: ConversationSearchEngine.Hit] = [:]
+    /// The query `searchHits` was produced for; lags `searchText` while debouncing.
+    @State private var resolvedSearchQuery = ""
 
     private var folderStore: ChatFolderStore { ChatFolderStore.shared }
 
     // MARK: - Filtered Conversations
+
+    private var trimmedSearchQuery: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var isSearching: Bool { !trimmedSearchQuery.isEmpty }
+
+    /// True while the debounced background scan for the current query is pending.
+    private var isSearchPending: Bool {
+        isSearching && resolvedSearchQuery != trimmedSearchQuery
+    }
 
     var filteredConversations: [ChatConversation] {
         var base = historyManager.conversations
@@ -42,17 +68,45 @@ struct ChatHistoryView: View {
             base = base.filter { assignedIDs.contains($0.id) }
         }
 
-        // Search filter
-        if !searchText.isEmpty {
-            base = base.filter { conversation in
-                conversation.title.localizedCaseInsensitiveContains(searchText) ||
-                conversation.messages.contains { message in
-                    message.content.localizedCaseInsensitiveContains(searchText)
-                }
-            }
+        // Search filter — the results of the last completed scan stay on screen
+        // while a newer query is still being matched, so the list never blinks.
+        if isSearching {
+            base = base.filter { searchHits[$0.id] != nil }
         }
 
         return base
+    }
+
+    private var totalSearchMatchCount: Int {
+        filteredConversations.reduce(0) { $0 + (searchHits[$1.id]?.matchCount ?? 0) }
+    }
+
+    /// Re-runs whenever the query changes or conversations are added/removed.
+    private var searchTaskID: String {
+        "\(trimmedSearchQuery)|\(historyManager.conversations.count)"
+    }
+
+    private func runSearch() async {
+        let query = trimmedSearchQuery
+        guard !query.isEmpty else {
+            searchHits = [:]
+            resolvedSearchQuery = ""
+            return
+        }
+
+        // Debounce: `.task(id:)` cancels this before the sleep returns when the
+        // next keystroke arrives, so only settled queries reach the scan.
+        try? await Task.sleep(for: .milliseconds(180))
+        guard !Task.isCancelled else { return }
+
+        let conversations = historyManager.conversations
+        let hits = await Task.detached(priority: .userInitiated) {
+            ConversationSearchEngine.search(query: query, in: conversations)
+        }.value
+        guard !Task.isCancelled else { return }
+
+        searchHits = hits
+        resolvedSearchQuery = query
     }
 
     private var groupedConversations: [(title: String, conversations: [ChatConversation])] {
@@ -88,7 +142,124 @@ struct ChatHistoryView: View {
     // MARK: - Body
 
     var body: some View {
-        NavigationStack {
+        Group {
+            if isEmbedded {
+                listContent
+            } else {
+                NavigationStack {
+                    listContent
+                }
+            }
+        }
+        // Undo bar for the most recent delete
+        .safeAreaInset(edge: .bottom) {
+            if let pending = historyManager.pendingDeletion {
+                undoDeleteBar(for: pending)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: historyManager.pendingDeletion?.conversation.id)
+        // Export share sheet
+        .sheet(isPresented: $isShareSheetPresented, onDismiss: { discardExportedConversation() }) {
+            ShareSheet(items: exportShareItems)
+        }
+        // Upgrade gate
+        .sheet(item: $upgradeFeature) { feature in
+            UpgradeView(feature: feature)
+                .environment(monetizationManager)
+        }
+        // Per-chat memory (rolling continuity summary)
+        .sheet(item: $conversationForMemory) { conversation in
+            ConversationMemoryView(conversationID: conversation.id)
+                .environment(historyManager)
+        }
+        // New folder alert
+        .alert(String(localized: "New Folder"), isPresented: $isNewFolderPresented) {
+            TextField(String(localized: "Folder name"), text: $newFolderName)
+            TextField(String(localized: "Emoji"), text: $newFolderEmoji)
+            Button(String(localized: "Create")) {
+                let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
+                folderStore.createFolder(
+                    name: name.isEmpty ? String(localized: "New Folder") : name,
+                    emoji: Self.sanitizedEmoji(newFolderEmoji)
+                )
+            }
+            Button(String(localized: "Cancel"), role: .cancel) { }
+        } message: {
+            Text(String(localized: "Give this folder a name and an icon."))
+        }
+        // Rename folder alert
+        .alert(String(localized: "Rename Folder"), isPresented: $isEditFolderPresented) {
+            TextField(String(localized: "Folder name"), text: $editFolderName)
+            TextField(String(localized: "Emoji"), text: $editFolderEmoji)
+            Button(String(localized: "Save")) {
+                if let folder = folderToEdit {
+                    let name = editFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
+                    folderStore.updateFolder(
+                        id: folder.id,
+                        name: name.isEmpty ? folder.name : name,
+                        emoji: Self.sanitizedEmoji(editFolderEmoji, fallback: folder.emoji)
+                    )
+                }
+                folderToEdit = nil
+            }
+            Button(String(localized: "Cancel"), role: .cancel) { folderToEdit = nil }
+        } message: {
+            Text(String(localized: "Change this folder's name or icon."))
+        }
+        // Move to folder action sheet
+        .confirmationDialog(
+            String(localized: "Move to Folder"),
+            isPresented: $isMoveToFolderPresented,
+            titleVisibility: .visible
+        ) {
+            if let c = conversationToMove {
+                // Existing folders
+                ForEach(folderStore.folders) { folder in
+                    Button("\(folder.emoji) \(folder.name)") {
+                        folderStore.assignConversation(c.id, to: folder.id)
+                    }
+                }
+
+                // Remove from folder
+                if folderStore.folderID(for: c.id) != nil {
+                    Button(String(localized: "Remove from Folder"), role: .destructive) {
+                        folderStore.assignConversation(c.id, to: nil)
+                    }
+                }
+
+                Button(String(localized: "New Folder…")) {
+                    newFolderName = ""
+                    newFolderEmoji = "📁"
+                    isNewFolderPresented = true
+                }
+
+                Button(String(localized: "Cancel"), role: .cancel) { }
+            }
+        }
+        // Rename conversation alert
+        .alert(String(localized: "Rename Conversation"), isPresented: $isRenamePresented) {
+            TextField(String(localized: "Conversation name"), text: $renameText)
+            Button(String(localized: "Rename")) {
+                if let conversation = conversationToRename {
+                    historyManager.updateTitle(renameText, for: conversation.id)
+                }
+                conversationToRename = nil
+            }
+            Button(String(localized: "Cancel"), role: .cancel) {
+                conversationToRename = nil
+            }
+        } message: {
+            Text(String(localized: "Enter a new name for this conversation."))
+        }
+        // Pinned messages sheet
+        .sheet(isPresented: $showPinnedMessages) {
+            PinnedMessagesView()
+                .environment(historyManager)
+        }
+    }
+
+    private var listContent: some View {
             ScrollView {
                 LazyVStack(spacing: 8, pinnedViews: [.sectionHeaders]) {
                     // Conversation Statistics
@@ -101,9 +272,15 @@ struct ChatHistoryView: View {
                         folderChipsRow
                     }
 
+                    if isSearching && !filteredConversations.isEmpty {
+                        searchSummaryRow
+                    }
+
                     if filteredConversations.isEmpty {
-                        if searchText.isEmpty {
+                        if !isSearching {
                             emptyState
+                        } else if isSearchPending {
+                            searchInProgressState
                         } else {
                             ContentUnavailableView.search(text: searchText)
                         }
@@ -114,10 +291,14 @@ struct ChatHistoryView: View {
                                     ConversationRow(
                                         conversation: conversation,
                                         isSelected: conversation.id == historyManager.currentConversationID,
-                                        folderLabel: folderStore.folder(for: conversation.id).map { "\($0.emoji) \($0.name)" }
+                                        folderLabel: folderStore.folder(for: conversation.id).map { "\($0.emoji) \($0.name)" },
+                                        searchHit: searchHits[conversation.id]
                                     ) {
                                         historyManager.selectConversation(conversation.id)
-                                        dismiss()
+                                        requestJumpToMatch(in: conversation.id)
+                                        if !isEmbedded {
+                                            dismiss()
+                                        }
                                     } onDelete: {
                                         withAnimation(.spring(response: 0.3)) {
                                             historyManager.deleteConversation(conversation.id)
@@ -179,6 +360,15 @@ struct ChatHistoryView: View {
                                             )
                                         }
 
+                                        Button {
+                                            conversationForMemory = conversation
+                                        } label: {
+                                            Label(
+                                                String(localized: "Chat Memory"),
+                                                systemImage: "brain"
+                                            )
+                                        }
+
                                         Divider()
 
                                         Button(role: .destructive) {
@@ -209,11 +399,13 @@ struct ChatHistoryView: View {
             .navigationTitle(String(localized: "History"))
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(String(localized: "Done")) {
-                        dismiss()
+                if !isEmbedded {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(String(localized: "Done")) {
+                            dismiss()
+                        }
+                        .fontWeight(.medium)
                     }
-                    .fontWeight(.medium)
                 }
 
                 ToolbarItem(placement: .primaryAction) {
@@ -248,7 +440,9 @@ struct ChatHistoryView: View {
 
                         Button {
                             historyManager.newConversation()
-                            dismiss()
+                            if !isEmbedded {
+                                dismiss()
+                            }
                         } label: {
                             Image(systemName: "plus.circle.fill")
                                 .accessibilityLabel(String(localized: "New Chat"))
@@ -265,76 +459,101 @@ struct ChatHistoryView: View {
                 }
             }
             .searchable(text: $searchText, placement: .automatic, prompt: String(localized: "Search history"))
-        }
-        // Export share sheet
-        .sheet(isPresented: $isShareSheetPresented, onDismiss: { exportShareItems = [] }) {
-            ShareSheet(items: exportShareItems)
-        }
-        // Upgrade gate
-        .sheet(item: $upgradeFeature) { feature in
-            UpgradeView(feature: feature)
-                .environment(monetizationManager)
-        }
-        // New folder alert
-        .alert(String(localized: "New Folder"), isPresented: $isNewFolderPresented) {
-            TextField(String(localized: "Folder name"), text: $newFolderName)
-            Button(String(localized: "Create")) {
-                let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
-                folderStore.createFolder(name: name.isEmpty ? String(localized: "New Folder") : name)
+            .task(id: searchTaskID) {
+                await runSearch()
             }
-            Button(String(localized: "Cancel"), role: .cancel) { }
-        } message: {
-            Text(String(localized: "Give this folder a name."))
-        }
-        // Move to folder action sheet
-        .confirmationDialog(
-            String(localized: "Move to Folder"),
-            isPresented: $isMoveToFolderPresented,
-            titleVisibility: .visible
-        ) {
-            if let c = conversationToMove {
-                // Existing folders
-                ForEach(folderStore.folders) { folder in
-                    Button("\(folder.emoji) \(folder.name)") {
-                        folderStore.assignConversation(c.id, to: folder.id)
-                    }
-                }
+    }
 
-                // Remove from folder
-                if folderStore.folderID(for: c.id) != nil {
-                    Button(String(localized: "Remove from Folder"), role: .destructive) {
-                        folderStore.assignConversation(c.id, to: nil)
-                    }
-                }
+    // MARK: - Undo Delete
 
-                Button(String(localized: "New Folder…")) {
-                    newFolderName = ""
-                    isNewFolderPresented = true
-                }
+    private func undoDeleteBar(for pending: ChatHistoryManager.PendingDeletion) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "trash")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.7))
+                .accessibilityHidden(true)
 
-                Button(String(localized: "Cancel"), role: .cancel) { }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(String(localized: "Chat deleted"))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                Text(pending.conversation.title)
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.65))
+                    .lineLimit(1)
             }
-        }
-        // Rename conversation alert
-        .alert(String(localized: "Rename Conversation"), isPresented: $isRenamePresented) {
-            TextField(String(localized: "Conversation name"), text: $renameText)
-            Button(String(localized: "Rename")) {
-                if let conversation = conversationToRename {
-                    historyManager.updateTitle(renameText, for: conversation.id)
+
+            Spacer(minLength: 8)
+
+            Button(String(localized: "Undo")) {
+                withAnimation(.spring(response: 0.3)) {
+                    _ = historyManager.undoLastDeletion()
                 }
-                conversationToRename = nil
             }
-            Button(String(localized: "Cancel"), role: .cancel) {
-                conversationToRename = nil
+            .font(.subheadline.weight(.bold))
+            .foregroundStyle(.orange)
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color(white: 0, opacity: 0.85))
+        )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+        .accessibilityElement(children: .contain)
+    }
+
+    // MARK: - Search Results
+
+    private var searchSummaryRow: some View {
+        HStack(spacing: 8) {
+            if isSearchPending {
+                ProgressView()
+                    .controlSize(.mini)
+            } else {
+                Image(systemName: "text.magnifyingglass")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.orange)
+                    .accessibilityHidden(true)
             }
-        } message: {
-            Text(String(localized: "Enter a new name for this conversation."))
+
+            Text(searchSummaryText)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(Color.adaptive(white: 0.45))
+
+            Spacer()
         }
-        // Pinned messages sheet
-        .sheet(isPresented: $showPinnedMessages) {
-            PinnedMessagesView()
-                .environment(historyManager)
+        .padding(.horizontal, 4)
+        .padding(.bottom, 2)
+        .accessibilityElement(children: .combine)
+    }
+
+    private var searchSummaryText: String {
+        let conversationCount = filteredConversations.count
+        let matchCount = totalSearchMatchCount
+        let chatsPart = String(
+            format: String(localized: "%lld chats", defaultValue: "%lld chats"),
+            Int64(conversationCount)
+        )
+        guard matchCount > 0 else { return chatsPart }
+        let messagesPart = String(
+            format: String(localized: "%lld matching messages", defaultValue: "%lld matching messages"),
+            Int64(matchCount)
+        )
+        return "\(chatsPart) · \(messagesPart)"
+    }
+
+    private var searchInProgressState: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+            Text(String(localized: "Searching…"))
+                .font(.subheadline)
+                .foregroundStyle(Color.adaptive(white: 0.5))
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 60)
     }
 
     // MARK: - Statistics Card
@@ -352,7 +571,7 @@ struct ChatHistoryView: View {
             statItem(value: asyncWordCount, label: String(localized: "Words"), icon: "textformat.abc", tint: .orange)
         }
         .padding(.vertical, 16)
-        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+        .background(Color.adaptiveCard, in: RoundedRectangle(cornerRadius: 16))
         .shadow(color: .black.opacity(0.04), radius: 10, y: 5)
         .padding(.bottom, 4)
         .task(id: totalMessages) {
@@ -380,16 +599,18 @@ struct ChatHistoryView: View {
     private func statItem(value: String, label: String, icon: String, tint: Color) -> some View {
         VStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 14, weight: .semibold))
+                .font(.subheadline.weight(.semibold))
                 .foregroundStyle(tint)
+                .accessibilityHidden(true)
             Text(value)
-                .font(.system(size: 18, weight: .bold, design: .rounded))
+                .font(.system(.headline, design: .rounded, weight: .bold))
                 .foregroundStyle(Color.adaptive(white: 0.15))
             Text(label)
                 .font(.caption2.weight(.medium))
                 .foregroundStyle(Color.adaptive(white: 0.5))
         }
         .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
     }
 
     private func abbreviatedNumber(_ n: Int) -> String {
@@ -422,6 +643,15 @@ struct ChatHistoryView: View {
                         systemImage: nil
                     )
                     .contextMenu {
+                        Button {
+                            folderToEdit = folder
+                            editFolderName = folder.name
+                            editFolderEmoji = folder.emoji
+                            isEditFolderPresented = true
+                        } label: {
+                            Label(String(localized: "Rename Folder"), systemImage: "pencil")
+                        }
+
                         Button(role: .destructive) {
                             if selectedFolderID == folder.id { selectedFolderID = nil }
                             folderStore.deleteFolder(id: folder.id)
@@ -434,6 +664,14 @@ struct ChatHistoryView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
         }
+    }
+
+    /// Keeps folder icons to a single glyph — the alert's text field accepts any
+    /// keyboard input, but the chip layout assumes one character.
+    private static func sanitizedEmoji(_ raw: String, fallback: String = "📁") -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let first = trimmed.first else { return fallback }
+        return String(first)
     }
 
     private func folderChip(id: UUID?, label: String, systemImage: String?) -> some View {
@@ -463,6 +701,24 @@ struct ChatHistoryView: View {
 
     // MARK: - Actions
 
+    /// Asks the chat view to open scrolled to the message that matched the search,
+    /// so a result tap lands on the text the user was looking for.
+    private func requestJumpToMatch(in conversationID: UUID) {
+        guard isSearching,
+              let hit = searchHits[conversationID],
+              let messageID = hit.firstMatchMessageID else { return }
+
+        NotificationCenter.default.post(
+            name: .ownAIConversationSearchMatch,
+            object: nil,
+            userInfo: [
+                ConversationSearchMatchKey.conversationID: conversationID,
+                ConversationSearchMatchKey.messageID: messageID,
+                ConversationSearchMatchKey.query: resolvedSearchQuery
+            ]
+        )
+    }
+
     private func handleExport(_ conversation: ChatConversation) {
         guard monetizationManager.canUse(.conversationExport) else {
             upgradeFeature = .conversationExport
@@ -477,10 +733,24 @@ struct ChatHistoryView: View {
             .appendingPathComponent(ConversationExporter.fileName(title: conversation.title, format: .markdown))
         do {
             try markdown.write(to: tempURL, atomically: true, encoding: .utf8)
+            // The conversation store is encrypted at rest; the plain-text
+            // hand-off copy gets the same protection and is deleted once the
+            // share sheet closes.
+            try? FileManager.default.setAttributes(
+                [.protectionKey: FileProtectionType.complete],
+                ofItemAtPath: tempURL.path
+            )
             exportShareItems = [tempURL]
             isShareSheetPresented = true
         } catch {
         }
+    }
+
+    private func discardExportedConversation() {
+        for case let url as URL in exportShareItems {
+            try? FileManager.default.removeItem(at: url)
+        }
+        exportShareItems = []
     }
 
     private func handleMoveToFolder(_ conversation: ChatConversation) {
@@ -501,6 +771,7 @@ struct ChatHistoryView: View {
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.system(size: 50, weight: .light))
                 .foregroundStyle(Color.adaptive(white: 0.7))
+                .accessibilityHidden(true)
 
             Text(String(localized: "No Conversations Yet"))
                 .font(.headline)
@@ -517,12 +788,26 @@ struct ChatHistoryView: View {
     }
 }
 
+extension Notification.Name {
+    /// Posted when a history search result is tapped, so the chat can scroll to the match.
+    static let ownAIConversationSearchMatch = Notification.Name("com.ownai.conversationSearchMatch")
+}
+
+/// Keys used in the `ownAIConversationSearchMatch` notification's `userInfo` dictionary.
+enum ConversationSearchMatchKey {
+    static let conversationID = "conversationID"
+    static let messageID = "messageID"
+    static let query = "query"
+}
+
 // MARK: - Conversation Row
 
 struct ConversationRow: View {
     let conversation: ChatConversation
     let isSelected: Bool
     let folderLabel: String?
+    /// Present while a history search is active; drives the excerpt and match badge.
+    var searchHit: ConversationSearchEngine.Hit?
     let onSelect: () -> Void
     let onDelete: () -> Void
 
@@ -569,7 +854,12 @@ struct ConversationRow: View {
                         }
                     }
 
-                    if let lastMessage = conversation.messages.last {
+                    if let searchHit, !searchHit.snippet.isEmpty {
+                        Text(highlightedSnippet(for: searchHit))
+                            .font(.caption)
+                            .foregroundStyle(Color.adaptive(white: 0.45))
+                            .lineLimit(2)
+                    } else if let lastMessage = conversation.messages.last {
                         Text(lastMessage.content.trimmingCharacters(in: .whitespacesAndNewlines).prefix(60) + (lastMessage.content.count > 60 ? "…" : ""))
                             .font(.caption)
                             .foregroundStyle(Color.adaptive(white: 0.45))
@@ -583,8 +873,16 @@ struct ConversationRow: View {
 
                 Spacer()
 
-                // Message count
-                if !conversation.messages.isEmpty {
+                // Match count while searching, otherwise total message count
+                if let searchHit, searchHit.matchCount > 0 {
+                    Text("\(searchHit.matchCount)")
+                        .font(.caption.bold())
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.orange.opacity(0.12))
+                        .clipShape(Capsule())
+                } else if !conversation.messages.isEmpty {
                     Text("\(conversation.messages.count)")
                         .font(.caption.bold())
                         .foregroundStyle(Color.adaptive(white: 0.5))
@@ -618,6 +916,61 @@ struct ConversationRow: View {
                 isHovered = hovering
             }
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(accessibilitySummary)
+        .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+    }
+
+    /// Applies the engine's highlight offsets to the excerpt so the matched words
+    /// stand out. Built by concatenation rather than by mutating attributes at
+    /// computed indices, which would be invalidated by each edit.
+    private func highlightedSnippet(for hit: ConversationSearchEngine.Hit) -> AttributedString {
+        let characters = Array(hit.snippet)
+        guard !hit.highlightRanges.isEmpty else { return AttributedString(hit.snippet) }
+
+        var result = AttributedString()
+        var cursor = 0
+
+        // Ranges arrive sorted and non-overlapping; clamping keeps a stale hit
+        // from indexing past a shorter snippet.
+        for range in hit.highlightRanges {
+            let lower = min(max(range.lowerBound, cursor), characters.count)
+            let upper = min(max(range.upperBound, lower), characters.count)
+            guard upper > lower else { continue }
+
+            if lower > cursor {
+                result += AttributedString(String(characters[cursor..<lower]))
+            }
+            var highlighted = AttributedString(String(characters[lower..<upper]))
+            highlighted.foregroundColor = .orange
+            highlighted.font = .caption.weight(.bold)
+            result += highlighted
+            cursor = upper
+        }
+
+        if cursor < characters.count {
+            result += AttributedString(String(characters[cursor...]))
+        }
+        return result
+    }
+
+    private var accessibilitySummary: String {
+        var parts: [String] = [conversation.title]
+        if let folderLabel {
+            parts.append(folderLabel)
+        }
+        if let searchHit, searchHit.matchCount > 0 {
+            parts.append(String(
+                format: String(localized: "%lld matching messages", defaultValue: "%lld matching messages"),
+                Int64(searchHit.matchCount)
+            ))
+        }
+        parts.append(String(
+            format: String(localized: "%lld messages", defaultValue: "%lld messages"),
+            Int64(conversation.messages.count)
+        ))
+        parts.append(formattedDate)
+        return parts.joined(separator: ", ")
     }
 
     private static let relativeDateFormatter: RelativeDateTimeFormatter = {

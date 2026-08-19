@@ -3,6 +3,19 @@ import Foundation
 import Security
 
 struct SecureFileStore {
+    private final class EncryptionKeyCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var keyData: Data?
+
+        func value(orLoad load: () throws -> Data) throws -> Data {
+            lock.lock()
+            defer { lock.unlock() }
+            if let keyData { return keyData }
+            let loaded = try load()
+            keyData = loaded
+            return loaded
+        }
+    }
     private struct Envelope: Codable {
         let version: Int
         let nonce: Data
@@ -33,6 +46,7 @@ struct SecureFileStore {
     private static let service = "alice.turcanu.LocalAI.secure-file-store"
     private static let account = "app-data-encryption-key"
     private static let fileProtection: FileProtectionType = .complete
+    private static let encryptionKeyCache = EncryptionKeyCache()
 
     static func load<T: Codable>(_ type: T.Type, from url: URL) throws -> T {
         let data = try Data(contentsOf: url)
@@ -96,15 +110,18 @@ struct SecureFileStore {
     }
 
     private static func encryptionKey() throws -> SymmetricKey {
-        if let existing = try existingKeyData() {
-            guard existing.count == 32 else {
-                throw StoreError.unexpectedKeyData
+        let keyData = try encryptionKeyCache.value {
+            if let existing = try existingKeyData() {
+                guard existing.count == 32 else {
+                    throw StoreError.unexpectedKeyData
+                }
+                return existing
             }
-            return SymmetricKey(data: existing)
-        }
 
-        let keyData = Data((0..<32).map { _ in UInt8.random(in: UInt8.min...UInt8.max) })
-        try storeKeyData(keyData)
+            let generated = Data((0..<32).map { _ in UInt8.random(in: UInt8.min...UInt8.max) })
+            try storeKeyData(generated)
+            return generated
+        }
         return SymmetricKey(data: keyData)
     }
 

@@ -127,9 +127,17 @@ actor RAGEngine {
         documentID: UUID,
         conversationID: UUID
     ) async {
+        await ChatWorkloadCoordinator.shared.waitUntilChatIsIdle()
+        let performanceInterval = PerformanceLogger.begin(
+            "DocumentIndexing",
+            label: "Document indexing",
+            metadata: "characters=\(text.count) sections=\(sections.count) neural=\(UserDefaults.standard.bool(forKey: Self.neuralEmbeddingsDefaultsKey))"
+        )
+        var indexedChunkCount = 0
         await MemoryProfiler.measure("RAGEngine.ingest(doc: \(documentID))") {
             let language = dominantLanguage(for: text)
             let rawChunks = chunkText(text, targetSize: 900, overlapSentences: 1)
+            indexedChunkCount = rawChunks.count
             let embeddings = await embedDocumentChunks(rawChunks.map(\.content), language: language)
 
             for (index, chunkContent) in rawChunks.enumerated() {
@@ -152,6 +160,10 @@ actor RAGEngine {
             schedulePersistState()
         }
         await releaseNeuralEmbedderIfNeeded()
+        PerformanceLogger.end(
+            performanceInterval,
+            metadata: "chunks=\(indexedChunkCount)"
+        )
     }
 
     func clear(documentID: UUID, conversationID: UUID) {
@@ -164,6 +176,53 @@ actor RAGEngine {
         chunks.removeAll { $0.conversationID == conversationID }
         documentFingerprints = documentFingerprints.filter { $0.key.conversationID != conversationID }
         schedulePersistState()
+    }
+
+    /// Duplicates already-computed chunks into another conversation scope.
+    /// Returns the document IDs that had a complete source fingerprint; callers
+    /// can ingest any missing documents normally.
+    func cloneConversationIndex(
+        from sourceConversationID: UUID,
+        to targetConversationID: UUID,
+        documentIDs: Set<UUID>
+    ) -> Set<UUID> {
+        guard sourceConversationID != targetConversationID, !documentIDs.isEmpty else { return [] }
+
+        chunks.removeAll {
+            $0.conversationID == targetConversationID && documentIDs.contains($0.documentID)
+        }
+        for documentID in documentIDs {
+            documentFingerprints.removeValue(
+                forKey: DocumentKey(conversationID: targetConversationID, documentID: documentID)
+            )
+        }
+
+        let sourceChunks = chunks.filter {
+            $0.conversationID == sourceConversationID && documentIDs.contains($0.documentID)
+        }
+        chunks.append(contentsOf: sourceChunks.map { chunk in
+            TextChunk(
+                conversationID: targetConversationID,
+                documentID: chunk.documentID,
+                content: chunk.content,
+                sourceLocationLabel: chunk.sourceLocationLabel,
+                language: chunk.language,
+                sequenceIndex: chunk.sequenceIndex,
+                embedding: chunk.embedding,
+                embedderID: chunk.embedderID
+            )
+        })
+
+        var clonedDocumentIDs: Set<UUID> = []
+        for documentID in documentIDs {
+            let sourceKey = DocumentKey(conversationID: sourceConversationID, documentID: documentID)
+            guard let fingerprint = documentFingerprints[sourceKey] else { continue }
+            let targetKey = DocumentKey(conversationID: targetConversationID, documentID: documentID)
+            documentFingerprints[targetKey] = fingerprint
+            clonedDocumentIDs.insert(documentID)
+        }
+        schedulePersistState()
+        return clonedDocumentIDs
     }
 
     func clearAll() {
@@ -209,6 +268,7 @@ actor RAGEngine {
             }
 
             for document in sortedDocuments {
+                await ChatWorkloadCoordinator.shared.waitUntilChatIsIdle()
                 let language = dominantLanguage(for: document.content)
                 let rawChunks = chunkText(document.content, targetSize: 900, overlapSentences: 1)
                 let embeddings = await embedDocumentChunks(rawChunks.map(\.content), language: language)
@@ -507,9 +567,15 @@ actor RAGEngine {
             return vectors.map { ($0, EmbeddingService.embedderIdentifier) }
         }
 
-        return texts.map { text in
-            legacyEmbedding(for: text, language: language).map { ($0, Self.legacyEmbedderID) }
+        var results: [(vector: [Float], embedderID: String)?] = []
+        results.reserveCapacity(texts.count)
+        for text in texts {
+            await ChatWorkloadCoordinator.shared.waitUntilChatIsIdle()
+            results.append(
+                legacyEmbedding(for: text, language: language).map { ($0, Self.legacyEmbedderID) }
+            )
         }
+        return results
     }
 
     private func embedQuery(

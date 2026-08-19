@@ -3,6 +3,7 @@
 
 # Xcode
 build/
+**/build/
 DerivedData/
 *.xcuserstate
 *.xcscmblueprint
@@ -17,10 +18,15 @@ DerivedData/
 xcuserdata/
 *.xcworkspace/xcuserdata/
 *.xcodeproj/xcuserdata/
+.swiftpm/xcode/xcuserdata/
+Packages/*/.swiftpm/xcode/xcuserdata/
+Packages/*/.swiftpm/
 
 # Swift Package Manager build output
 .build/
+**/.build/
 Packages/*/.build/
+Packages/*/build/
 
 # Local editor and tooling noise
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
@@ -29,3 +35,4 @@ Packages/*/.build/
 
 # Logs
 *.log
+

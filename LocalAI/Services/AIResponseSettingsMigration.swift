@@ -5,11 +5,13 @@ enum AIResponseSettingsMigration {
     private static let maxTokensMigrationKey = "didMigrateMaxTokensDefaultTo2048"
     private static let responseCharacterLimitMigrationKey = "didMigrateResponseCharacterLimitDefaultToUnlimited"
     private static let systemPromptMigrationKey = "didMigrateDefaultSystemPromptCompletion"
+    private static let naturalProsePromptMigrationKey = "didMigrateDefaultSystemPromptNaturalProse"
 
     static func migrateIfNeeded(defaults: UserDefaults = .standard) {
         migrateMaxTokensIfNeeded(defaults: defaults)
         migrateResponseCharacterLimitIfNeeded(defaults: defaults)
         migrateSystemPromptIfNeeded(defaults: defaults)
+        migrateNaturalProsePromptIfNeeded(defaults: defaults)
 
         // Keep the legacy marker set for older app versions, but do not use it
         // to block newer one-time migrations.
@@ -44,5 +46,20 @@ enum AIResponseSettingsMigration {
         }
 
         defaults.set(true, forKey: systemPromptMigrationKey)
+    }
+
+    /// Replaces persisted copies of the earlier defaults with the
+    /// natural-prose prompt. Only exact matches of past defaults are
+    /// replaced, so a prompt the user customized is never overwritten.
+    private static func migrateNaturalProsePromptIfNeeded(defaults: UserDefaults) {
+        guard !defaults.bool(forKey: naturalProsePromptMigrationKey) else { return }
+
+        let stored = defaults.string(forKey: "systemPrompt")
+        if stored == AIResponseDefaults.legacyBulletedSystemPrompt
+            || stored == AIResponseDefaults.legacyCompletionSystemPrompt {
+            defaults.set(AIResponseDefaults.defaultSystemPrompt, forKey: "systemPrompt")
+        }
+
+        defaults.set(true, forKey: naturalProsePromptMigrationKey)
     }
 }

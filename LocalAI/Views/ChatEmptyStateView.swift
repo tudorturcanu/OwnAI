@@ -5,11 +5,18 @@ struct ChatEmptyStateView: View {
     let isInputFocused: Bool
     let selectedModelName: String?
     let downloadingModelName: String?
+    /// 0...1 while a model download is running, nil otherwise.
+    var downloadProgress: Double? = nil
+    /// Preformatted progress detail, e.g. "42% · about 3 min left".
+    var downloadDetail: String? = nil
     let isWarmingUp: Bool
     let isAppleIntelligenceAvailable: Bool
     let personalityLabel: (name: String, icon: String)?
     let onDownloadModel: () -> Void
     let onSuggestion: (String) -> Void
+    /// Starts the hands-free voice conversation. nil hides the invitation
+    /// (voice mode disabled, or no model ready to talk to).
+    var onVoiceConversation: (() -> Void)? = nil
 
     @State private var suggestions: [ChatSuggestion] = ChatSuggestions.pool.shuffled().prefix(7).map { $0 }
 
@@ -25,6 +32,7 @@ struct ChatEmptyStateView: View {
             VStack(spacing: isInputFocused ? 12 : 24) {
                 if !isInputFocused {
                     SparkleView()
+                        .accessibilityHidden(true)
                 }
 
                 VStack(spacing: 4) {
@@ -37,18 +45,44 @@ struct ChatEmptyStateView: View {
                             .font(.caption)
                             .foregroundStyle(Color.adaptive(white: 0.4))
                     } else if let downloadingModelName {
-                        HStack(spacing: 8) {
-                            ProgressView()
-                                .controlSize(.small)
+                        VStack(spacing: 10) {
+                            HStack(spacing: 8) {
+                                if downloadProgress == nil {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                }
 
-                            Text(downloadStatusText(for: downloadingModelName))
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(.blue)
+                                Text(downloadStatusText(for: downloadingModelName))
+                                    .font(.caption.weight(.medium))
+                                    .foregroundStyle(.blue)
+                            }
+
+                            if let downloadProgress {
+                                ProgressView(value: downloadProgress)
+                                    .progressViewStyle(.linear)
+                                    .tint(.blue)
+                                    .frame(maxWidth: 220)
+                            }
+
+                            if let downloadDetail {
+                                Text(downloadDetail)
+                                    .font(.caption2.weight(.medium))
+                                    .foregroundStyle(Color.adaptive(white: 0.45))
+                                    .monospacedDigit()
+                                    .contentTransition(.numericText())
+                            }
+
+                            Text(String(localized: "You can type your first message now — it will send as soon as the model is ready."))
+                                .font(.caption2)
+                                .foregroundStyle(Color.adaptive(white: 0.5))
+                                .multilineTextAlignment(.center)
+                                .frame(maxWidth: 260)
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(Color.blue.opacity(0.1))
-                        .clipShape(Capsule())
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 14)
+                        .background(Color.blue.opacity(0.08))
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
+                        .accessibilityElement(children: .combine)
                     } else if !isAppleIntelligenceAvailable {
                         Button(action: onDownloadModel) {
                             HStack {
@@ -67,6 +101,23 @@ struct ChatEmptyStateView: View {
                         Text(String(localized: "Select or download a model in Settings"))
                             .font(.caption)
                             .foregroundStyle(.orange)
+                    }
+
+                    if selectedModelName != nil, let onVoiceConversation {
+                        Button(action: onVoiceConversation) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "waveform")
+                                    .accessibilityHidden(true)
+                                Text(String(localized: "Try a Voice Conversation"))
+                            }
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.blue)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.blue.opacity(0.1))
+                            .clipShape(Capsule())
+                        }
+                        .padding(.top, 6)
                     }
 
                     if let personalityLabel {
@@ -120,8 +171,9 @@ struct ChatEmptyStateView: View {
         .clipShape(Capsule())
         .overlay(
             Capsule()
-                .stroke(Color.white.opacity(0.4), lineWidth: 1)
+                .stroke(Color.adaptiveBorder(opacity: 0.4), lineWidth: 1)
         )
+        .accessibilityElement(children: .combine)
     }
 
     private var statusColor: Color {

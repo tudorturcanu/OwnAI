@@ -27,6 +27,7 @@ final class WatchConnectivitySessionManager: NSObject {
     private weak var llmEngine: LLMEngine?
     private weak var historyManager: ChatHistoryManager?
     private weak var modelManager: ModelManager?
+    private weak var monetizationManager: MonetizationManager?
     private var isSceneActive = true
     private var pendingRequests: [PendingWatchRequest] = []
     private var isProcessingQueue = false
@@ -35,11 +36,13 @@ final class WatchConnectivitySessionManager: NSObject {
     func configure(
         llmEngine: LLMEngine,
         historyManager: ChatHistoryManager,
-        modelManager: ModelManager
+        modelManager: ModelManager,
+        monetizationManager: MonetizationManager
     ) {
         self.llmEngine = llmEngine
         self.historyManager = historyManager
         self.modelManager = modelManager
+        self.monetizationManager = monetizationManager
         activate()
     }
 
@@ -63,12 +66,20 @@ final class WatchConnectivitySessionManager: NSObject {
     private func handlePromptRequest(_ request: WatchPromptRequest) async -> WatchPromptResponse {
         lastRequestDate = request.sentAt
 
-        guard let llmEngine, let historyManager, let modelManager else {
+        guard let llmEngine, let historyManager, let modelManager, let monetizationManager else {
             return errorResponse(for: request, message: "The iPhone assistant is not ready yet.")
         }
 
         guard let model = modelManager.selectedModel else {
             return errorResponse(for: request, message: "Select or download a model on your iPhone first.")
+        }
+
+        guard modelManager.canSelect(model) else {
+            return errorResponse(for: request, message: "This model requires Own AI Pro.", modelName: model.name)
+        }
+
+        guard !monetizationManager.hasReachedFreeDailyMessageLimit else {
+            return errorResponse(for: request, message: "Today's free messages are used up. They reset tomorrow.", modelName: model.name)
         }
 
         switch llmEngine.state {
@@ -78,16 +89,34 @@ final class WatchConnectivitySessionManager: NSObject {
             break
         }
 
+        modelManager.suspendBackgroundDownloadsForChat()
+        let chatLease = await ChatWorkloadCoordinator.shared.beginChat()
+        defer {
+            Task { @MainActor in
+                if await ChatWorkloadCoordinator.shared.endChat(chatLease) {
+                    modelManager.resumeBackgroundDownloadsAfterChat()
+                }
+            }
+        }
+
         if historyManager.currentConversation == nil {
             historyManager.newConversation()
         }
 
         let conversationID = historyManager.currentConversationID
+        // Capture the transcript BEFORE appending the new turn: replies run on
+        // an isolated session, so without this every watch follow-up ("and
+        // tomorrow?", "why?") arrived with no conversation to follow.
+        let contextualPrompt = promptIncludingRecentTranscript(
+            request.prompt,
+            historyManager: historyManager,
+            conversationID: conversationID
+        )
         historyManager.addMessage(ChatMessage(role: .user, content: request.prompt))
 
         do {
             let reply = try await llmEngine.generateIsolatedReply(
-                prompt: request.prompt,
+                prompt: contextualPrompt,
                 systemPrompt: Self.watchSystemPrompt,
                 model: model,
                 overrides: .init(
@@ -102,6 +131,12 @@ final class WatchConnectivitySessionManager: NSObject {
             )
 
             historyManager.addMessage(ChatMessage(role: .assistant, content: normalizedReply))
+            monetizationManager.registerFreeMessageIfNeeded(for: request.prompt)
+            // The watch exchange was appended to the phone's open conversation,
+            // but the engine's persistent session never saw it. Reset so the
+            // next phone message rebuilds context from the visible history
+            // instead of answering from a transcript missing these turns.
+            llmEngine.resetSession()
 
             return WatchPromptResponse(
                 requestID: request.id,
@@ -115,8 +150,65 @@ final class WatchConnectivitySessionManager: NSObject {
             let message = error.localizedDescription
             historyManager.addMessage(ChatMessage(role: .assistant, content: message))
             lastErrorMessage = message
+            // The user turn (and this error bubble) still landed in the open
+            // conversation without the engine session seeing them.
+            llmEngine.resetSession()
             return errorResponse(for: request, message: message, modelName: model.name)
         }
+    }
+
+    // Mirrors ChatView's continuity prompt: the last few completed turns are
+    // inlined so an isolated one-shot reply can still follow the conversation.
+    private func promptIncludingRecentTranscript(
+        _ prompt: String,
+        historyManager: ChatHistoryManager,
+        conversationID: UUID?
+    ) -> String {
+        let priorMessages = historyManager.recentCompletedMessages(
+            in: conversationID,
+            limit: 6
+        )
+
+        let transcript = priorMessages
+            .suffix(6)
+            .compactMap { message -> String? in
+                let role = message.role == .user ? "User" : "Assistant"
+                let content = AssistantOutputSanitizer
+                    .sanitize(message.content)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !content.isEmpty else { return nil }
+                // Watch replies are capped at 80 tokens; long earlier turns
+                // only crowd out the budget, so keep the head of each.
+                return "\(role): \(PromptBudgeter.boundedChatText(content, maxTokens: 125))"
+            }
+            .joined(separator: "\n\n")
+
+        let storedSummaryRaw = historyManager.conversation(id: conversationID)?
+            .rollingSummary?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let storedSummary = PromptBudgeter.boundedChatText(storedSummaryRaw, maxTokens: 180)
+
+        guard !transcript.isEmpty || !storedSummary.isEmpty else { return prompt }
+
+        var sections: [String] = []
+        if !storedSummary.isEmpty {
+            sections.append("""
+            Summary of the earlier conversation, for continuity only. Use it \
+            silently; never recite or recap it:
+            \(storedSummary)
+            """)
+        }
+        if !transcript.isEmpty {
+            sections.append("""
+            Recent conversation context, for continuity only:
+            \(transcript)
+            """)
+        }
+        sections.append("""
+        Current turn:
+        \(prompt)
+        """)
+        return sections.joined(separator: "\n\n")
     }
 
     private func errorResponse(

@@ -359,6 +359,10 @@ final class ModelManager: ObservableObject {
     
     var models: [ModelInfo] = ModelInfo.allModels
     @ObservationIgnored @AppStorage("selectedModelID") private var persistedSelectedModelID: String?
+    /// The last model the user picked by hand. `selectedModelID` tracks whatever
+    /// is currently in use, including models the automatic router chooses, so it
+    /// cannot answer "what did the user actually ask for" once Auto Mode has run.
+    @ObservationIgnored @AppStorage("manualSelectedModelID") private var manualSelectedModelID: String?
     var selectedModelID: String? {
         didSet {
             persistedSelectedModelID = selectedModelID
@@ -369,6 +373,19 @@ final class ModelManager: ObservableObject {
         }
     }
     @ObservationIgnored @AppStorage("autoSelectBestModel") var autoSelectBestModel: Bool = true
+    var autoModelPreference = AutoModelPreference(
+        rawValue: UserDefaults.standard.string(forKey: "autoModelPreference") ?? ""
+    ) ?? .balanced {
+        didSet {
+            UserDefaults.standard.set(autoModelPreference.rawValue, forKey: "autoModelPreference")
+        }
+    }
+    private(set) var autoSelectionRevision = 0
+    private(set) var lastAutoSelectionNotice: AutoModelSelectionNotice?
+    @ObservationIgnored private var autoSelectionDismissTask: Task<Void, Never>?
+    /// How long the auto-selection toast stays on screen before it self-dismisses.
+    /// Shared with the view so its progress indicator stays in sync.
+    static let autoSelectionNoticeDuration: TimeInterval = 3.5
     @ObservationIgnored @AppStorage("downloadNotifications") var downloadNotifications: Bool = true
     private var allowCellularDownloads: Bool {
         UserDefaults.standard.bool(forKey: "downloads.allowCellular")
@@ -376,13 +393,26 @@ final class ModelManager: ObservableObject {
     
     
     private var downloadTasks: [String: Task<Void, Never>] = [:]
+    private var downloadTaskIDs: [String: UUID] = [:]
+    private var downloadSelectionIntent: [String: Bool] = [:]
+    private var chatPausedDownloads: [String: Bool] = [:]
     private var backgroundTaskIDs: [String: UIBackgroundTaskIdentifier] = [:]
     private var downloadFailures: [String: DownloadFailure] = [:]
+    private var downloadsWithRollback: Set<String> = []
+    var onModelReadyForBenchmark: ((ModelInfo) async -> Void)?
+    @ObservationIgnored private weak var monetizationManager: MonetizationManager?
     /// Thread-safe helpers; only accessed from Hub callbacks / download work (off MainActor).
     @ObservationIgnored private let downloadProgressLimiter = DownloadProgressLimiter()
     @ObservationIgnored private let downloadDiagnostics = DownloadDiagnostics()
     private var thinkingPreferencesVersion = 0
-    
+    private(set) var modelHealthRevision = 0
+    /// Bundled models the user deleted. Their weights stay inside the app, so this
+    /// flag is what keeps them out of the catalog until the user adds them back.
+    private var removedBundledModelIDs: Set<String> = Set(
+        UserDefaults.standard.stringArray(forKey: ModelManager.removedBundledModelsKey) ?? []
+    )
+    private static let removedBundledModelsKey = "models.removedBundled"
+
     // MARK: - Computed Properties
     
     var hasAvailableModels: Bool {
@@ -397,7 +427,7 @@ final class ModelManager: ObservableObject {
     
     var selectedModel: ModelInfo? {
         if let id = selectedModelID, let model = models.first(where: { $0.id == id }) {
-            if isModelUsable(model) {
+            if isModelUsable(model), canSelect(model) {
                 return model
             }
         }
@@ -469,27 +499,53 @@ final class ModelManager: ObservableObject {
     }
     
     // MARK: - Public Methods
+
+    /// Installs the shared entitlement source used by every model-selection path.
+    /// The manager still initializes before the app environment is available, so
+    /// selection is revalidated as soon as this dependency is configured.
+    func configure(monetizationManager: MonetizationManager) {
+        self.monetizationManager = monetizationManager
+        ensureSelection()
+    }
+
+    func canSelect(_ model: ModelInfo) -> Bool {
+        guard let monetizationManager else { return true }
+        return !monetizationManager.isPremiumModel(model) || monetizationManager.hasPro
+    }
     
     /// Select a specific model to use
-    func selectModel(_ modelID: String) {
-        if let model = models.first(where: { $0.id == modelID }),
-           compatibilityMessage(for: model) != nil {
+    @discardableResult
+    func selectModel(_ modelID: String) -> Bool {
+        guard let model = models.first(where: { $0.id == modelID }), canSelect(model) else {
             ensureSelection()
-            return
+            return false
+        }
+        guard compatibilityMessage(for: model) == nil else {
+            ensureSelection()
+            return false
         }
         // A deliberate pick overrides automatic selection until re-enabled.
         autoSelectBestModel = false
+        autoSelectionRevision += 1
+        lastAutoSelectionNotice = nil
+        manualSelectedModelID = modelID
         selectedModelID = modelID
+        return true
+    }
+
+    var isAutomaticSelectionEnabled: Bool {
+        _ = autoSelectionRevision
+        return autoSelectBestModel
+    }
+
+    func setAutoModelPreference(_ preference: AutoModelPreference) {
+        autoModelPreference = preference
+        autoSelectionRevision += 1
     }
 
     func isThinkingEnabled(for model: ModelInfo) -> Bool {
-        guard model.supportsThinkingToggle else { return false }
         _ = thinkingPreferencesVersion
-        let defaults = UserDefaults.standard
-        if defaults.object(forKey: model.thinkingPreferenceKey) == nil {
-            return model.defaultThinkingEnabled
-        }
-        return defaults.bool(forKey: model.thinkingPreferenceKey)
+        return ModelInfo.resolvedThinkingEnabled(modelID: model.id)
     }
 
     func setThinkingEnabled(_ enabled: Bool, for model: ModelInfo) {
@@ -841,9 +897,14 @@ final class ModelManager: ObservableObject {
         #if targetEnvironment(simulator)
         applyDownloadFailure(simulatorUnsupportedFailure(), for: modelID)
         #else
-        MLXStorage.removeModelArtifacts(for: modelID)
+        if MLXStorage.prepareRollback(for: modelID) {
+            downloadsWithRollback.insert(modelID)
+        }
+        MLXStorage.removeCurrentArtifactsPreservingRollback(for: modelID)
         models[index].downloadState = .notDownloaded
         downloadFailures.removeValue(forKey: modelID)
+        ModelHealthStore.shared.removeResult(for: modelID)
+        modelHealthRevision += 1
         downloadModel(modelID, selectWhenFinished: selectWhenFinished)
         #endif
     }
@@ -853,6 +914,12 @@ final class ModelManager: ObservableObject {
         guard let index = models.firstIndex(where: { $0.id == modelID }) else { return }
         let model = models[index]
         guard model.engine == .mlx else { return }
+        // A bundled model is never fetched from the network: adding it back just
+        // clears the removal flag.
+        guard !model.isBundled else {
+            restoreBundledModel(modelID, selectWhenFinished: selectWhenFinished)
+            return
+        }
         guard downloadTasks[modelID] == nil else { return }
         guard compatibilityMessage(for: model) == nil else { return }
 
@@ -884,6 +951,7 @@ final class ModelManager: ObservableObject {
         let progressCoalescer = MainActorProgressCoalescer(modelID: modelID, manager: self)
         let notifyDownloads = downloadNotifications
         let modelName = model.name
+        let taskID = UUID()
 
         let task = Task.detached(priority: .utility) { [weak self] in
             guard let self else { return }
@@ -893,11 +961,14 @@ final class ModelManager: ObservableObject {
                 modelName: modelName,
                 downloadNotifications: notifyDownloads,
                 selectWhenFinished: selectWhenFinished,
+                taskID: taskID,
                 progressCoalescer: progressCoalescer
             )
         }
 
         downloadTasks[modelID] = task
+        downloadTaskIDs[modelID] = taskID
+        downloadSelectionIntent[modelID] = selectWhenFinished
         updateIdleTimer()
         beginBackgroundTask(for: modelID)
     }
@@ -906,21 +977,65 @@ final class ModelManager: ObservableObject {
     func cancelDownload(_ modelID: String) {
         downloadTasks[modelID]?.cancel()
         downloadTasks.removeValue(forKey: modelID)
+        downloadTaskIDs.removeValue(forKey: modelID)
+        downloadSelectionIntent.removeValue(forKey: modelID)
+        chatPausedDownloads.removeValue(forKey: modelID)
         downloadFailures.removeValue(forKey: modelID)
         downloadProgressLimiter.reset(modelID: modelID)
         
         if let index = models.firstIndex(where: { $0.id == modelID }) {
-            models[index].downloadState = .notDownloaded
+            if downloadsWithRollback.contains(modelID), MLXStorage.restoreRollback(for: modelID) {
+                downloadsWithRollback.remove(modelID)
+                models[index].downloadState = .downloaded
+            } else {
+                models[index].downloadState = .notDownloaded
+            }
         }
         updateIdleTimer()
         endBackgroundTask(for: modelID)
+    }
+
+    /// Cancels resumable network work while an answer is being produced. Hub
+    /// snapshots retain partial files, so resuming does not discard progress.
+    func suspendBackgroundDownloadsForChat() {
+        let activeIDs = Array(downloadTasks.keys)
+        guard !activeIDs.isEmpty else { return }
+
+        for modelID in activeIDs {
+            chatPausedDownloads[modelID] = downloadSelectionIntent[modelID] ?? false
+            downloadTasks[modelID]?.cancel()
+            downloadTasks.removeValue(forKey: modelID)
+            downloadTaskIDs.removeValue(forKey: modelID)
+            downloadSelectionIntent.removeValue(forKey: modelID)
+            downloadProgressLimiter.reset(modelID: modelID)
+            if let index = models.firstIndex(where: { $0.id == modelID }) {
+                models[index].downloadState = .notDownloaded
+            }
+            endBackgroundTask(for: modelID)
+        }
+        updateIdleTimer()
+    }
+
+    func resumeBackgroundDownloadsAfterChat() {
+        let paused = chatPausedDownloads
+        chatPausedDownloads.removeAll()
+        for (modelID, selectWhenFinished) in paused {
+            downloadModel(modelID, selectWhenFinished: selectWhenFinished)
+        }
     }
     
     /// Delete a downloaded model
     func deleteModel(_ modelID: String) {
         guard let model = models.first(where: { $0.id == modelID }) else { return }
         guard model.engine == .mlx else { return } // Can't delete built-in models
-        
+
+        // The bundled starter's weights ship inside the app, so deleting it only
+        // clears a duplicate on-disk copy (left behind by upgrades). Remembering the
+        // removal is what actually takes it out of the user's model list.
+        if model.isBundled {
+            setBundledModel(modelID, removed: true)
+        }
+
         #if !targetEnvironment(simulator)
         MLXStorage.removeModelArtifacts(for: modelID)
         #endif
@@ -929,6 +1044,8 @@ final class ModelManager: ObservableObject {
             models[index].downloadState = .notDownloaded
         }
         downloadFailures.removeValue(forKey: modelID)
+        ModelHealthStore.shared.removeResult(for: modelID)
+        modelHealthRevision += 1
         
         // Clear selection if it was deleted
         if selectedModelID == modelID {
@@ -937,9 +1054,51 @@ final class ModelManager: ObservableObject {
 
         ensureSelection()
     }
-    
+
+    // MARK: - Bundled Models
+
+    /// Whether the user removed a bundled model from their catalog.
+    func isBundledModelRemoved(_ modelID: String) -> Bool {
+        removedBundledModelIDs.contains(modelID)
+    }
+
+    /// Brings a removed bundled model back. Nothing is downloaded: the weights
+    /// never left the app, so this is instant.
+    func restoreBundledModel(_ modelID: String, selectWhenFinished: Bool = false) {
+        guard let index = models.firstIndex(where: { $0.id == modelID }),
+              models[index].isBundled else { return }
+        setBundledModel(modelID, removed: false)
+
+        #if targetEnvironment(simulator)
+        let failure = simulatorUnsupportedFailure()
+        downloadFailures[modelID] = failure
+        models[index].downloadState = .error(message: failure.message)
+        #else
+        if MLXStorage.hasValidModelArtifacts(for: modelID) {
+            models[index].downloadState = .downloaded
+            downloadFailures.removeValue(forKey: modelID)
+        } else {
+            models[index].downloadState = .notDownloaded
+        }
+        if selectWhenFinished {
+            selectModel(modelID)
+        }
+        #endif
+
+        ensureSelection()
+    }
+
+    private func setBundledModel(_ modelID: String, removed: Bool) {
+        if removed {
+            removedBundledModelIDs.insert(modelID)
+        } else {
+            removedBundledModelIDs.remove(modelID)
+        }
+        UserDefaults.standard.set(Array(removedBundledModelIDs), forKey: ModelManager.removedBundledModelsKey)
+    }
+
     // MARK: - Idle Timer
-    
+
     /// Keeps the screen awake while any download is in progress
     private func updateIdleTimer() {
         let hasActiveDownloads = !downloadTasks.isEmpty
@@ -976,13 +1135,17 @@ final class ModelManager: ObservableObject {
         modelName: String,
         downloadNotifications: Bool,
         selectWhenFinished: Bool,
+        taskID: UUID,
         progressCoalescer: MainActorProgressCoalescer
     ) async {
         defer {
             progressCoalescer.cancel()
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                guard self.downloadTaskIDs[modelID] == taskID else { return }
                 self.downloadTasks.removeValue(forKey: modelID)
+                self.downloadTaskIDs.removeValue(forKey: modelID)
+                self.downloadSelectionIntent.removeValue(forKey: modelID)
                 self.downloadProgressLimiter.reset(modelID: modelID)
                 self.updateIdleTimer()
                 self.endBackgroundTask(for: modelID)
@@ -1014,10 +1177,12 @@ final class ModelManager: ObservableObject {
             }
             await MainActor.run { [weak self] in
                 guard let self else { return }
+                MLXStorage.discardRollback(for: modelID)
                 if let idx = self.models.firstIndex(where: { $0.id == modelID }) {
                     self.models[idx].downloadState = .downloaded
                 }
                 self.downloadFailures.removeValue(forKey: modelID)
+                self.downloadsWithRollback.remove(modelID)
             }
             if downloadNotifications {
                 await MainActor.run {
@@ -1027,16 +1192,27 @@ final class ModelManager: ObservableObject {
             downloadDiagnostics.finish(modelID: modelID, finalProgress: 1.0)
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                if selectWhenFinished || self.selectedModelID == nil {
+                if (selectWhenFinished || self.selectedModelID == nil), self.canSelect(model) {
                     self.selectedModelID = modelID
+                }
+                let automaticBenchmarkEnabled =
+                    UserDefaults.standard.object(forKey: "models.autoBenchmarkAfterDownload") == nil ||
+                    UserDefaults.standard.bool(forKey: "models.autoBenchmarkAfterDownload")
+                if DeviceResourcePolicy.current.shouldRunAutomaticModelBenchmarks,
+                   automaticBenchmarkEnabled {
+                    Task { await self.onModelReadyForBenchmark?(model) }
                 }
             }
         } catch is CancellationError {
             downloadDiagnostics.cancel(modelID: modelID)
-            cleanupIncompleteArtifactsIfNeeded(modelID: modelID)
         } catch let failureError as DownloadFailureError {
             downloadDiagnostics.fail(modelID: modelID, message: failureError.failure.message)
-            cleanupArtifactsIfNeeded(after: failureError.failure, modelID: modelID)
+            let hasRollback = await MainActor.run { [weak self] in
+                self?.downloadsWithRollback.contains(modelID) == true
+            }
+            if !hasRollback {
+                cleanupArtifactsIfNeeded(after: failureError.failure, modelID: modelID)
+            }
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.applyDownloadFailure(failureError.failure, for: modelID)
@@ -1049,7 +1225,12 @@ final class ModelManager: ObservableObject {
         } catch {
             let failure = classifyDownloadError(error, for: model)
             downloadDiagnostics.fail(modelID: modelID, message: failure.message)
-            cleanupArtifactsIfNeeded(after: failure, modelID: modelID)
+            let hasRollback = await MainActor.run { [weak self] in
+                self?.downloadsWithRollback.contains(modelID) == true
+            }
+            if !hasRollback {
+                cleanupArtifactsIfNeeded(after: failure, modelID: modelID)
+            }
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.applyDownloadFailure(failure, for: modelID)
@@ -1064,6 +1245,14 @@ final class ModelManager: ObservableObject {
     }
 
     private func applyDownloadFailure(_ failure: DownloadFailure, for modelID: String) {
+        if downloadsWithRollback.contains(modelID), MLXStorage.restoreRollback(for: modelID) {
+            downloadsWithRollback.remove(modelID)
+            downloadFailures.removeValue(forKey: modelID)
+            if let index = models.firstIndex(where: { $0.id == modelID }) {
+                models[index].downloadState = .downloaded
+            }
+            return
+        }
         downloadFailures[modelID] = failure
         if let index = models.firstIndex(where: { $0.id == modelID }) {
             models[index].downloadState = .error(message: failure.message)
@@ -1170,6 +1359,8 @@ final class ModelManager: ObservableObject {
     nonisolated private func isLikelyCorruptionError(message: String) -> Bool {
         let lower = message.lowercased()
         return lower.contains("checksum")
+            || lower.contains("integrity")
+            || lower.contains("size mismatch")
             || lower.contains("corrupt")
             || lower.contains("invalid")
             || lower.contains("unexpected eof")
@@ -1263,7 +1454,7 @@ final class ModelManager: ObservableObject {
                     try Task.checkCancellation()
                     let bytesBeforeFile = completedBytes
                     let effectiveFileBytes = max(1.0, file.size)
-                    _ = try await hub.snapshot(from: modelID, matching: [file.filename]) { progress, speed in
+                    let snapshotURL = try await hub.snapshot(from: modelID, matching: [file.filename]) { progress, speed in
                         let fileFraction = max(0.0, min(progress.fractionCompleted, 1.0))
                         let aggregateProgress = min(
                             0.99,
@@ -1289,6 +1480,17 @@ final class ModelManager: ObservableObject {
                             speed: speed,
                             enqueuedAt: callbackTime
                         )
+                    }
+                    if file.size > 0 {
+                        let downloadedURL = snapshotURL.appendingPathComponent(file.filename)
+                        let actualSize = (try? downloadedURL.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+                        guard actualSize == Int(file.size) else {
+                            throw NSError(
+                                domain: "OwnAI.DownloadIntegrity",
+                                code: 1,
+                                userInfo: [NSLocalizedDescriptionKey: "Integrity check failed: file size mismatch for \(file.filename)."]
+                            )
+                        }
                     }
                     completedBytes += effectiveFileBytes
                 }
@@ -1372,6 +1574,13 @@ final class ModelManager: ObservableObject {
         // Check MLX model downloads on real device
         for (index, model) in models.enumerated() {
             if model.engine == .mlx {
+                // A removed bundled model still validates against the app bundle, so
+                // honour the user's removal instead of reviving it here.
+                if model.isBundled, isBundledModelRemoved(model.id) {
+                    models[index].downloadState = .notDownloaded
+                    downloadFailures.removeValue(forKey: model.id)
+                    continue
+                }
                 let migrated = migrateLegacyModelIfNeeded(modelID: model.id)
                 if migrated || MLXStorage.hasValidModelArtifacts(for: model.id) {
                     let validation = MLXStorage.validationReport(for: model.id)
@@ -1468,29 +1677,33 @@ final class ModelManager: ObservableObject {
            let selectedIndex = models.firstIndex(where: { $0.id == selectedID }) {
             let selected = models[selectedIndex]
             ensureModelPreferences(for: selected)
-            if isModelUsable(selected) { return }
-            #if !targetEnvironment(simulator)
-            // During startup, the model state can still be stale (.notDownloaded) until
-            // async availability checks complete. Preserve the persisted selection when
-            // valid model artifacts already exist on disk.
-            if selected.engine == .mlx,
-               compatibilityMessage(for: selected) == nil,
-               MLXStorage.hasValidModelArtifacts(for: selected.id) {
-                models[selectedIndex].downloadState = .downloaded
-                downloadFailures.removeValue(forKey: selected.id)
-                return
+            if canSelect(selected) {
+                if isModelUsable(selected) { return }
+                #if !targetEnvironment(simulator)
+                // During startup, the model state can still be stale (.notDownloaded) until
+                // async availability checks complete. Preserve the persisted selection when
+                // valid model artifacts already exist on disk.
+                if selected.engine == .mlx,
+                   !isBundledModelRemoved(selected.id),
+                   compatibilityMessage(for: selected) == nil,
+                   MLXStorage.hasValidModelArtifacts(for: selected.id) {
+                    models[selectedIndex].downloadState = .downloaded
+                    downloadFailures.removeValue(forKey: selected.id)
+                    return
+                }
+                #endif
             }
-            #endif
         }
         
         if autoSelectBestModel {
             selectedModelID = bestAvailableModel()?.id
         } else {
-            selectedModelID = availableModels.first?.id
+            selectedModelID = availableModels.first(where: canSelect)?.id
         }
     }
 
     func isModelUsable(_ model: ModelInfo) -> Bool {
+        guard ModelReleaseGate.isReleased(model) else { return false }
         if model.engine == .appleFoundation {
             return isAppleIntelligenceAvailable
         }
@@ -1501,7 +1714,7 @@ final class ModelManager: ObservableObject {
     }
 
     func bestAvailableModel() -> ModelInfo? {
-        if let apple = models.first(where: { $0.engine == .appleFoundation && isModelUsable($0) }) {
+        if let apple = models.first(where: { $0.engine == .appleFoundation && isModelUsable($0) && canSelect($0) }) {
             return apple
         }
         // Prefer models that actually fit this device before rewarding size:
@@ -1514,7 +1727,7 @@ final class ModelManager: ObservableObject {
             }
         }
         return models
-            .filter { $0.engine == .mlx && isModelUsable($0) }
+            .filter { $0.engine == .mlx && isModelUsable($0) && canSelect($0) }
             .sorted {
                 if fitRank($0) != fitRank($1) { return fitRank($0) < fitRank($1) }
                 return $0.sizeGB > $1.sizeGB
@@ -1522,13 +1735,303 @@ final class ModelManager: ObservableObject {
             .first
     }
 
+    func recoveryModel(excluding failedModelID: String, requiresVision: Bool) -> ModelInfo? {
+        models
+            .filter { $0.id != failedModelID }
+            .filter { isModelUsable($0) && canSelect($0) }
+            .filter { !requiresVision || $0.supportsVision }
+            .filter { UserDefaults.standard.bool(forKey: "modelConsent.\($0.id)") }
+            .filter { quickTestResult(for: $0.id)?.success != false }
+            .sorted { lhs, rhs in
+                let lhsWarm = lhs.id == LLMEngine.shared?.readyModelID
+                let rhsWarm = rhs.id == LLMEngine.shared?.readyModelID
+                if lhsWarm != rhsWarm { return lhsWarm }
+                if lhs.currentDeviceFit != rhs.currentDeviceFit {
+                    return lhs.currentDeviceFit == .recommended
+                }
+                return lhs.sizeGB < rhs.sizeGB
+            }
+            .first
+    }
+
+    func slowRecoveryModel(for model: ModelInfo, requiresVision: Bool) async -> ModelInfo? {
+        let summary = await PerformanceMetricsStore.shared.dashboardData().modelSummaries
+            .first(where: { $0.modelID == model.id })
+        guard let summary, summary.generationCount >= 3 else { return nil }
+        let isPersistentlySlow = (summary.p95FirstTokenMilliseconds ?? 0) > 12_000 ||
+            (summary.medianEffectiveTokensPerSecond ?? .greatestFiniteMagnitude) < 1.5
+        guard isPersistentlySlow else { return nil }
+        return recoveryModel(excluding: model.id, requiresVision: requiresVision)
+    }
+
+    func activateRecoveryModel(_ model: ModelInfo) {
+        selectedModelID = model.id
+    }
+
+    func markModelUsed(_ modelID: String, at date: Date = Date()) {
+        UserDefaults.standard.set(date, forKey: "model.lastUsed.\(modelID)")
+    }
+
+    func lastUsedDate(for modelID: String) -> Date? {
+        UserDefaults.standard.object(forKey: "model.lastUsed.\(modelID)") as? Date
+    }
+
+    func storedBytes(for model: ModelInfo) -> UInt64 {
+        guard model.engine == .mlx else { return 0 }
+        return MLXStorage.storedBytes(for: model.id)
+    }
+
+    func partialDownloadBytes(for model: ModelInfo) -> UInt64 {
+        guard model.engine == .mlx else { return 0 }
+        return MLXStorage.partialDownloadBytes(for: model.id)
+    }
+
     /// Turns automatic selection on and immediately applies the best pick.
     /// Distinct from `selectModel`, which records a deliberate manual choice.
     func enableAutomaticSelection() {
         autoSelectBestModel = true
+        autoSelectionRevision += 1
         if let best = bestAvailableModel() {
             selectedModelID = best.id
         }
+    }
+
+    func disableAutomaticSelection() {
+        autoSelectBestModel = false
+        autoSelectionRevision += 1
+        lastAutoSelectionNotice = nil
+        // Auto Mode has been steering `selectedModelID` per request. Hand the
+        // user back the model they last chose rather than whichever one the
+        // router happened to land on last.
+        if let manualSelectedModelID,
+           let model = models.first(where: { $0.id == manualSelectedModelID }),
+           isModelUsable(model),
+           canSelect(model) {
+            selectedModelID = manualSelectedModelID
+        }
+    }
+
+    /// Resolves the best installed model for one request. The classifier and
+    /// scoring are deterministic and local; measured performance never leaves
+    /// the device.
+    func modelForRequest(
+        prompt: String,
+        hasImage: Bool,
+        hasDocuments: Bool,
+        warmModelID: String?,
+        lowPowerMode: Bool
+    ) async -> ModelInfo? {
+        guard autoSelectBestModel else { return selectedModel }
+
+        let task = AutoModelTaskClassifier.classify(
+            prompt: prompt,
+            hasImage: hasImage,
+            hasDocuments: hasDocuments
+        )
+        let summaries = await PerformanceMetricsStore.shared.dashboardData().modelSummaries
+        let performanceByModel = Dictionary(uniqueKeysWithValues: summaries.map { ($0.modelID, $0) })
+        let thermallyConstrained: Bool
+        switch ProcessInfo.processInfo.thermalState {
+        case .serious, .critical:
+            thermallyConstrained = true
+        default:
+            thermallyConstrained = false
+        }
+
+        var candidates = models.filter {
+            isModelUsable($0) &&
+            canSelect($0) &&
+            $0.currentDeviceFit != .unsupported &&
+            UserDefaults.standard.bool(forKey: "modelConsent.\($0.id)") &&
+            quickTestResult(for: $0.id)?.success != false
+        }
+        if task == .images {
+            candidates = candidates.filter(\.supportsVision)
+        }
+        guard !candidates.isEmpty else { return selectedModel }
+
+        let selected = candidates.max { lhs, rhs in
+            autoSelectionScore(
+                for: lhs,
+                task: task,
+                performance: performanceByModel[lhs.id],
+                warmModelID: warmModelID,
+                constrained: lowPowerMode || thermallyConstrained
+            ) < autoSelectionScore(
+                for: rhs,
+                task: task,
+                performance: performanceByModel[rhs.id],
+                warmModelID: warmModelID,
+                constrained: lowPowerMode || thermallyConstrained
+            )
+        }
+        guard let selected else { return selectedModel }
+
+        // Routing runs on every send; only publish when the pick actually
+        // changes, so an unchanged decision does not rewrite user defaults and
+        // re-notify observers mid-conversation.
+        let previousSelectionID = selectedModelID
+        if selectedModelID != selected.id {
+            selectedModelID = selected.id
+        }
+        // Surface the toast only on an actual switch — an unchanged pick should
+        // not pop a notice on every message.
+        if previousSelectionID != selected.id {
+            let message = autoSelectionMessage(
+                for: selected,
+                task: task,
+                performance: performanceByModel[selected.id],
+                isWarm: warmModelID == selected.id,
+                constrained: lowPowerMode || thermallyConstrained
+            )
+            publishAutoSelectionNotice(AutoModelSelectionNotice(modelID: selected.id, message: message))
+        }
+        PerformanceLogger.event(
+            "Auto model selection",
+            label: "Auto model selection",
+            metadata: "model=\(selected.id) task=\(task.rawValue) preference=\(autoModelPreference.rawValue) warm=\(warmModelID == selected.id) constrained=\(lowPowerMode || thermallyConstrained)"
+        )
+        return selected
+    }
+
+    func dismissAutoSelectionNotice(_ id: UUID) {
+        guard lastAutoSelectionNotice?.id == id else { return }
+        autoSelectionDismissTask?.cancel()
+        autoSelectionDismissTask = nil
+        lastAutoSelectionNotice = nil
+    }
+
+    /// Publishes an auto-selection notice and schedules its own dismissal, so the
+    /// toast disappears on a timer regardless of the view's lifecycle. Replacing a
+    /// notice cancels any pending dismissal and restarts the countdown.
+    private func publishAutoSelectionNotice(_ notice: AutoModelSelectionNotice) {
+        autoSelectionDismissTask?.cancel()
+        lastAutoSelectionNotice = notice
+        autoSelectionDismissTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.autoSelectionNoticeDuration))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self, self.lastAutoSelectionNotice?.id == notice.id else { return }
+                withAnimation(.easeOut(duration: 0.2)) {
+                    self.lastAutoSelectionNotice = nil
+                }
+                self.autoSelectionDismissTask = nil
+            }
+        }
+    }
+
+    private func autoSelectionScore(
+        for model: ModelInfo,
+        task: AutoModelTask,
+        performance: ModelPerformanceSummary?,
+        warmModelID: String?,
+        constrained: Bool
+    ) -> Double {
+        var score = 0.0
+
+        switch model.currentDeviceFit {
+        case .recommended: score += 16
+        case .supported: score += 2
+        case .unsupported: score -= 100
+        }
+
+        switch task {
+        case .images:
+            score += model.supportsVision ? 55 : -100
+            if model.badges.contains(.vision) { score += 12 }
+        case .documents:
+            if model.badges.contains(.higherQuality) { score += 22 }
+            if model.badges.contains(.bestForWriting) { score += 18 }
+            if model.badges.contains(.reasoning) { score += 10 }
+        case .coding:
+            if model.badges.contains(.bestForCoding) { score += 48 }
+            if model.badges.contains(.reasoning) { score += 14 }
+        case .reasoning:
+            if model.badges.contains(.reasoning) { score += 42 }
+            if model.badges.contains(.higherQuality) { score += 18 }
+        case .chat:
+            if model.badges.contains(.everydayChat) { score += 24 }
+            if model.badges.contains(.chat) { score += 20 }
+            if model.badges.contains(.recommended) { score += 16 }
+        }
+
+        switch autoModelPreference {
+        case .faster:
+            if model.badges.contains(.fastest) { score += 32 }
+            if model.badges.contains(.smallDownload) { score += 12 }
+            score -= model.sizeGB * 7
+        case .balanced:
+            if model.badges.contains(.recommended) { score += 14 }
+            if model.badges.contains(.higherQuality) { score += 12 }
+            if model.badges.contains(.fastest) { score += 8 }
+            score -= model.sizeGB * 2
+        case .bestQuality:
+            if model.badges.contains(.higherQuality) { score += 30 }
+            if model.badges.contains(.reasoning) { score += 12 }
+            score += min(model.sizeGB, 4.5) * 3
+        }
+
+        if let latency = performance?.medianFirstTokenMilliseconds, latency > 0 {
+            let latencyPoints = min(28, 28_000 / max(500, latency))
+            score += latencyPoints * (autoModelPreference == .faster ? 1.35 : 0.75)
+        }
+        if let tokensPerSecond = performance?.medianEffectiveTokensPerSecond {
+            let throughputPoints = min(25, tokensPerSecond * 1.5)
+            score += throughputPoints * (autoModelPreference == .bestQuality ? 0.35 : 1.0)
+        }
+        if warmModelID == model.id {
+            score += autoModelPreference == .faster ? 30 : 18
+        }
+        if constrained {
+            score -= model.sizeGB * 14
+            if model.badges.contains(.smallDownload) { score += 12 }
+        }
+        if model.engine == .mlx {
+            let policy = DeviceResourcePolicy.current
+            if let peak = applicableMeasuredPeak(for: model, policy: policy) {
+                let utilization = Double(peak) / Double(max(policy.safePeakResidentMemoryBytes, 1))
+                let headroomPoints = max(-40, min(20, (1 - utilization) * 30))
+                score += constrained ? headroomPoints * 1.6 : headroomPoints
+            } else {
+                // Known-safe measurements beat an unknown runtime footprint
+                // when otherwise equivalent.
+                score -= constrained ? 8 : 2
+            }
+        }
+
+        return score
+    }
+
+    private func autoSelectionMessage(
+        for model: ModelInfo,
+        task: AutoModelTask,
+        performance: ModelPerformanceSummary?,
+        isWarm: Bool,
+        constrained: Bool
+    ) -> String {
+        if constrained {
+            return String(format: String(
+                localized: "Switched to %@ to keep things smooth while your device is busy.",
+                defaultValue: "Switched to %@ to keep things smooth while your device is busy."
+            ), model.name)
+        }
+        if isWarm {
+            return String(format: String(
+                localized: "Switched to %@ — already loaded and a good fit for %@.",
+                defaultValue: "Switched to %@ — already loaded and a good fit for %@."
+            ), model.name, task.title)
+        }
+        if autoModelPreference == .faster,
+           performance?.medianFirstTokenMilliseconds != nil {
+            return String(format: String(
+                localized: "Switched to %@ — fastest measured fit for this request.",
+                defaultValue: "Switched to %@ — fastest measured fit for this request."
+            ), model.name)
+        }
+        return String(format: String(
+            localized: "Switched to %@ — the best fit for %@.",
+            defaultValue: "Switched to %@ — the best fit for %@."
+        ), model.name, task.title)
     }
 
     func bestDownloadedFreeModel() -> ModelInfo? {
@@ -1590,9 +2093,11 @@ final class ModelManager: ObservableObject {
 
     func saveQuickTestResult(_ result: ModelQuickTestResult) {
         ModelHealthStore.shared.saveResult(result)
+        modelHealthRevision += 1
     }
 
     func shouldShowModelInCatalog(_ model: ModelInfo) -> Bool {
+        guard ModelReleaseGate.isReleased(model) else { return false }
         if model.engine == .appleFoundation {
             return isAppleIntelligenceDeviceSupported
         }
@@ -1609,14 +2114,42 @@ final class ModelManager: ObservableObject {
 
     func compatibilityMessage(for model: ModelInfo) -> String? {
         guard model.engine == .mlx else { return nil }
+        if !DeviceResourcePolicy.supportsMLXCompute {
+            return "This device's chip can't run downloadable models. They need an A14 chip or newer — iPhone 12, iPhone SE (3rd generation), or later."
+        }
         if model.requiresUnsupportedMLXQuantization {
             return "This model uses 1-bit MLX quantization, which is not supported by the current MLX runtime."
+        }
+        if model.exceedsDeviceMemoryBudget {
+            return "This model needs more memory than this device has. Choose a smaller model."
+        }
+        let policy = DeviceResourcePolicy.current
+        if let peak = applicableMeasuredPeak(for: model, policy: policy),
+           !policy.allowsMeasuredPeakResidentMemory(peak) {
+            return "A measured run of this model left too little memory headroom on this device. Choose a smaller model."
         }
         let idiom = UIDevice.current.userInterfaceIdiom
         if idiom == .phone && model.requiresLargeDeviceOnPhone {
             return "Requires an iPad Pro or Mac. This model exceeds the practical memory budget for iPhone."
         }
         return nil
+    }
+
+    private func applicableMeasuredPeak(
+        for model: ModelInfo,
+        policy: DeviceResourcePolicy
+    ) -> UInt64? {
+        var peaks: [UInt64] = []
+        if let runtime = ModelHealthStore.shared.runtimeMemoryMeasurement(for: model.id),
+           runtime.applies(to: policy) {
+            peaks.append(runtime.peakResidentMemoryBytes)
+        }
+        if let quickTest = quickTestResult(for: model.id),
+           quickTest.applies(to: policy),
+           let peak = quickTest.peakResidentMemoryBytes {
+            peaks.append(peak)
+        }
+        return peaks.max()
     }
 
     private func recommendation(

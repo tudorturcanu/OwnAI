@@ -13,20 +13,48 @@ struct ContentView: View {
     @Environment(ModelManager.self) private var modelManager
     @Environment(SpeechManager.self) private var speechManager
     @Environment(MonetizationManager.self) private var monetizationManager
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showHistory = false
     @State private var showSettings = false
     @AppStorage("hasShownOnboarding") private var hasShownOnboarding = false
     @State private var showOnboarding = false
+    @State private var upgradeFeature: PremiumFeature?
     /// Populated by the Siri App Intent; ChatView observes this to auto-send.
     @State private var siriPendingQuery: String?
     @State private var showCellularRestrictionAlert = false
 
+    /// True on iPad-width layouts, where chat history lives in a persistent
+    /// sidebar instead of a sheet. Restricted to iPad: large iPhones also
+    /// report a regular width in landscape, and swapping the view structure
+    /// on rotation would throw away in-progress chat state.
+    private var usesSplitLayout: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad && horizontalSizeClass == .regular
+    }
+
     var body: some View {
-        NavigationStack {
-            ChatView(siriPendingQuery: $siriPendingQuery)
-                .navigationTitle("")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
+        Group {
+            if usesSplitLayout {
+                NavigationSplitView {
+                    ChatHistoryView(isEmbedded: true)
+                        .navigationSplitViewColumnWidth(min: 300, ideal: 340, max: 420)
+                } detail: {
+                    NavigationStack {
+                        chatContent
+                    }
+                }
+            } else {
+                NavigationStack {
+                    chatContent
+                }
+            }
+        }
+    }
+
+    private var chatContent: some View {
+        ChatView(siriPendingQuery: $siriPendingQuery)
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
                     // Left: History & Settings Grouped
                     if #available(iOS 26.0, *) {
                         ToolbarItemGroup(placement: .topBarLeading) {
@@ -42,12 +70,52 @@ struct ContentView: View {
                     // Center: Model Selection & Export
                     ToolbarItem(placement: .principal) {
                         Menu {
+                            Button {
+                                speechManager.stopSpeaking()
+                                modelManager.enableAutomaticSelection()
+                            } label: {
+                                if modelManager.isAutomaticSelectionEnabled {
+                                    Label(String(localized: "Auto Mode"), systemImage: "checkmark")
+                                } else {
+                                    Label(String(localized: "Auto Mode"), systemImage: "wand.and.stars")
+                                }
+                            }
+
+                            Menu {
+                                ForEach(AutoModelPreference.allCases) { preference in
+                                    Button {
+                                        modelManager.setAutoModelPreference(preference)
+                                        modelManager.enableAutomaticSelection()
+                                    } label: {
+                                        if modelManager.autoModelPreference == preference {
+                                            Label(preference.title, systemImage: "checkmark")
+                                        } else {
+                                            Label(preference.title, systemImage: preference.symbolName)
+                                        }
+                                    }
+                                }
+                            } label: {
+                                Label(
+                                    String(format: String(
+                                        localized: "Preference: %@",
+                                        defaultValue: "Preference: %@"
+                                    ), modelManager.autoModelPreference.title),
+                                    systemImage: "slider.horizontal.3"
+                                )
+                            }
+
+                            Divider()
+
                             ForEach(downloadedModels) { model in
                                 Button {
                                     speechManager.stopSpeaking()
-                                    modelManager.selectModel(model.id)
+                                    if monetizationManager.isPremiumModel(model) && !monetizationManager.hasPro {
+                                        upgradeFeature = .allModels
+                                    } else {
+                                        modelManager.selectModel(model.id)
+                                    }
                                 } label: {
-                                    if modelManager.selectedModelID == model.id {
+                                    if !modelManager.isAutomaticSelectionEnabled && modelManager.selectedModel?.id == model.id {
                                         Label(model.name, systemImage: "checkmark")
                                     } else {
                                         Text(model.name)
@@ -64,16 +132,29 @@ struct ContentView: View {
                                 Label(String(localized: "Manage Models"), systemImage: "gearshape")
                             }
                         } label: {
-                            HStack(spacing: 4) {
-                                Text(modelManager.selectedModel?.name ?? String(localized: "Own AI"))
-                                    .font(.subheadline.weight(.semibold))
-                                    .lineLimit(1)
+                            HStack(spacing: 5) {
+                                if modelManager.isAutomaticSelectionEnabled {
+                                    Image(systemName: "wand.and.stars")
+                                        .font(.caption.weight(.semibold))
+                                }
+                                VStack(spacing: 0) {
+                                    Text(modelManager.isAutomaticSelectionEnabled ? String(localized: "Auto") : (modelManager.selectedModel?.name ?? String(localized: "Own AI")))
+                                        .font(.subheadline.weight(.semibold))
+                                        .lineLimit(1)
+                                    if modelManager.isAutomaticSelectionEnabled, let model = modelManager.selectedModel {
+                                        Text(model.name)
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                            .lineLimit(1)
+                                    }
+                                }
                                 Image(systemName: "chevron.down")
                                     .font(.caption2.weight(.bold))
                             }
                             .foregroundStyle(Color.adaptive(white: 0.2))
                         }
-                        .accessibilityLabel(String(localized: "Select Model"))
+                        .accessibilityLabel(modelSelectorAccessibilityLabel)
+                        .accessibilityHint(String(localized: "Opens automatic and manual model choices."))
                     }
 
                     // Right: Export + New Chat
@@ -88,7 +169,6 @@ struct ContentView: View {
                         }
                     }
                 }
-        }
         .sheet(isPresented: $showHistory) {
             ChatHistoryView()
                 .environment(historyManager)
@@ -111,6 +191,10 @@ struct ContentView: View {
                 .environment(monetizationManager)
                 .environmentObject(modelManager)
                 .interactiveDismissDisabled()
+        }
+        .sheet(item: $upgradeFeature) { feature in
+            UpgradeView(feature: feature)
+                .environment(monetizationManager)
         }
         .onAppear {
             if !hasShownOnboarding {
@@ -141,10 +225,38 @@ struct ContentView: View {
         } message: {
             Text(String(localized: "Connect to Wi-Fi, or enable Cellular Downloads in Settings."))
         }
+        .alert(
+            String(localized: "Chat History Notice"),
+            isPresented: Binding(
+                get: { historyManager.persistenceNotice != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        historyManager.dismissPersistenceNotice()
+                    }
+                }
+            )
+        ) {
+            Button(String(localized: "OK"), role: .cancel) {
+                historyManager.dismissPersistenceNotice()
+            }
+        } message: {
+            Text(historyManager.persistenceNotice ?? "")
+        }
     }
 
     private var downloadedModels: [ModelInfo] {
         modelManager.models.filter { $0.downloadState.isDownloaded }
+    }
+
+    private var modelSelectorAccessibilityLabel: String {
+        let modelName = modelManager.selectedModel?.name ?? String(localized: "No model")
+        if modelManager.isAutomaticSelectionEnabled {
+            return String(format: String(
+                localized: "Auto Mode, %@ preference, currently %@",
+                defaultValue: "Auto Mode, %@ preference, currently %@"
+            ), modelManager.autoModelPreference.title, modelName)
+        }
+        return String(format: String(localized: "Selected model %@", defaultValue: "Selected model %@"), modelName)
     }
 
     private var leadingToolbarButtons: some View {
@@ -161,23 +273,28 @@ struct ContentView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .keyboardShortcut(",", modifiers: .command)
 
-            Divider()
-                .frame(height: 16)
-                .padding(.horizontal, 4)
+            // In the split layout the sidebar already shows history.
+            if !usesSplitLayout {
+                Divider()
+                    .frame(height: 16)
+                    .padding(.horizontal, 4)
 
-            Button {
-                speechManager.stopSpeaking()
-                showHistory = true
-            } label: {
-                Image(systemName: "bubble.left")
-                    .accessibilityLabel(String(localized: "Chat History"))
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(Color.adaptive(white: 0.3))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+                Button {
+                    speechManager.stopSpeaking()
+                    showHistory = true
+                } label: {
+                    Image(systemName: "bubble.left")
+                        .accessibilityLabel(String(localized: "Chat History"))
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(Color.adaptive(white: 0.3))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .keyboardShortcut("h", modifiers: [.command, .shift])
             }
-            .buttonStyle(.plain)
         }
         .fixedSize()
         .background(Color.adaptive(white: 0.95))
@@ -203,6 +320,7 @@ struct ContentView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .keyboardShortcut("n", modifiers: .command)
         }
         .fixedSize()
     }

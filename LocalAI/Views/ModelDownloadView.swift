@@ -14,7 +14,6 @@ struct ModelDownloadView: View {
     @Environment(LLMEngine.self) private var llmEngine
     @Environment(MonetizationManager.self) private var monetizationManager
     @State private var isShowingAllModels = false
-    @AppStorage("autoSelectBestModel") private var autoSelectBestModel = true
 
     private var appleModels: [ModelInfo] {
         modelManager.models.filter { modelManager.shouldShowModelInCatalog($0) && $0.engine == .appleFoundation }
@@ -82,18 +81,26 @@ struct ModelDownloadView: View {
 
             Spacer(minLength: 8)
 
-            Toggle(String(localized: "Choose for me"), isOn: $autoSelectBestModel)
+            Toggle(
+                String(localized: "Choose for me"),
+                isOn: Binding(
+                    get: { modelManager.isAutomaticSelectionEnabled },
+                    set: { enabled in
+                        if enabled {
+                            modelManager.enableAutomaticSelection()
+                        } else {
+                            modelManager.disableAutomaticSelection()
+                        }
+                    }
+                )
+            )
                 .labelsHidden()
         }
         .padding(16)
         .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
-        .onChange(of: autoSelectBestModel) {
-            if autoSelectBestModel {
-                modelManager.enableAutomaticSelection()
-            }
-        }
+        .accessibilityElement(children: .contain)
     }
     
     var body: some View {
@@ -102,6 +109,22 @@ struct ModelDownloadView: View {
                 simpleHeader
 
                 autoPickCard
+
+                if modelManager.isAutomaticSelectionEnabled {
+                    Picker(
+                        String(localized: "Auto Mode Preference"),
+                        selection: Binding(
+                            get: { modelManager.autoModelPreference },
+                            set: { modelManager.setAutoModelPreference($0) }
+                        )
+                    ) {
+                        ForEach(AutoModelPreference.allCases) { preference in
+                            Text(preference.title).tag(preference)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityHint(String(localized: "Balances response speed and answer quality."))
+                }
 
                 if let selectedModel = modelManager.selectedModel {
                     CurrentModelSummaryCard(model: selectedModel)
@@ -373,7 +396,7 @@ struct DownloadedModelRow: View {
             }
             Button(String(localized: "Cancel"), role: .cancel) {}
         } message: {
-            Text(String(localized: "This will remove the downloaded model from your device. You can download it again anytime."))
+            Text(ModelDeletionCopy.message(for: model))
         }
         .sheet(isPresented: $showConsentSheet) {
             ModelConsentSheet(model: model) {
@@ -628,13 +651,26 @@ struct SimpleModelChoiceCard: View {
             UpgradeView(feature: feature)
                 .environment(monetizationManager)
         }
-        .alert(String(localized: "Heavy model for this device"), isPresented: $showHeavyDownloadConfirm) {
-            Button(String(localized: "Download Anyway")) {
-                startDownload()
+        .alert(
+            DeviceResourcePolicy.supportsMLXCompute
+                ? String(localized: "Heavy model for this device")
+                : String(localized: "Model not supported on this device"),
+            isPresented: $showHeavyDownloadConfirm
+        ) {
+            // "Download Anyway" only makes sense when the model could run at
+            // all; on pre-A14 GPUs MLX models can never load.
+            if DeviceResourcePolicy.supportsMLXCompute {
+                Button(String(localized: "Download Anyway")) {
+                    startDownload()
+                }
             }
             Button(String(localized: "Cancel"), role: .cancel) {}
         } message: {
-            Text(String(localized: "This model may run very slowly or run out of memory here. A smaller model will usually give a better experience."))
+            Text(
+                DeviceResourcePolicy.supportsMLXCompute
+                    ? String(localized: "This model may run very slowly or run out of memory here. A smaller model will usually give a better experience.")
+                    : String(localized: "Downloadable models need an A14 chip or newer — iPhone 12, iPhone SE (3rd generation), or later.")
+            )
         }
     }
 
@@ -904,6 +940,8 @@ struct FamilyLogoMark: View {
         switch family {
         case .llama:
             return LinearGradient(colors: [.blue.opacity(0.10), .cyan.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .muse:
+            return LinearGradient(colors: [.blue.opacity(0.12), .purple.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .gemma:
             return LinearGradient(colors: [.purple.opacity(0.11), .blue.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .qwen:
@@ -920,6 +958,10 @@ struct FamilyLogoMark: View {
             return LinearGradient(colors: [.teal.opacity(0.10), .green.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .holo:
             return LinearGradient(colors: [.black.opacity(0.06), .gray.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .nemotron:
+            return LinearGradient(colors: [.green.opacity(0.14), .mint.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .miniCPM:
+            return LinearGradient(colors: [.cyan.opacity(0.12), .blue.opacity(0.07)], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .phi:
             return LinearGradient(colors: [.blue.opacity(0.08), .green.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .smol:
@@ -968,6 +1010,7 @@ struct ModelCard: View {
     @Environment(\.openURL) private var openURL
     @State private var isHovered = false
     @State private var testResult: ModelQuickTestResult?
+    @State private var isRunningBenchmark = false
     @State private var isThinkingEnabled = false
     @State private var showConsentSheet = false
     @State private var pendingAction: (() -> Void)?
@@ -1093,6 +1136,9 @@ struct ModelCard: View {
         .onChange(of: modelManager.selectedModelID) { _, _ in
             syncThinkingPreference()
         }
+        .onChange(of: modelManager.modelHealthRevision) { _, _ in
+            testResult = modelManager.quickTestResult(for: model.id)
+        }
         .sheet(isPresented: $showConsentSheet) {
             ModelConsentSheet(model: model) {
                 UserDefaults.standard.set(true, forKey: consentKey)
@@ -1175,6 +1221,18 @@ struct ModelCard: View {
                         isDownloaded: model.downloadState.isDownloaded
                     )
                 }
+                let partialBytes = modelManager.partialDownloadBytes(for: model)
+                if partialBytes > 0 {
+                    Label(
+                        String(format: String(
+                            localized: "%@ saved — download can resume",
+                            defaultValue: "%@ saved — download can resume"
+                        ), ByteCountFormatter.string(fromByteCount: Int64(partialBytes), countStyle: .file)),
+                        systemImage: "arrow.down.circle.dotted"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                }
             }
 
             if (model.downloadState.isDownloaded || model.isAppleFoundation) && (model.engine != .appleFoundation || modelManager.isAppleIntelligenceAvailable) {
@@ -1191,7 +1249,28 @@ struct ModelCard: View {
                         .font(.caption2)
                         .foregroundStyle(Color.adaptive(white: 0.5))
                         .lineLimit(1)
+                    if let firstToken = result.medianFirstTokenMs {
+                        Text(String(format: String(
+                            localized: "First response: %lldms",
+                            defaultValue: "First response: %lldms"
+                        ), Int64(firstToken)))
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    }
                 }
+
+                Button {
+                    runBenchmark()
+                } label: {
+                    Label(
+                        isRunningBenchmark ? String(localized: "Testing…") : String(localized: "Test on This Device"),
+                        systemImage: "gauge.with.dots.needle.50percent"
+                    )
+                    .font(.caption.weight(.semibold))
+                    .frame(minHeight: 44)
+                }
+                .disabled(isRunningBenchmark || llmEngine.state == .generating || llmEngine.state == .loading)
+                .accessibilityHint(String(localized: "Measures model loading and response speed on this device."))
             }
         }
     }
@@ -1205,7 +1284,7 @@ struct ModelCard: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
+                TagFlowLayout(spacing: 8, rowSpacing: 8) {
                     if modelManager.isOnboardingRecommended(model) {
                         InfoTag(icon: "sparkles", text: LocalizedStringKey(String(localized: "Recommended")), isHighlighted: true)
                     }
@@ -1221,7 +1300,7 @@ struct ModelCard: View {
                     }
                 }
 
-                HStack(spacing: 8) {
+                TagFlowLayout(spacing: 8, rowSpacing: 8) {
                     InfoTag(
                         icon: model.isAppleFoundation ? "hand.raised.fill" : "lock.shield",
                         text: LocalizedStringKey(model.privacyLabel),
@@ -1238,7 +1317,7 @@ struct ModelCard: View {
                 }
 
                 if !model.badges.isEmpty || model.supportsThinkingToggle {
-                    HStack(spacing: 8) {
+                    TagFlowLayout(spacing: 8, rowSpacing: 8) {
                         ForEach(Array(model.badges.prefix(3)), id: \.self) { badge in
                             InfoTag(
                                 icon: badge.iconName,
@@ -1254,7 +1333,6 @@ struct ModelCard: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .clipped()
         }
     }
 
@@ -1265,6 +1343,10 @@ struct ModelCard: View {
                 let nextValue = !isThinkingEnabled
                 isThinkingEnabled = nextValue
                 modelManager.setThinkingEnabled(nextValue, for: model)
+                // The mode is baked into the chat template when the session is
+                // built, so an open session would keep the old one until the
+                // next model switch.
+                llmEngine.resetSession()
             } label: {
                 HStack(spacing: 5) {
                     Image(systemName: isThinkingEnabled ? "brain.head.profile.fill" : "brain.head.profile")
@@ -1329,21 +1411,43 @@ struct ModelCard: View {
                     UpgradeActionButton {
                         upgradeFeature = .allModels
                     }
+                } else if model.isBundled {
+                    // Nothing to fetch: the weights are still inside the app.
+                    RestoreBundledButton {
+                        requireConsentAndPerform {
+                            modelManager.restoreBundledModel(model.id, selectWhenFinished: true)
+                        }
+                    }
                 } else {
-                    DownloadButton(sizeLabel: model.sizeLabel, action: {
+                    DownloadButton(
+                        sizeLabel: model.sizeLabel,
+                        isResumable: modelManager.partialDownloadBytes(for: model) > 0,
+                        action: {
                         if model.currentDeviceFit == .unsupported {
                             showHeavyDownloadConfirm = true
                         } else {
                             startDownload()
                         }
-                    })
-                    .alert(String(localized: "Heavy model for this device"), isPresented: $showHeavyDownloadConfirm) {
-                        Button(String(localized: "Download Anyway")) {
-                            startDownload()
+                        }
+                    )
+                    .alert(
+                        DeviceResourcePolicy.supportsMLXCompute
+                            ? String(localized: "Heavy model for this device")
+                            : String(localized: "Model not supported on this device"),
+                        isPresented: $showHeavyDownloadConfirm
+                    ) {
+                        if DeviceResourcePolicy.supportsMLXCompute {
+                            Button(String(localized: "Download Anyway")) {
+                                startDownload()
+                            }
                         }
                         Button(String(localized: "Cancel"), role: .cancel) {}
                     } message: {
-                        Text(String(localized: "This model may run very slowly or run out of memory here. A smaller model will usually give a better experience."))
+                        Text(
+                            DeviceResourcePolicy.supportsMLXCompute
+                                ? String(localized: "This model may run very slowly or run out of memory here. A smaller model will usually give a better experience.")
+                                : String(localized: "Downloadable models need an A14 chip or newer — iPhone 12, iPhone SE (3rd generation), or later.")
+                        )
                     }
                 }
                 
@@ -1375,7 +1479,7 @@ struct ModelCard: View {
                         }
                         DeleteButton(action: {
                             modelManager.deleteModel(model.id)
-                        })
+                        }, isBundled: model.isBundled)
                     }
                 }
                 
@@ -1399,6 +1503,19 @@ struct ModelCard: View {
     private func startDownload() {
         requireConsentAndPerform {
             modelManager.downloadModel(model.id, selectWhenFinished: true)
+        }
+    }
+
+    private func runBenchmark() {
+        requireConsentAndPerform {
+            guard !isRunningBenchmark else { return }
+            isRunningBenchmark = true
+            Task {
+                let result = await llmEngine.runQuickTest(model: model)
+                modelManager.saveQuickTestResult(result)
+                testResult = result
+                isRunningBenchmark = false
+            }
         }
     }
 
@@ -1697,7 +1814,86 @@ struct InfoTag: View {
         .padding(.vertical, 6)
         .background(isHighlighted ? Color.green.opacity(0.1) : Color.adaptive(white: 0.95))
         .clipShape(Capsule())
-        .fixedSize(horizontal: false, vertical: true)
+        .fixedSize(horizontal: true, vertical: true)
+    }
+}
+
+/// Places status tags on additional rows when they no longer fit, preserving
+/// each tag's complete label instead of compressing it with an ellipsis.
+private struct TagFlowLayout: Layout {
+    var spacing: CGFloat = 8
+    var rowSpacing: CGFloat = 8
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        let availableWidth = proposal.width ?? .greatestFiniteMagnitude
+        let rows = makeRows(subviews: subviews, availableWidth: availableWidth)
+        let width = rows.map { $0.width }.max() ?? 0
+        let height = rows.reduce(0) { $0 + $1.height }
+            + rowSpacing * CGFloat(max(rows.count - 1, 0))
+        return CGSize(width: proposal.width ?? width, height: height)
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        let rows = makeRows(subviews: subviews, availableWidth: bounds.width)
+        var y = bounds.minY
+
+        for row in rows {
+            var x = bounds.minX
+            for item in row.items {
+                item.subview.place(
+                    at: CGPoint(x: x, y: y),
+                    anchor: .topLeading,
+                    proposal: ProposedViewSize(item.size)
+                )
+                x += item.size.width + spacing
+            }
+            y += row.height + rowSpacing
+        }
+    }
+
+    private func makeRows(subviews: Subviews, availableWidth: CGFloat) -> [Row] {
+        var rows: [Row] = []
+        var currentRow = Row()
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            let proposedWidth = currentRow.items.isEmpty
+                ? size.width
+                : currentRow.width + spacing + size.width
+
+            if !currentRow.items.isEmpty && proposedWidth > availableWidth {
+                rows.append(currentRow)
+                currentRow = Row()
+            }
+
+            currentRow.append(subview: subview, size: size, spacing: spacing)
+        }
+
+        if !currentRow.items.isEmpty {
+            rows.append(currentRow)
+        }
+        return rows
+    }
+
+    private struct Row {
+        var items: [(subview: LayoutSubview, size: CGSize)] = []
+        var width: CGFloat = 0
+        var height: CGFloat = 0
+
+        mutating func append(subview: LayoutSubview, size: CGSize, spacing: CGFloat) {
+            width += items.isEmpty ? size.width : spacing + size.width
+            height = max(height, size.height)
+            items.append((subview, size))
+        }
     }
 }
 
@@ -1883,6 +2079,7 @@ struct SelectButton: View {
 
 struct DownloadButton: View {
     let sizeLabel: String
+    var isResumable = false
     let action: () -> Void
     
     var body: some View {
@@ -1892,9 +2089,47 @@ struct DownloadButton: View {
                     .font(.body.bold())
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(String(localized: "Download & Select"))
+                    Text(isResumable ? String(localized: "Resume & Select") : String(localized: "Download & Select"))
                         .font(.subheadline.weight(.semibold))
                     Text(String(format: String(localized: "%@ • Works offline after download", defaultValue: "%@ • Works offline after download"), sizeLabel))
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.78))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.9)
+                }
+
+                Spacer(minLength: 8)
+            }
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                LinearGradient(
+                    colors: [.blue, .blue.opacity(0.85)],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(ActionButtonStyle())
+    }
+}
+
+struct RestoreBundledButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.uturn.backward.circle.fill")
+                    .font(.body.bold())
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(String(localized: "Add Back & Select"))
+                        .font(.subheadline.weight(.semibold))
+                    Text(String(localized: "Included with the app • No download needed"))
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.78))
                         .lineLimit(1)
@@ -2017,10 +2252,23 @@ struct DownloadingButton: View {
     }
 }
 
+enum ModelDeletionCopy {
+    static func message(for model: ModelInfo) -> String {
+        message(isBundled: model.isBundled)
+    }
+
+    static func message(isBundled: Bool) -> String {
+        isBundled
+            ? String(localized: "This model is included with the app, so removing it won't free up storage. It will disappear from your models and you can add it back anytime.")
+            : String(localized: "This will remove the downloaded model from your device. You can download it again anytime.")
+    }
+}
+
 struct DeleteButton: View {
     let action: () -> Void
+    var isBundled: Bool = false
     @State private var showConfirmation = false
-    
+
     var body: some View {
         Button {
             showConfirmation = true
@@ -2037,7 +2285,7 @@ struct DeleteButton: View {
             Button(String(localized: "Delete"), role: .destructive, action: action)
             Button(String(localized: "Cancel"), role: .cancel) {}
         } message: {
-            Text(String(localized: "This will remove the downloaded model from your device. You can download it again anytime."))
+            Text(ModelDeletionCopy.message(isBundled: isBundled))
         }
     }
 }

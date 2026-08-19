@@ -20,10 +20,14 @@ struct SettingsView: View {
     @AppStorage("inChatSearchEnabled") private var inChatSearchEnabled = false
     @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
     @AppStorage("downloads.allowCellular") private var allowCellularDownloads = false
-    @AppStorage("appAppearance") private var appAppearanceRaw = AppAppearance.system.rawValue
     @State private var showClearHistoryConfirmation = false
     @State private var showDataPrivacySheet = false
     @State private var isUpgradeSheetPresented = false
+    @State private var upgradeFeature: PremiumFeature?
+    @State private var isExportingAllChats = false
+    @State private var exportShareItems: [Any] = []
+    @State private var isExportShareSheetPresented = false
+    @State private var exportError: String?
 
     private let retentionOptions = [0, 7, 30, 90]
 
@@ -56,9 +60,79 @@ struct SettingsView: View {
             )
     }
 
+    private var exportAllSubtitle: String {
+        let count = historyManager.conversations.count
+        guard count > 0 else {
+            return String(localized: "Nothing to export yet")
+        }
+        return String(
+            format: String(
+                localized: "Save %lld conversations as a Markdown backup",
+                defaultValue: "Save %lld conversations as a Markdown backup"
+            ),
+            Int64(count)
+        )
+    }
+
+    /// Writes the whole history to a single Markdown file and hands it to the
+    /// share sheet. Formatting runs off the main actor so a large history does
+    /// not freeze Settings.
+    private func exportAllChats() {
+        guard monetizationManager.canUse(.conversationExport) else {
+            upgradeFeature = .conversationExport
+            return
+        }
+        guard !isExportingAllChats else { return }
+
+        let conversations = historyManager.conversations
+        guard !conversations.isEmpty else { return }
+
+        isExportingAllChats = true
+        Task {
+            let fileName = ConversationExporter.archiveFileName(format: .markdown)
+            let destinationURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+
+            let writeResult = await Task.detached(priority: .userInitiated) { () -> String? in
+                let archive = ConversationExporter.exportAll(conversations: conversations, format: .markdown)
+                do {
+                    try archive.write(to: destinationURL, atomically: true, encoding: .utf8)
+                    // The archive is every conversation in plain text. The chat
+                    // store itself is encrypted at rest, so the hand-off copy is
+                    // protected too and deleted once sharing ends.
+                    try? FileManager.default.setAttributes(
+                        [.protectionKey: FileProtectionType.complete],
+                        ofItemAtPath: destinationURL.path
+                    )
+                    return nil
+                } catch {
+                    return error.localizedDescription
+                }
+            }.value
+
+            isExportingAllChats = false
+
+            if let writeResult {
+                exportError = writeResult
+            } else {
+                exportShareItems = [destinationURL]
+                isExportShareSheetPresented = true
+            }
+        }
+    }
+
+    /// Removes the temporary archive once the share sheet closes. Without this
+    /// a plain-text copy of every conversation stays in the temporary directory
+    /// until the system happens to reclaim it.
+    private func discardExportArchive() {
+        for case let url as URL in exportShareItems {
+            try? FileManager.default.removeItem(at: url)
+        }
+        exportShareItems = []
+    }
+
     private var freePlanLimitMessage: String? {
         guard monetizationManager.hasReachedFreeDailyMessageLimit else { return nil }
-        return String(localized: "Free install limit reached.")
+        return String(localized: "Daily free limit reached. More messages tomorrow.")
     }
 
     // MARK: - Body
@@ -96,6 +170,24 @@ struct SettingsView: View {
         .sheet(isPresented: $isUpgradeSheetPresented) {
             UpgradeView(feature: .allModels)
                 .environment(monetizationManager)
+        }
+        .sheet(item: $upgradeFeature) { feature in
+            UpgradeView(feature: feature)
+                .environment(monetizationManager)
+        }
+        .sheet(isPresented: $isExportShareSheetPresented, onDismiss: { discardExportArchive() }) {
+            ShareSheet(items: exportShareItems)
+        }
+        .alert(
+            "Export Failed",
+            isPresented: Binding(
+                get: { exportError != nil },
+                set: { if !$0 { exportError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { exportError = nil }
+        } message: {
+            Text(exportError ?? "")
         }
     }
 
@@ -165,7 +257,7 @@ struct SettingsView: View {
                     .font(.footnote)
                     .foregroundStyle(.orange)
             } else if !monetizationManager.hasPro {
-                Text("\(monetizationManager.freeMessagesRemainingToday) of \(MonetizationManager.freeInstallMessageLimit) free messages left")
+                Text("\(monetizationManager.freeMessagesRemainingToday) of \(MonetizationManager.freeDailyMessageLimit) free messages left today")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -197,6 +289,20 @@ struct SettingsView: View {
             sectionDivider
 
             NavigationLink {
+                ModelStorageView()
+            } label: {
+                settingsRow(
+                    icon: "externaldrive.fill",
+                    tint: .orange,
+                    title: "Model Storage",
+                    subtitle: downloadedStorageText
+                )
+            }
+            .buttonStyle(.plain)
+
+            sectionDivider
+
+            NavigationLink {
                 AIPersonalityView()
                     .environment(monetizationManager)
             } label: {
@@ -215,24 +321,6 @@ struct SettingsView: View {
 
     private var preferencesSection: some View {
         settingsSection("Preferences") {
-            HStack(spacing: 12) {
-                settingsRow(
-                    icon: "circle.lefthalf.filled",
-                    tint: .indigo,
-                    title: "Appearance",
-                    subtitle: "Match the system or pick light/dark"
-                )
-                Picker("Appearance", selection: $appAppearanceRaw) {
-                    ForEach(AppAppearance.allCases) { appearance in
-                        Text(appearance.title).tag(appearance.rawValue)
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-            }
-
-            sectionDivider
-
             settingsToggleRow(
                 icon: "antenna.radiowaves.left.and.right",
                 tint: .blue,
@@ -343,6 +431,39 @@ struct SettingsView: View {
 
             sectionDivider
 
+            // Back up every chat before anything can remove them
+            Button(action: exportAllChats) {
+                HStack(spacing: 14) {
+                    rowIcon(systemImage: "square.and.arrow.up.on.square.fill", tint: .blue)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Export All Chats")
+                            .font(.body)
+                            .fontWeight(.medium)
+                            .foregroundStyle(.primary)
+
+                        Text(exportAllSubtitle)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 8)
+
+                    if isExportingAllChats {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 14)
+            }
+            .buttonStyle(.plain)
+            .disabled(isExportingAllChats || historyManager.conversations.isEmpty)
+            .opacity(historyManager.conversations.isEmpty ? 0.5 : 1)
+
+            sectionDivider
+
             // Delete all chats
             Button {
                 showClearHistoryConfirmation = true
@@ -433,20 +554,6 @@ struct SettingsView: View {
 
             sectionDivider
 
-            NavigationLink {
-                DiagnosticsView()
-            } label: {
-                settingsRow(
-                    icon: "waveform.path.ecg",
-                    tint: .pink,
-                    title: "Diagnostics",
-                    subtitle: "Crash and hang reports captured on this device"
-                )
-            }
-            .buttonStyle(.plain)
-
-            sectionDivider
-
             // Storage info row
             HStack(spacing: 14) {
                 rowIcon(systemImage: "internaldrive.fill", tint: .teal)
@@ -518,7 +625,7 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             content()
         }
-        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+        .background(Color.adaptiveCard, in: RoundedRectangle(cornerRadius: 16))
         .shadow(color: .black.opacity(0.04), radius: 10, y: 5)
     }
 

@@ -56,7 +56,7 @@ struct SuggestionCard: View {
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 20)
-                    .stroke(Color.white.opacity(0.5), lineWidth: 1)
+                    .stroke(Color.adaptiveBorder(opacity: 0.5), lineWidth: 1)
             )
         }
         .buttonStyle(PlainButtonStyle())

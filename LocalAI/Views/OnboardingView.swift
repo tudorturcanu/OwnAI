@@ -31,6 +31,9 @@ struct OnboardingView: View {
         2
     }
 
+    /// Mirrors ChatView.isVoiceConversationEnabled — voice conversation mode is hidden app-wide.
+    private static let isVoiceConversationEnabled = false
+
     private var onboardingRecommendationData: (model: ModelInfo, recommendation: ModelManager.OnboardingRecommendation)? {
         guard let recommendation = modelManager.onboardingRecommendation(),
               let model = modelManager.models.first(where: { $0.id == recommendation.modelID }) else {
@@ -80,13 +83,21 @@ struct OnboardingView: View {
                 customModel.name
             )
         case .unsupported:
-            detail = String(
-                format: String(
-                    localized: "%@ is likely too heavy for this device.",
-                    defaultValue: "%@ is likely too heavy for this device."
-                ),
-                customModel.name
-            )
+            detail = DeviceResourcePolicy.supportsMLXCompute
+                ? String(
+                    format: String(
+                        localized: "%@ is likely too heavy for this device.",
+                        defaultValue: "%@ is likely too heavy for this device."
+                    ),
+                    customModel.name
+                )
+                : String(
+                    format: String(
+                        localized: "%@ can't run on this device. Downloadable models need an A14 chip or newer.",
+                        defaultValue: "%@ can't run on this device. Downloadable models need an A14 chip or newer."
+                    ),
+                    customModel.name
+                )
         }
 
         return (
@@ -157,6 +168,7 @@ struct OnboardingView: View {
                     
                 Image(systemName: "sparkles")
                     .font(.system(size: 80, weight: .light))
+                    .accessibilityHidden(true)
                     .foregroundStyle(
                         LinearGradient(
                             colors: [.orange, .pink],
@@ -172,7 +184,7 @@ struct OnboardingView: View {
             // Title & Subtitle
             VStack(spacing: 16) {
                 Text(String(localized: "Welcome to Own Ai"))
-                    .font(.system(size: 32, weight: .bold))
+                    .font(.largeTitle.bold())
                     .foregroundStyle(Color.adaptive(white: 0.1))
                 
                 Text(modelManager.isAppleIntelligenceDeviceSupported ?
@@ -207,12 +219,14 @@ struct OnboardingView: View {
                         String(localized: "Powered by highly optimized on-device models.")
                 )
                 
-                featureRow(
-                    icon: "mic.fill",
-                    color: .blue,
-                    title: String(localized: "Voice Interactions"),
-                    subtitle: String(localized: "Speak naturally to your assistant.")
-                )
+                if Self.isVoiceConversationEnabled {
+                    featureRow(
+                        icon: "waveform",
+                        color: .blue,
+                        title: String(localized: "Voice Conversations"),
+                        subtitle: String(localized: "Talk hands-free — it listens, answers out loud, and you can interrupt anytime.")
+                    )
+                }
             }
             .padding(.horizontal, 40)
             
@@ -254,6 +268,7 @@ struct OnboardingView: View {
                 VStack(spacing: 14) {
                     Image(systemName: "sparkles.rectangle.stack.fill")
                         .font(.system(size: 48, weight: .light))
+                        .accessibilityHidden(true)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [.orange, .pink],
@@ -263,7 +278,7 @@ struct OnboardingView: View {
                         )
 
                     Text(recommendationPageTitle)
-                        .font(.system(size: 28, weight: .bold))
+                        .font(.title.bold())
                         .foregroundStyle(Color.adaptive(white: 0.1))
 
                     Text(recommendationPageSubtitle)
@@ -359,6 +374,7 @@ struct OnboardingView: View {
                 VStack(spacing: 12) {
                     Image(systemName: "hand.raised.fill")
                         .font(.system(size: 50, weight: .light))
+                        .accessibilityHidden(true)
                         .foregroundStyle(
                             LinearGradient(
                                 colors: [.blue, .purple],
@@ -368,7 +384,7 @@ struct OnboardingView: View {
                         )
                     
                     Text(String(localized: "Data & Privacy"))
-                        .font(.system(size: 28, weight: .bold))
+                        .font(.title.bold())
                         .foregroundStyle(Color.adaptive(white: 0.1))
                     
                     Text(String(localized: "Before you begin, here's how the app handles your data."))

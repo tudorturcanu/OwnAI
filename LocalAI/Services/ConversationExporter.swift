@@ -29,6 +29,31 @@ enum ConversationExporter {
         }
     }
 
+    /// Bundles every conversation into one document so the user can keep an
+    /// off-device backup of history that otherwise only exists on this phone.
+    ///
+    /// Newest first, matching the order shown in History.
+    static func exportAll(conversations: [ChatConversation], format: Format = .markdown) -> String {
+        let exportable = conversations.filter { conversation in
+            conversation.messages.contains { !$0.isStreaming && !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        }
+
+        switch format {
+        case .markdown:
+            return markdownArchive(conversations: exportable)
+        case .plainText:
+            return plainTextArchive(conversations: exportable)
+        }
+    }
+
+    static func archiveFileName(format: Format) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        let ext = format == .markdown ? "md" : "txt"
+        return "Own AI Chats \(formatter.string(from: Date())).\(ext)"
+    }
+
     static func fileName(title: String, format: Format) -> String {
         let sanitized = title
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -93,10 +118,62 @@ enum ConversationExporter {
         return lines.joined(separator: "\n")
     }
 
-    private static func formattedDate() -> String {
+    private static func markdownArchive(conversations: [ChatConversation]) -> String {
+        var lines: [String] = []
+        lines.append("# Own AI — Chat Archive")
+        lines.append("")
+        lines.append("*\(conversations.count) conversations · exported \(formattedDate())*")
+        lines.append("")
+
+        for conversation in conversations {
+            lines.append("---")
+            lines.append("")
+            lines.append("## \(conversation.title)")
+            lines.append("")
+            lines.append("*\(formattedDate(conversation.updatedAt))*")
+            lines.append("")
+
+            for message in conversation.messages where !message.isStreaming {
+                let trimmed = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { continue }
+                lines.append(message.role == .user ? "**You**" : "**AI**")
+                lines.append("")
+                lines.append(trimmed)
+                lines.append("")
+            }
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    private static func plainTextArchive(conversations: [ChatConversation]) -> String {
+        var lines: [String] = []
+        lines.append("Own AI — Chat Archive")
+        lines.append("\(conversations.count) conversations · exported \(formattedDate())")
+        lines.append("")
+
+        for conversation in conversations {
+            lines.append(String(repeating: "─", count: 40))
+            lines.append(conversation.title)
+            lines.append(formattedDate(conversation.updatedAt))
+            lines.append("")
+
+            for message in conversation.messages where !message.isStreaming {
+                let trimmed = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty else { continue }
+                lines.append(message.role == .user ? "You:" : "AI:")
+                lines.append(trimmed)
+                lines.append("")
+            }
+        }
+
+        return lines.joined(separator: "\n")
+    }
+
+    private static func formattedDate(_ date: Date = Date()) -> String {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
-        return formatter.string(from: Date())
+        return formatter.string(from: date)
     }
 }

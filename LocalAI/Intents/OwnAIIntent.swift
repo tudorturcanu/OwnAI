@@ -48,16 +48,17 @@ struct AskOwnAIIntent: AppIntent {
     }
 }
 
-/// App Intent that answers a question in the background and returns the text
-/// to Shortcuts, so Own AI can be chained into workflows (summarize the
-/// clipboard, process shared text, feed another action) without opening the
-/// app. Uses Apple Intelligence on-device; unavailable devices get a clear
-/// error instead of a silent failure.
-struct GetOwnAIAnswerIntent: AppIntent {
+/// App Intent that answers a question and returns the text to Shortcuts, so
+/// Own AI can be chained into workflows (summarize the clipboard, process
+/// shared text, feed another action). Prefers Apple Intelligence, which runs
+/// fully in the background; devices without it fall back to a local MLX model
+/// (the bundled one is always present), which needs a brief foreground hop
+/// because iOS forbids background GPU work.
+struct GetOwnAIAnswerIntent: AppIntent, ForegroundContinuableIntent {
 
     static let title: LocalizedStringResource = "Get Answer from Own AI"
     static let description = IntentDescription(
-        "Ask Own AI a question and get the answer back as text, without opening the app. Runs on-device with Apple Intelligence.",
+        "Ask Own AI a question and get the answer back as text. Runs on-device — in the background with the built-in system model, or by briefly opening the app to use a local model.",
         categoryName: "Chat"
     )
 
@@ -84,25 +85,80 @@ struct GetOwnAIAnswerIntent: AppIntent {
             throw OwnAIIntentError.freeLimitReached
         }
 
+        let chatLease = await ChatWorkloadCoordinator.shared.beginChat()
+        defer {
+            Task {
+                _ = await ChatWorkloadCoordinator.shared.endChat(chatLease)
+            }
+        }
+
         let bridge = AppleFoundationModelBridge()
-        do {
-            let answer = try await bridge.respondOnce(
-                to: trimmed,
-                systemPrompt: AssistantMemoryStore.augmentedSystemPrompt(
-                    UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
+        if bridge.availability == .available {
+            do {
+                let answer = try await bridge.respondOnce(
+                    to: trimmed,
+                    systemPrompt: AssistantMemoryStore.augmentedSystemPrompt(
+                        UserDefaults.standard.string(forKey: "systemPrompt") ?? AIResponseDefaults.defaultSystemPrompt
+                    )
                 )
-            )
+                monetization.registerFreeMessageIfNeeded(for: trimmed)
+                return .result(value: answer)
+            } catch let error as LLMError {
+                throw OwnAIIntentError.generationFailed(message: error.localizedDescription)
+            }
+        }
+
+        // No Apple Intelligence on this device: answer with a local MLX model.
+        // Metal work is forbidden while backgrounded, so ask to hop into the
+        // app first, then generate with whatever is already in memory — or the
+        // bundled starter model, which ships in every install.
+        guard let model = Self.fallbackMLXModel() else {
+            throw OwnAIIntentError.noLocalModelAvailable
+        }
+
+        try await requestToContinueInForeground(
+            IntentDialog("Own AI needs to open briefly to answer with the on-device model.")
+        )
+
+        guard let engine = LLMEngine.shared else {
+            throw OwnAIIntentError.generationFailed(message: String(localized: "The app is still starting up. Try again."))
+        }
+
+        // The continuation can resume before SwiftUI delivers the
+        // scene-activation event that re-enables GPU work; give it a moment.
+        for _ in 0..<40 where !engine.isForegroundActive {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+
+        do {
+            let answer = try await engine.generateIsolatedReply(prompt: trimmed, model: model)
             monetization.registerFreeMessageIfNeeded(for: trimmed)
-            return .result(value: answer)
+            return .result(value: answer.trimmingCharacters(in: .whitespacesAndNewlines))
         } catch let error as LLMError {
             throw OwnAIIntentError.generationFailed(message: error.localizedDescription)
         }
+    }
+
+    /// The model the fallback path answers with: the MLX model that is already
+    /// loaded and ready, or the bundled starter model when its weights are
+    /// present in the app bundle (they always are; deleting the model in the
+    /// catalog only hides it).
+    @MainActor
+    private static func fallbackMLXModel() -> ModelInfo? {
+        if let ready = LLMEngine.shared?.readyMLXModel {
+            return ready
+        }
+        var bundled = ModelInfo.qwen3_0_6b_4bit
+        guard MLXStorage.hasValidModelArtifacts(for: bundled.id) else { return nil }
+        bundled.downloadState = .downloaded
+        return bundled
     }
 }
 
 enum OwnAIIntentError: Error, CustomLocalizedStringResourceConvertible {
     case emptyPrompt
     case freeLimitReached
+    case noLocalModelAvailable
     case generationFailed(message: String)
 
     var localizedStringResource: LocalizedStringResource {
@@ -110,7 +166,9 @@ enum OwnAIIntentError: Error, CustomLocalizedStringResourceConvertible {
         case .emptyPrompt:
             return "The prompt is empty. Provide some text for Own AI to answer."
         case .freeLimitReached:
-            return "The free plan limit has been reached. Upgrade to Pro in Own AI to keep using Shortcuts."
+            return "Today's free messages are used up. They reset tomorrow, or upgrade to Pro in Own AI for unlimited use."
+        case .noLocalModelAvailable:
+            return "No on-device model is available. Open Own AI once to finish setup, then try again."
         case .generationFailed(let message):
             return "Own AI could not answer: \(message)"
         }
