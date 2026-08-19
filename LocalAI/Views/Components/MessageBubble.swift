@@ -76,6 +76,34 @@ struct AssistantMarkdownView: View, Equatable {
         pattern: #"\[Source (\d+)\]"#
     )
 
+    /// Matches a complete bare `<svg>…</svg>` document sitting in prose. Small
+    /// models often forget the ```svg fence, which would leave the markup
+    /// rendered as plain paragraph text instead of reaching the preview.
+    private static let bareSVGRegex = try? NSRegularExpression(
+        pattern: #"<svg\b[\s\S]*?</svg>"#,
+        options: [.caseInsensitive]
+    )
+
+    /// Wraps unfenced `<svg>…</svg>` documents in a ```svg fence so they route
+    /// through `RenderableCodeBlockView`. Render-only, like `linkifySources`.
+    /// Text already inside a fence must pass through untouched (a nested fence
+    /// would split the block), so only the outside-fence segments are rewritten.
+    static func fenceBareSVG(_ text: String) -> String {
+        guard text.contains("<svg"), text.contains("</svg>"),
+              let regex = bareSVGRegex else { return text }
+        let segments = text.components(separatedBy: "```")
+        let rewritten = segments.enumerated().map { index, segment -> String in
+            guard index.isMultiple(of: 2) else { return segment }
+            let range = NSRange(segment.startIndex..., in: segment)
+            return regex.stringByReplacingMatches(
+                in: segment,
+                range: range,
+                withTemplate: "\n```svg\n$0\n```\n"
+            )
+        }
+        return rewritten.joined(separator: "```")
+    }
+
     /// Rewrites `[Source n]` markers into markdown links (`[Source n](localai-source://n)`)
     /// without touching the persisted message — this is render-only.
     static func linkifySources(_ text: String) -> String {
@@ -93,7 +121,7 @@ struct AssistantMarkdownView: View, Equatable {
         // The engine throttles UI updates (~12/sec, with adaptive back-off if a
         // parse is slow), so re-parsing the growing response stays smooth. Code
         // blocks fall back to plain text while streaming via AsyncCodeBlockView.
-        Markdown(Self.linkifySources(content))
+        Markdown(Self.linkifySources(Self.fenceBareSVG(content)))
             .markdownTextStyle(\.link) {
                 ForegroundColor(.accentColor)
                 FontWeight(.semibold)
@@ -103,6 +131,25 @@ struct AssistantMarkdownView: View, Equatable {
             }
             .foregroundStyle(Color.adaptive(white: 0.15))
             .markdownBlockStyle(\.codeBlock) { configuration in
+                if RenderableCodeBlockView.isPreviewable(
+                    language: configuration.language,
+                    content: configuration.content
+                ) {
+                    RenderableCodeBlockView(
+                        content: configuration.content,
+                        language: configuration.language,
+                        theme: theme,
+                        isStreaming: isStreaming,
+                        textScale: textScale
+                    )
+                } else {
+                    codeBlock(configuration)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private func codeBlock(_ configuration: CodeBlockConfiguration) -> some View {
                 VStack(spacing: 0) {
                     HStack {
                         Text(configuration.language?.lowercased() ?? "code")
@@ -149,7 +196,6 @@ struct AssistantMarkdownView: View, Equatable {
                         .stroke(theme.borderColor, lineWidth: 1)
                 )
                 .padding(.vertical, 8)
-            }
     }
 }
 
