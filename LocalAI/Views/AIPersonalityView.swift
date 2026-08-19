@@ -11,8 +11,10 @@ import UIKit
 struct AIPersonalityView: View {
     @Environment(MonetizationManager.self) private var monetizationManager
     @AppStorage("systemPrompt") private var storedSystemPrompt = AIResponseDefaults.defaultSystemPrompt
-    @AppStorage("temperature") private var storedTemperature = 0.7
-    @AppStorage("topP") private var storedTopP = 1.0
+    // Must match LLMEngine's registered defaults, or opening this screen
+    // would silently "change" the values before the user touches anything.
+    @AppStorage("temperature") private var storedTemperature = 0.6
+    @AppStorage("topP") private var storedTopP = 0.95
     @AppStorage("maxTokens") private var storedMaxTokens = AIResponseDefaults.maxTokens
     @AppStorage("responseCharacterLimit") private var storedResponseCharacterLimit = AIResponseDefaults.responseCharacterLimit
     @AppStorage("customPersonalityPresetsJSON") private var customPresetsJSON = "[]"

@@ -6,12 +6,16 @@ enum AIResponseSettingsMigration {
     private static let responseCharacterLimitMigrationKey = "didMigrateResponseCharacterLimitDefaultToUnlimited"
     private static let systemPromptMigrationKey = "didMigrateDefaultSystemPromptCompletion"
     private static let naturalProsePromptMigrationKey = "didMigrateDefaultSystemPromptNaturalProse"
+    private static let tableFormatPromptMigrationKey = "didMigrateDefaultSystemPromptTableFormat"
+    private static let deliverAnswerPromptMigrationKey = "didMigrateDefaultSystemPromptDeliverAnswer"
 
     static func migrateIfNeeded(defaults: UserDefaults = .standard) {
         migrateMaxTokensIfNeeded(defaults: defaults)
         migrateResponseCharacterLimitIfNeeded(defaults: defaults)
         migrateSystemPromptIfNeeded(defaults: defaults)
         migrateNaturalProsePromptIfNeeded(defaults: defaults)
+        migrateTableFormatPromptIfNeeded(defaults: defaults)
+        migrateDeliverAnswerPromptIfNeeded(defaults: defaults)
 
         // Keep the legacy marker set for older app versions, but do not use it
         // to block newer one-time migrations.
@@ -61,5 +65,35 @@ enum AIResponseSettingsMigration {
         }
 
         defaults.set(true, forKey: naturalProsePromptMigrationKey)
+    }
+
+    /// Replaces the prose default whose exception list left out tables, so an
+    /// explicit "reply with a markdown table" is no longer overridden by the
+    /// prose rule. As above, only exact past defaults are replaced.
+    private static func migrateTableFormatPromptIfNeeded(defaults: UserDefaults) {
+        guard !defaults.bool(forKey: tableFormatPromptMigrationKey) else { return }
+
+        let stored = defaults.string(forKey: "systemPrompt")
+        if stored == AIResponseDefaults.legacyProseWithoutTablesSystemPrompt
+            || stored == AIResponseDefaults.legacyBulletedSystemPrompt
+            || stored == AIResponseDefaults.legacyCompletionSystemPrompt {
+            defaults.set(AIResponseDefaults.defaultSystemPrompt, forKey: "systemPrompt")
+        }
+
+        defaults.set(true, forKey: tableFormatPromptMigrationKey)
+    }
+
+    /// Replaces any unmodified past default (shipped or interim dev build)
+    /// with the wording that adds the concreteness and no-acknowledgment-stub
+    /// rules. Exact matches only, so user-customized prompts are untouched.
+    private static func migrateDeliverAnswerPromptIfNeeded(defaults: UserDefaults) {
+        guard !defaults.bool(forKey: deliverAnswerPromptMigrationKey) else { return }
+
+        if let stored = defaults.string(forKey: "systemPrompt"),
+           AIResponseDefaults.allSupersededSystemPrompts.contains(stored) {
+            defaults.set(AIResponseDefaults.defaultSystemPrompt, forKey: "systemPrompt")
+        }
+
+        defaults.set(true, forKey: deliverAnswerPromptMigrationKey)
     }
 }

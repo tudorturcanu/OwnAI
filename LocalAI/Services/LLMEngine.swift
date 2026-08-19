@@ -122,8 +122,12 @@ final class LLMEngine {
     var isPrewarming = false
     
     // Settings
-    @ObservationIgnored @AppStorage("temperature") var temperature: Double = 0.7
-    @ObservationIgnored @AppStorage("topP") var topP: Double = 1.0
+    // NVIDIA's recommended sampling for Nemotron 3 Nano (0.6 / 0.95), and a
+    // safer default for every small model here: topP 1.0 lets a 4B sample the
+    // far tail of its distribution, which surfaces as non-sequitur replies in
+    // otherwise coherent chats. Users who set their own values keep them.
+    @ObservationIgnored @AppStorage("temperature") var temperature: Double = 0.6
+    @ObservationIgnored @AppStorage("topP") var topP: Double = 0.95
     @ObservationIgnored @AppStorage("maxTokens") var maxTokens: Int = AIResponseDefaults.maxTokens
     @ObservationIgnored @AppStorage("lowPowerMode") var lowPowerMode: Bool = false
     
@@ -1366,7 +1370,12 @@ final class LLMEngine {
             #if targetEnvironment(simulator)
             return false
             #else
-            return mlxSession != nil
+            // A live session is not enough: loadModel and resetSession both
+            // create sessions with an empty KV cache (e.g. after a memory
+            // warning unloaded the model between turns). Only a session that
+            // has recorded exchanges can answer follow-ups without the caller
+            // re-injecting the conversation transcript.
+            return mlxSession != nil && !mlxSessionTurns.isEmpty
             #endif
         }
     }
@@ -1839,7 +1848,7 @@ private extension LLMEngine {
         """
         \(prompt)
 
-        Runtime identity: You are responding locally through \(model.name) (model ID: \(model.id)). If the user asks what model is responding, identify yourself as \(model.name). Do not claim to be a different model, provider, or organization based on your training data.
+        Runtime identity, for background only: you are responding locally through \(model.name) (model ID: \(model.id)). Keep this silent — never mention your model name, that you are an AI model, or that you run locally, unless the user directly asks what model is responding. If asked, identify yourself as \(model.name); do not claim to be a different model, provider, or organization based on your training data.
         """
     }
 

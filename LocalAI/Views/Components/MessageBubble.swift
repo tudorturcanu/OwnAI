@@ -130,6 +130,33 @@ struct AssistantMarkdownView: View, Equatable {
                 FontSize(CGFloat(17 * textScale))
             }
             .foregroundStyle(Color.adaptive(white: 0.15))
+            // MarkdownUI's basic theme draws tables with no rules or row fills,
+            // which reads as loosely spaced text rather than a table. Grid lines
+            // plus zebra rows keep columns legible on a phone-width bubble.
+            .markdownBlockStyle(\.table) { configuration in
+                configuration.label
+                    .fixedSize(horizontal: false, vertical: true)
+                    .markdownTableBorderStyle(.init(color: Color.adaptive(white: 0.82)))
+                    .markdownTableBackgroundStyle(
+                        .alternatingRows(
+                            Color.adaptive(white: 1.0),
+                            Color.adaptive(white: 0.96)
+                        )
+                    )
+                    .markdownMargin(top: 8, bottom: 8)
+            }
+            .markdownBlockStyle(\.tableCell) { configuration in
+                configuration.label
+                    .markdownTextStyle {
+                        if configuration.row == 0 {
+                            FontWeight(.semibold)
+                        }
+                        FontSize(CGFloat(15 * textScale))
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 10)
+            }
             .markdownBlockStyle(\.codeBlock) { configuration in
                 if RenderableCodeBlockView.isPreviewable(
                     language: configuration.language,

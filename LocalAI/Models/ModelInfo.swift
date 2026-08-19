@@ -526,6 +526,7 @@ struct ModelInfo: Identifiable, Equatable {
     static let vlmMLXModelIDs: Set<String> = [
         "mlx-community/Qwen2-VL-2B-Instruct-4bit",
         "mlx-community/Qwen2.5-VL-3B-Instruct-3bit",
+        "mlx-community/Qwen2.5-VL-7B-Instruct-4bit",
         "LiquidAI/LFM2.5-VL-450M-MLX-6bit",
         "mlx-community/gemma-4-e2b-it-4bit",
         "mlx-community/gemma-4-e4b-it-4bit",
@@ -568,6 +569,7 @@ struct ModelInfo: Identifiable, Equatable {
     static let alwaysReasoningPrefixMLXModelIDs: Set<String> = [
         "mlx-community/DeepSeek-R1-Distill-Qwen-1.5B-4bit",
         "mlx-community/DeepSeek-R1-Distill-Qwen-7B-4bit",
+        "mlx-community/DeepSeek-R1-Distill-Qwen-14B-4bit",
         "mlx-community/LFM2.5-2.6B-4bit"
     ]
 
@@ -993,6 +995,38 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Qwen2.5-Coder 1.5B Instruct (4-bit MLX)
+    static let qwen25_coder_1_5b_4bit = ModelInfo(
+        id: "mlx-community/Qwen2.5-Coder-1.5B-Instruct-4bit",
+        name: "Qwen2.5 Coder 1.5B",
+        description: "Alibaba's compact code intelligence model. Ultra-fast, lightweight programming assistant tuned for code generation, syntax debugging, and multilingual scripting.",
+        family: .qwen,
+        sizeGB: 0.94,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen2.5-Coder-1.5B-Instruct"),
+        privacyURL: nil,
+        shortDescription: "Ultra-fast code copilot with low memory footprint.",
+        recommendedFor: "Best for fast syntax fixes, scripting, and mobile coding help.",
+        badges: [.bestForCoding, .fastest, .multilingual, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Qwen2.5-Math 1.5B Instruct (4-bit MLX)
+    static let qwen25_math_1_5b_4bit = ModelInfo(
+        id: "mlx-community/Qwen2.5-Math-1.5B-Instruct-4bit",
+        name: "Qwen2.5 Math 1.5B",
+        description: "Specialized mathematical and logical problem solver tuned for rapid calculation, algebra, and step-by-step reasoning on-device.",
+        family: .qwen,
+        sizeGB: 0.95,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen2.5-Math-1.5B-Instruct"),
+        privacyURL: nil,
+        shortDescription: "Specialized math and logic solver with concise derivation.",
+        recommendedFor: "Best for arithmetic, algebra, word problems, and formula derivations.",
+        badges: [.reasoning, .fastest, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// DeepSeek R1 Distill Qwen 1.5B (4-bit MLX)
     static let deepseek_r1_distill_qwen_1_5b_4bit = ModelInfo(
         id: "mlx-community/DeepSeek-R1-Distill-Qwen-1.5B-4bit",
@@ -1102,6 +1136,22 @@ extension ModelInfo {
         shortDescription: "A strong larger Qwen model for writing, coding, and multilingual tasks.",
         recommendedFor: "Best for higher-quality local output when you have enough memory headroom.",
         badges: [.reasoning, .multilingual, .higherQuality, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Qwen2.5-Coder 7B Instruct (4-bit MLX)
+    static let qwen25_coder_7b_4bit = ModelInfo(
+        id: "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
+        name: "Qwen2.5 Coder 7B",
+        description: "Alibaba's flagship open-weights coding model. Delivers high accuracy on complex algorithms, Swift/SwiftUI refactoring, Python, and multi-file architecture.",
+        family: .qwen,
+        sizeGB: 4.35,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct"),
+        privacyURL: nil,
+        shortDescription: "Powerful on-device coding assistant for developers.",
+        recommendedFor: "Best for writing apps, full-function refactors, and technical problem-solving.",
+        badges: [.bestForCoding, .higherQuality, .reasoning, .newerDevices, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -1361,6 +1411,22 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// DeepSeek R1 Distill Qwen 14B (4-bit MLX)
+    static let deepseek_r1_distill_qwen_14b_4bit = ModelInfo(
+        id: "mlx-community/DeepSeek-R1-Distill-Qwen-14B-4bit",
+        name: "DeepSeek R1 Distill 14B",
+        description: "DeepSeek's advanced reasoning architecture distilled into Qwen 14B, providing deep step-by-step thinking for math, code, and logic on high-memory devices.",
+        family: .deepSeek,
+        sizeGB: 8.65,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-14B"),
+        privacyURL: nil,
+        shortDescription: "High-capacity reasoning model for deep problem solving.",
+        recommendedFor: "Best for complex math proofs, intricate code debugging, and deep logic analysis.",
+        badges: [.reasoning, .higherQuality, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// SmolLM3 3B (4-bit MLX)
     static let smolLM3_3b_4bit = ModelInfo(
         id: "mlx-community/SmolLM3-3B-4bit",
@@ -1473,6 +1539,22 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Qwen2.5-VL 7B Instruct — multimodal vision-language model (4-bit MLX)
+    static let qwen25VL_7b_4bit = ModelInfo(
+        id: "mlx-community/Qwen2.5-VL-7B-Instruct-4bit",
+        name: "Qwen2.5-VL 7B",
+        description: "Alibaba's advanced vision-language model with state-of-the-art OCR, fine-grained visual reasoning, chart understanding, and document analysis on larger devices.",
+        family: .qwen,
+        sizeGB: 4.85,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen2.5-VL-7B-Instruct"),
+        privacyURL: nil,
+        shortDescription: "High-accuracy visual reasoning and document OCR.",
+        recommendedFor: "Best for detailed document OCR, complex screenshots, diagrams, and photo Q&A.",
+        badges: [.images, .higherQuality, .reasoning, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// Qwen3-Coder-Next (4-bit MLX)
     static let qwen3_coder_next_4bit = ModelInfo(
         id: "mlx-community/Qwen3-Coder-Next-4bit",
@@ -1519,6 +1601,8 @@ extension ModelInfo {
         .miniCPM5_1b_optiq_4bit,
         .smolLM2_1_7b_4bit,
         .qwen25_1_5b_instruct_4bit,
+        .qwen25_coder_1_5b_4bit,
+        .qwen25_math_1_5b_4bit,
         .qwen3_1_7b_4bit,
         .deepseek_r1_distill_qwen_1_5b_4bit,
         // Vision  (VLM - image input capable)
@@ -1530,6 +1614,7 @@ extension ModelInfo {
         .qwen2VL_2b_4bit,
         .lfm25_vl_1_6b_4bit,
         .qwen25VL_3b_3bit,
+        .qwen25VL_7b_4bit,
         // Mid-range (1.7–4 GB)
         .gemma3n_e2b_it_lm_4bit,
         .gemma2_2b_4bit,
@@ -1544,6 +1629,7 @@ extension ModelInfo {
         .qwen35_2b_optiq_4bit,
         .qwen35_4b_optiq_4bit,
         .qwen25_3b_instruct_4bit,
+        .qwen25_coder_7b_4bit,
         .qwen3_coder_next_4bit,
         .llama32_3b_4bit,
         .nemotron3_nano_4b_optiq_4bit,
@@ -1557,6 +1643,7 @@ extension ModelInfo {
         .qwen3_4b_4bit,
         // Large (4+ GB) — iPad Pro / Mac
         .deepseek_r1_distill_qwen_7b_4bit,
+        .deepseek_r1_distill_qwen_14b_4bit,
         .lfm25_8b_a1b_4bit,
         .glm51_4bit,
         .qwen25_7b_instruct_4bit,

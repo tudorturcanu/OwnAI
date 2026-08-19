@@ -52,6 +52,8 @@ struct ChatView: View {
     @State private var usageLimitToastMessage: String?
     @State private var extractionNoticeMessage: String?
     @State private var modelRecoveryNoticeMessage: String?
+    @State private var runtimePerformanceToast: RuntimePerformanceStatus?
+    @State private var runtimePerformanceDismissTask: Task<Void, Never>?
     @State private var performanceStatusRevision = 0
     @State private var recentMemoryPressure = false
     @State private var contextLimitWarningDismissed = false
@@ -386,8 +388,8 @@ struct ChatView: View {
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
 
-                    if let status = runtimePerformanceStatus {
-                        runtimePerformancePill(status)
+                    if let status = runtimePerformanceToast {
+                        runtimePerformancePill(status, onDismiss: dismissRuntimePerformanceToast)
                     }
 
                     if let notice = modelManager.lastAutoSelectionNotice {
@@ -414,12 +416,18 @@ struct ChatView: View {
             .onAppear {
                 migrateFullResponseDefaultsIfNeeded()
                 prewarmModel()
+                showRuntimePerformanceToastIfNeeded(runtimePerformanceStatus)
             }
             .onDisappear {
                 speechManager.stopSpeaking()
                 cancelDocumentExtraction(showError: false)
                 postResponseEnrichmentTask?.cancel()
                 postResponseEnrichmentTask = nil
+                runtimePerformanceDismissTask?.cancel()
+                runtimePerformanceDismissTask = nil
+            }
+            .onChange(of: runtimePerformanceStatus) { _, status in
+                showRuntimePerformanceToastIfNeeded(status)
             }
             .onChange(of: modelManager.selectedModelID) {
                 invalidateGenerationSessionScope()
@@ -1632,19 +1640,39 @@ struct ChatView: View {
     }
 
     private func usageLimitToast(message: String) -> some View {
-        toastCard(icon: "exclamationmark.circle.fill", tint: .orange, message: message)
+        toastCard(
+            icon: "exclamationmark.circle.fill",
+            tint: .orange,
+            message: message,
+            onDismiss: { dismissUsageToast(message) }
+        )
     }
 
     private func extractionNoticeToast(message: String) -> some View {
-        toastCard(icon: "exclamationmark.triangle.fill", tint: .orange, message: message)
+        toastCard(
+            icon: "exclamationmark.triangle.fill",
+            tint: .orange,
+            message: message,
+            onDismiss: { dismissExtractionNotice(message) }
+        )
     }
 
     private func modelRecoveryToast(message: String) -> some View {
-        toastCard(icon: "arrow.triangle.2.circlepath.circle.fill", tint: .yellow, message: message)
+        toastCard(
+            icon: "arrow.triangle.2.circlepath.circle.fill",
+            tint: .yellow,
+            message: message,
+            onDismiss: { dismissModelRecoveryNotice(message) }
+        )
     }
 
     /// Shared light-mode notification card used by the chat toasts.
-    private func toastCard(icon: String, tint: Color, message: String) -> some View {
+    private func toastCard(
+        icon: String,
+        tint: Color,
+        message: String,
+        onDismiss: @escaping () -> Void
+    ) -> some View {
         HStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.subheadline.weight(.semibold))
@@ -1672,19 +1700,29 @@ struct ChatView: View {
                 .stroke(Color.adaptiveBorder(opacity: 0.6), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
+        .contentShape(RoundedRectangle(cornerRadius: 16))
+        .onTapGesture(perform: onDismiss)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(message)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(Text(String(localized: "Tap to dismiss")))
     }
 
-    private func runtimePerformancePill(_ status: RuntimePerformanceStatus) -> some View {
-        Label(status.message, systemImage: status.symbolName)
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(.thinMaterial, in: Capsule())
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(status.message)
+    private func runtimePerformancePill(
+        _ status: RuntimePerformanceStatus,
+        onDismiss: @escaping () -> Void
+    ) -> some View {
+        Button(action: onDismiss) {
+            Label(status.message, systemImage: status.symbolName)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(.thinMaterial, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(status.message)
+        .accessibilityHint(Text(String(localized: "Tap to dismiss")))
     }
 
     private func speakReplyButton(for message: ChatMessage) -> some View {
@@ -2146,6 +2184,13 @@ struct ChatView: View {
         }
     }
 
+    private func dismissUsageToast(_ message: String) {
+        guard usageLimitToastMessage == message else { return }
+        withAnimation(.easeOut(duration: 0.2)) {
+            usageLimitToastMessage = nil
+        }
+    }
+
     private func showExtractionNotice(_ message: String) {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
             extractionNoticeMessage = message
@@ -2163,6 +2208,13 @@ struct ChatView: View {
         }
     }
 
+    private func dismissExtractionNotice(_ message: String) {
+        guard extractionNoticeMessage == message else { return }
+        withAnimation(.easeOut(duration: 0.2)) {
+            extractionNoticeMessage = nil
+        }
+    }
+
     private func showModelRecoveryNotice(_ message: String) {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
             modelRecoveryNoticeMessage = message
@@ -2174,6 +2226,48 @@ struct ChatView: View {
                     modelRecoveryNoticeMessage = nil
                 }
             }
+        }
+    }
+
+    private func dismissModelRecoveryNotice(_ message: String) {
+        guard modelRecoveryNoticeMessage == message else { return }
+        withAnimation(.easeOut(duration: 0.2)) {
+            modelRecoveryNoticeMessage = nil
+        }
+    }
+
+    /// Runtime conditions can last for minutes, but their notification should
+    /// behave like every other toast: appear briefly, then get out of the way.
+    private func showRuntimePerformanceToastIfNeeded(_ status: RuntimePerformanceStatus?) {
+        runtimePerformanceDismissTask?.cancel()
+
+        guard let status else {
+            withAnimation(.easeOut(duration: 0.2)) {
+                runtimePerformanceToast = nil
+            }
+            runtimePerformanceDismissTask = nil
+            return
+        }
+
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+            runtimePerformanceToast = status
+        }
+
+        runtimePerformanceDismissTask = Task {
+            try? await Task.sleep(for: .seconds(3.5))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard runtimePerformanceToast == status else { return }
+                dismissRuntimePerformanceToast()
+            }
+        }
+    }
+
+    private func dismissRuntimePerformanceToast() {
+        runtimePerformanceDismissTask?.cancel()
+        runtimePerformanceDismissTask = nil
+        withAnimation(.easeOut(duration: 0.2)) {
+            runtimePerformanceToast = nil
         }
     }
 
@@ -3582,9 +3676,44 @@ struct ChatView: View {
         // answers that end in an emoji or a list item would keep getting
         // "continue" prompts and ramble past their natural end. Only continue
         // when the pass also ran out of output tokens, or when the text shows
-        // a strong truncation signal (trailing conjunction, open clause).
+        // a strong truncation signal (trailing conjunction, open clause), or
+        // when the reply is an acknowledgment stub that promised content it
+        // never delivered.
         return looksTruncated(trimmed) ||
-            (likelyHitResponseLimit(trimmed) && missingTerminalPunctuation(trimmed))
+            (likelyHitResponseLimit(trimmed) && missingTerminalPunctuation(trimmed)) ||
+            isAcknowledgmentOnlyStub(trimmed)
+    }
+
+    /// Detects the small-model failure where the reply is only the first half
+    /// of the learned "acknowledge, then deliver" shape — e.g. "Of course,
+    /// happy to share a few more ideas." — and then stops because the sentence
+    /// sounds complete. Deliberately narrow: an opener phrase up front, a
+    /// deferral word promising content, and nothing that looks like payload.
+    private func isAcknowledgmentOnlyStub(_ trimmed: String) -> Bool {
+        guard trimmed.count <= 160 else { return false }
+        // A question back to the user is a real reply, not a stub.
+        guard !trimmed.contains("?") else { return false }
+        // Digits, colons, line breaks, quotes, or code markers all indicate
+        // the reply carries actual content.
+        let payloadMarkers = CharacterSet(charactersIn: "0123456789:\n`\"“”*")
+        guard trimmed.rangeOfCharacter(from: payloadMarkers) == nil else { return false }
+
+        let folded = trimmed.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+        let openers = [
+            "sure", "of course", "happy to", "glad to", "absolutely",
+            "certainly", "no problem", "great question", "i can help",
+            "i'd be happy", "alright", "let's"
+        ]
+        guard openers.contains(where: { folded.hasPrefix($0) }) else {
+            return false
+        }
+
+        let deferrals = [
+            "share", "ideas", "suggestion", "option", "few more", "more of",
+            "pick", "begin", "get started", "dive in", "go over", "look at",
+            "help with", "walk you through", "ready to help"
+        ]
+        return deferrals.contains { folded.contains($0) }
     }
 
     private func adaptiveGenerationOverrides(

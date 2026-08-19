@@ -60,8 +60,9 @@ enum AutoModelTaskClassifier {
         let normalized = prompt.lowercased()
         let codingSignals = [
             "```", "compile", "compiler", "stack trace", "exception", "debug",
-            "refactor", "function", "class ", "struct ", "swiftui", "typescript",
-            "javascript", "python", "sql", "api endpoint", "pull request", "regex"
+            "refactor", "function", "func ", "class ", "struct ", "swiftui", "swift",
+            "typescript", "javascript", "python", "sql", "api endpoint", "pull request",
+            "regex", "html", "css", "json", "yaml", "algorithm", "code "
         ]
         if codingSignals.contains(where: normalized.contains) {
             return .coding
@@ -70,7 +71,9 @@ enum AutoModelTaskClassifier {
         let reasoningSignals = [
             "step by step", "analyze", "compare", "evaluate", "trade-off",
             "tradeoff", "reason through", "prove", "calculate", "solve",
-            "root cause", "pros and cons", "why does", "how would you"
+            "root cause", "pros and cons", "why does", "how would you",
+            "derivative", "integral", "equation", "formula", "proof",
+            "math", "theorem", "probability", "statistics"
         ]
         if reasoningSignals.contains(where: normalized.contains) || prompt.count > 700 {
             return .reasoning

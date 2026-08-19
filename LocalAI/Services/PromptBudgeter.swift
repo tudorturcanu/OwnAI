@@ -43,9 +43,22 @@ enum PromptBudgeter {
     /// engine condenses the transcript against a window the prompt was never
     /// budgeted for. `128k` matches the released Phi 3 Mini 128K build; `long`
     /// is reserved for future long-context identifiers.
+    /// Models whose architecture keeps a long context cheap on-device, sized
+    /// individually instead of by the generic heuristics below. Nemotron 3
+    /// Nano is a hybrid Mamba-Transformer: only 4 of its 42 layers carry a
+    /// growing KV cache, so a 12K window costs a fraction of what it would on
+    /// a pure Transformer of the same size — and the model is trained for it
+    /// (262K max, ~91% RULER recall at 128K). The low-memory-phone clamp in
+    /// DeviceResourcePolicy still applies on constrained devices.
+    nonisolated private static let extendedWindowByModelID: [String: Int] = [
+        "mlx-community/NVIDIA-Nemotron-3-Nano-4B-OptiQ-4bit": 12_000
+    ]
+
     nonisolated static func mlxContextWindow(for model: ModelInfo) -> Int {
         let modelWindow: Int
-        if model.supportsVision {
+        if let extendedWindow = extendedWindowByModelID[model.id] {
+            modelWindow = extendedWindow
+        } else if model.supportsVision {
             modelWindow = 2_800
         } else if model.id.localizedCaseInsensitiveContains("128k") ||
             model.id.localizedCaseInsensitiveContains("long") {
