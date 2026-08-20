@@ -1955,6 +1955,7 @@ struct DownloadReadinessView: View {
             }
         }
         .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.adaptive(white: 0.975))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(

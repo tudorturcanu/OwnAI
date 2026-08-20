@@ -91,6 +91,10 @@ struct ChatView: View {
 
     @State private var editingMessage: ChatMessage?
     @State private var editedMessageText: String = ""
+    // TextEditor is backed by UITextView, which can retain its rendered text
+    // across sheet presentations. Give every editing session its own identity
+    // so the UIKit view is recreated with the current binding value.
+    @State private var editComposerSessionID = UUID()
     @State private var isEditSheetPresented = false
     @State private var inChatSearchText: String = ""
     @State private var isInChatSearchActive = false
@@ -3104,6 +3108,7 @@ struct ChatView: View {
 
         editingMessage = message
         editedMessageText = message.content
+        editComposerSessionID = UUID()
         isEditSheetPresented = true
     }
 
@@ -3153,6 +3158,9 @@ struct ChatView: View {
 
     private var editComposerCard: some View {
         let editorPadding = EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12)
+        // TextEditor adds its own text-container inset inside this outer padding.
+        // Match it so an empty editor's placeholder sits on the text baseline.
+        let placeholderPadding = EdgeInsets(top: 20, leading: 20, bottom: 20, trailing: 20)
 
         return VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -3172,7 +3180,7 @@ struct ChatView: View {
                     Text(String(localized: "Rewrite the message here..."))
                         .font(.callout)
                         .foregroundStyle(Color.adaptive(white: 0.55))
-                        .padding(editorPadding)
+                        .padding(placeholderPadding)
                         .allowsHitTesting(false)
                 }
 
@@ -3182,7 +3190,7 @@ struct ChatView: View {
                     .background(Color.clear)
                     .frame(minHeight: 220)
                     .padding(editorPadding)
-                    .id(editingMessage?.id)
+                    .id(editComposerSessionID)
             }
             .frame(maxWidth: .infinity, minHeight: 220, alignment: .topLeading)
             .background(Color.adaptive(white: 0.985), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
