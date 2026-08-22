@@ -35,10 +35,6 @@ struct SettingsView: View {
         modelManager.selectedModel?.name ?? String(localized: "No model selected")
     }
 
-    private var downloadedModelCount: Int {
-        modelManager.models.filter { $0.downloadState.isDownloaded && $0.engine == .mlx }.count
-    }
-
     private var downloadedStorageText: String {
         let totalGB = modelManager.models
             .filter { $0.downloadState.isDownloaded && $0.engine == .mlx }
@@ -551,32 +547,6 @@ struct SettingsView: View {
                 )
             }
             .buttonStyle(.plain)
-
-            sectionDivider
-
-            // Storage info row
-            HStack(spacing: 14) {
-                rowIcon(systemImage: "internaldrive.fill", tint: .teal)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(
-                        downloadedModelCount == 1
-                            ? String(localized: "1 local model")
-                            : String(format: String(localized: "%lld local models", defaultValue: "%lld local models"), Int64(downloadedModelCount))
-                    )
-                    .font(.body)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.primary)
-
-                    Text(downloadedStorageText)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
         }
         .sheet(isPresented: $showDataPrivacySheet) {
             DataPrivacySheet()

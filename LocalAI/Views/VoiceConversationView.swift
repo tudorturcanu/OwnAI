@@ -67,6 +67,9 @@ struct VoiceConversationView: View {
         if phase == .thinking && llmEngine.state == .loading {
             return String(localized: "Loading model…")
         }
+        if phase == .speaking && speechManager.isPreparingSpeechOutput {
+            return String(localized: "Preparing voice…")
+        }
         return phase.label
     }
 

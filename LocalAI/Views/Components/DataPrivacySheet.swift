@@ -96,7 +96,7 @@ struct DataPrivacySheet: View {
                         iconColor: .blue,
                         title: "Model Downloads"
                     ) {
-                        Text("Downloading model files uses a network request to **Hugging Face Inc.** (model hosting provider). This request may include your IP address and device request headers.")
+                        Text("Downloading model files — including optional voice models for reading replies aloud — uses a network request to **Hugging Face Inc.** (model hosting provider). This request may include your IP address and device request headers.")
                             .font(.subheadline)
                             .foregroundStyle(Color.adaptive(white: 0.45))
                         

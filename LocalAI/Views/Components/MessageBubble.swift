@@ -571,11 +571,18 @@ struct MessageBubble: View {
 
             if onSpeak != nil {
                 let isSpeakingThisMessage = speechManager.isSpeaking && speechManager.currentlySpeakingMessageID == message.id
-                quickActionButton(
-                    icon: isSpeakingThisMessage ? "speaker.slash.fill" : "speaker.wave.2",
-                    label: isSpeakingThisMessage ? String(localized: "Stop") : String(localized: "Speak")
-                ) {
-                    onSpeak?(message)
+                if isSpeakingThisMessage && speechManager.isPreparingSpeechOutput {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 34, height: 30)
+                        .accessibilityLabel(String(localized: "Preparing voice"))
+                } else {
+                    quickActionButton(
+                        icon: isSpeakingThisMessage ? "speaker.slash.fill" : "speaker.wave.2",
+                        label: isSpeakingThisMessage ? String(localized: "Stop") : String(localized: "Speak")
+                    ) {
+                        onSpeak?(message)
+                    }
                 }
             }
 

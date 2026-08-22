@@ -12,8 +12,6 @@ import Speech
 import SwiftUI
 import Observation
 import Combine
-import piper
-import libespeak_ng
 import WhisperKit
 
 enum SpeechInputBackend: String, CaseIterable, Identifiable {
@@ -37,26 +35,52 @@ enum SpeechInputBackend: String, CaseIterable, Identifiable {
     }
 }
 
-enum SpeechOutputBackend: String, CaseIterable, Identifiable {
+enum SpeechOutputBackend: Hashable, Identifiable, Sendable {
     case system
-    case piperAmy
-    case piperNorman
+    case kokoro(KokoroVoice)
+
+    static var allCases: [SpeechOutputBackend] {
+        [.system] + KokoroVoice.allCases.map { .kokoro($0) }
+    }
 
     var id: String { rawValue }
 
+    var rawValue: String {
+        switch self {
+        case .system: return "system"
+        case .kokoro(let voice): return "kokoro:\(voice.rawValue)"
+        }
+    }
+
+    init?(rawValue: String) {
+        if rawValue == "system" {
+            self = .system
+            return
+        }
+        let prefix = "kokoro:"
+        guard rawValue.hasPrefix(prefix),
+              let voice = KokoroVoice(rawValue: String(rawValue.dropFirst(prefix.count))) else {
+            return nil
+        }
+        self = .kokoro(voice)
+    }
+
+    var kokoroVoice: KokoroVoice? {
+        if case .kokoro(let voice) = self { return voice }
+        return nil
+    }
+
     var title: String {
         switch self {
-        case .system: return "System Voice"
-        case .piperAmy: return "Amy"
-        case .piperNorman: return "Norman"
+        case .system: return String(localized: "System Voice")
+        case .kokoro(let voice): return voice.displayName
         }
     }
 
     var subtitle: String {
         switch self {
-        case .system: return "Built-in Apple speech"
-        case .piperAmy: return "Local TTS (Amy - US Female)"
-        case .piperNorman: return "Local TTS (Norman - US Male)"
+        case .system: return String(localized: "Built-in Apple speech")
+        case .kokoro(let voice): return "Kokoro · \(voice.subtitle)"
         }
     }
 }
@@ -97,8 +121,14 @@ private final class AudioLevelThrottle: @unchecked Sendable {
 @MainActor
 @Observable
 final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
+    /// Kokoro runs on MLX, so it inherits the same A14+/GPU-family gate as
+    /// the chat models and is compiled out on the simulator.
     nonisolated static var isKokoroSupportedOnCurrentDevice: Bool {
-        false
+        #if targetEnvironment(simulator)
+        return false
+        #else
+        return DeviceResourcePolicy.supportsMLXCompute
+        #endif
     }
 
     var isListening = false
@@ -115,8 +145,10 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     var showPermissionAlert = false
     var errorMessage: String?
     var errorVersion = 0
-    var speechBackendStatus = "System voice is ready."
+    var speechBackendStatus = String(localized: "System voice is ready.")
     var isPreparingSpeechOutput = false
+    /// 0...1 while the Kokoro weights/voice are downloading, nil otherwise.
+    var speechOutputDownloadProgress: Double?
     var isPreparingTranscription = false
 
     /// Hands-free endpointing: when true, listening finishes on its own after
@@ -168,22 +200,39 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     private let ttsAudioEngine = AVAudioEngine()
     private let ttsPlayerNode = AVAudioPlayerNode()
     private var ttsGraphConfigured = false
-    private var piperSynthesizer: OpaquePointer?
-    private var piperSynthesisTask: Task<Void, Never>?
-    private var piperLoadTask: Task<Void, Never>?
+    private var kokoroSynthesizer: KokoroSynthesizer?
+    private var kokoroLoadTask: Task<Bool, Never>?
+    private var kokoroSynthesisTask: Task<Void, Never>?
+    /// Bumped on every stop/release so in-flight synthesis results from an
+    /// earlier utterance are discarded instead of scheduled.
+    private var kokoroPlaybackGeneration = UUID()
+    /// Frees the ~330 MB of Kokoro weights after a quiet spell, mirroring
+    /// LLMEngine's idle unload. Re-armed after every utterance; the next
+    /// Speak pays the load + warm-up again (shown as "Preparing voice…").
+    private var kokoroIdleUnloadTask: Task<Void, Never>?
+    private static let kokoroIdleUnloadInterval: TimeInterval = 600
 
     @ObservationIgnored @AppStorage("speechOutputBackend") private var persistedSpeechOutputBackend = SpeechOutputBackend.system.rawValue
 
     var speechOutputBackend: SpeechOutputBackend = .system {
         didSet {
             persistedSpeechOutputBackend = speechOutputBackend.rawValue
-            if oldValue != speechOutputBackend {
-                releasePiper()
-            }
+            guard oldValue != speechOutputBackend else { return }
             if speechOutputBackend == .system {
+                // Free the ~330 MB of weights as soon as they're not wanted.
+                releaseKokoro()
                 speechBackendStatus = statusMessage(for: .system)
+            } else {
+                speechBackendStatus = String(localized: "\(speechOutputBackend.title) will prepare when first used.")
             }
         }
+    }
+
+    /// The Kokoro voice to synthesize with, or nil when the system voice is
+    /// selected or this device can't run MLX.
+    private var activeKokoroVoice: KokoroVoice? {
+        guard Self.isKokoroSupportedOnCurrentDevice else { return nil }
+        return speechOutputBackend.kokoroVoice
     }
 
     override init() {
@@ -198,23 +247,21 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         }
 
         ttsAudioEngine.attach(ttsPlayerNode)
-        // Note: the player -> mainMixer connection is deferred to playback time
-        // (see configureTTSGraphIfNeeded). Connecting here, before the audio
+        // The player -> mainMixer connection is deferred to playback time
+        // (see configureAndStartTTSEngine). Connecting here, before the audio
         // session is active for playback, can lock the mixer -> output route to
         // a 0 Hz / 0 channel hardware format, producing silence with no error.
 
-        if let savedBackend = SpeechOutputBackend(rawValue: persistedSpeechOutputBackend) {
+        // Property observers don't fire inside init, so the status is set
+        // explicitly. Kokoro weights are never loaded during launch; the
+        // saved voice is prepared on first use.
+        if let savedBackend = SpeechOutputBackend(rawValue: persistedSpeechOutputBackend),
+           savedBackend == .system || Self.isKokoroSupportedOnCurrentDevice {
             speechOutputBackend = savedBackend
-            if savedBackend == .system {
-                speechBackendStatus = statusMessage(for: .system)
-            } else {
-                // Preserve an existing user's choice, but do not synchronously
-                // load ONNX weights during launch. Piper is prepared on first use.
-                speechBackendStatus = "\(savedBackend.title) will prepare when first used."
-            }
-        } else {
-            speechBackendStatus = statusMessage(for: .system)
         }
+        speechBackendStatus = speechOutputBackend == .system
+            ? statusMessage(for: .system)
+            : String(localized: "\(speechOutputBackend.title) will prepare when first used.")
     }
 
     func startListening() throws {
@@ -509,22 +556,51 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         guard !cleanedText.isEmpty else { return }
         stopSpeaking()
         currentlySpeakingMessageID = messageID
-        if speechOutputBackend == .system {
+        KokoroDiagnostics.log(
+            "speak()",
+            "backend=\(speechOutputBackend.rawValue) supported=\(Self.isKokoroSupportedOnCurrentDevice) loaded=\(kokoroSynthesizer != nil) chars=\(cleanedText.count)"
+        )
+        guard let voice = activeKokoroVoice else {
+            KokoroDiagnostics.log("speak()", "→ system voice")
             speakWithSystemVoice(cleanedText)
-        } else if piperSynthesizer == nil {
-            let requestedBackend = speechOutputBackend
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                await self.prepareSpeechOutputIfNeeded()
-                guard self.speechOutputBackend == requestedBackend else { return }
-                if self.piperSynthesizer != nil {
-                    self.speakWithPiper(cleanedText)
-                } else {
-                    self.speakWithSystemVoice(cleanedText)
-                }
+            return
+        }
+        if kokoroSynthesizer != nil {
+            speakWithKokoro(cleanedText, voice: voice)
+            return
+        }
+        KokoroDiagnostics.log("speak()", "→ preparing \(voice.rawValue) first")
+        // Weights aren't loaded yet: prepare (no download from here — that
+        // is Settings' job), then speak with whatever is available. The
+        // utterance counts as "speaking" from this moment so the UI flips to
+        // its stop state (with a "Preparing voice…" hint) instead of looking
+        // like the tap was ignored while the weights load.
+        isSpeaking = true
+        let generation = kokoroPlaybackGeneration
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let ready = await self.prepareSpeechOutputIfNeeded(downloadIfNeeded: false)
+            // A stop (or a new utterance) in the meantime already reset state.
+            guard self.kokoroPlaybackGeneration == generation else { return }
+            if ready, self.kokoroSynthesizer != nil, self.speechOutputBackend.kokoroVoice == voice {
+                self.speakWithKokoro(cleanedText, voice: voice)
+            } else {
+                self.speakWithSystemVoice(cleanedText)
             }
-        } else {
-            speakWithPiper(cleanedText)
+        }
+    }
+
+    /// Loads the selected Kokoro voice ahead of time (never downloads) so the
+    /// first reply doesn't pay the multi-second weight load. Call it when
+    /// speech is about to be needed — entering voice mode, or opening a chat
+    /// with auto-read on — not on every launch, since it costs ~330 MB.
+    func prewarmSpeechOutputIfNeeded() {
+        guard let voice = activeKokoroVoice,
+              kokoroSynthesizer == nil,
+              kokoroLoadTask == nil,
+              KokoroModelStore.isReady(for: voice) else { return }
+        Task { @MainActor [weak self] in
+            await self?.prepareSpeechOutputIfNeeded(downloadIfNeeded: false)
         }
     }
 
@@ -550,12 +626,13 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         isProcessingSpeechQueue = false
 
         let wasSpeaking = isSpeaking || synthesizer.isSpeaking || ttsPlayerNode.isPlaying
-        
+
         synthesizer.stopSpeaking(at: .immediate)
-        piperSynthesisTask?.cancel()
-        piperSynthesisTask = nil
+        kokoroPlaybackGeneration = UUID()
+        kokoroSynthesisTask?.cancel()
+        kokoroSynthesisTask = nil
         ttsPlayerNode.stop()
-        
+
         isSpeaking = false
         currentlySpeakingMessageID = nil
         if wasSpeaking {
@@ -569,15 +646,16 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
 
             let nextChunk = speechQueue.removeFirst()
             let completionVersionBefore = speechCompletionVersion
-            if speechOutputBackend == .system {
-                speakWithSystemVoice(nextChunk)
-            } else {
-                await prepareSpeechOutputIfNeeded()
-                if piperSynthesizer != nil {
-                    speakWithPiper(nextChunk)
+            if let voice = activeKokoroVoice {
+                let ready = await prepareSpeechOutputIfNeeded(downloadIfNeeded: false)
+                guard speechQueueToken == token else { break }
+                if ready, kokoroSynthesizer != nil {
+                    speakWithKokoro(nextChunk, voice: voice)
                 } else {
                     speakWithSystemVoice(nextChunk)
                 }
+            } else {
+                speakWithSystemVoice(nextChunk)
             }
             await waitForSpeechCompletion(since: completionVersionBefore, token: token)
         }
@@ -596,28 +674,51 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         }
     }
 
-    func prepareSpeechOutputIfNeeded() async {
-        guard speechOutputBackend != .system else {
-            speechBackendStatus = statusMessage(for: .system)
-            return
+    /// Loads the Kokoro engine for the selected voice, downloading the weights
+    /// and/or voice tensor first when `downloadIfNeeded` is set. Returns true
+    /// when the synthesizer is ready. Concurrent callers share one load.
+    @discardableResult
+    func prepareSpeechOutputIfNeeded(downloadIfNeeded: Bool) async -> Bool {
+        KokoroDiagnostics.log(
+            "prepareIfNeeded",
+            "backend=\(speechOutputBackend.rawValue) downloadIfNeeded=\(downloadIfNeeded) loaded=\(kokoroSynthesizer != nil) loadInFlight=\(kokoroLoadTask != nil)"
+        )
+        guard let voice = activeKokoroVoice else {
+            KokoroDiagnostics.log("prepareIfNeeded", "no active Kokoro voice (system selected or device unsupported)")
+            if speechOutputBackend == .system {
+                speechBackendStatus = statusMessage(for: .system)
+            }
+            return false
         }
-        guard piperSynthesizer == nil else { return }
-        if let piperLoadTask {
-            await piperLoadTask.value
-            return
+        if kokoroSynthesizer != nil, KokoroModelStore.isVoiceDownloaded(voice) {
+            KokoroDiagnostics.log("prepareIfNeeded", "already loaded")
+            return true
+        }
+        if let kokoroLoadTask {
+            KokoroDiagnostics.log("prepareIfNeeded", "joining in-flight load")
+            return await kokoroLoadTask.value
+        }
+        if !downloadIfNeeded, !KokoroModelStore.isReady(for: voice) {
+            KokoroDiagnostics.log(
+                "prepareIfNeeded",
+                "not downloaded (weights=\(KokoroModelStore.isWeightsDownloaded) voice=\(KokoroModelStore.isVoiceDownloaded(voice))) and download not allowed here"
+            )
+            speechBackendStatus = String(localized: "Download \(voice.displayName) in Settings to use it.")
+            return false
         }
 
-        let backend = speechOutputBackend
-        let task = Task { @MainActor [weak self] in
-            guard let self else { return }
-            await self.loadPiper(backend: backend)
+        let task = Task { @MainActor [weak self] () -> Bool in
+            guard let self else { return false }
+            return await self.loadKokoro(voice: voice, downloadIfNeeded: downloadIfNeeded)
         }
-        piperLoadTask = task
-        await task.value
-        piperLoadTask = nil
+        kokoroLoadTask = task
+        let ready = await task.value
+        kokoroLoadTask = nil
+        return ready
     }
 
     func unloadKokoro() {
+        releaseKokoro()
     }
 
     func handleScenePhaseChange(_ phase: ScenePhase) {
@@ -635,8 +736,8 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     /// whole session — the same primitive VoIP apps use — which is what
     /// keeps the recognizer from hearing the device's own TTS output as if
     /// the user had spoken, even though `audioEngine` (recording) and
-    /// `ttsAudioEngine` (Piper playback) are separate engine instances: the
-    /// cancellation happens at the session/hardware level, not per-engine.
+    /// `AVSpeechSynthesizer` (playback) are separate: the cancellation
+    /// happens at the session/hardware level, not per-engine.
     /// Used only while hands-free Voice Conversation mode
     /// (`autoStopAfterSilence`) is active; the single-shot "tap mic, dictate
     /// one message" flow keeps the simpler, mutually exclusive
@@ -659,9 +760,9 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     }
 
     /// Deactivates the shared audio session once nothing is recording or
-    /// playing. The Piper playback path and the listening path both leave the
-    /// session active (with `.duckOthers`), so without this other apps' audio
-    /// stays ducked after a voice session ends.
+    /// playing. Both the speaking and listening paths leave the session
+    /// active (with `.duckOthers`), so without this other apps' audio stays
+    /// ducked after a voice session ends.
     func releaseAudioSessionIfIdle() {
         guard !isListening, !isSpeaking, !synthesizer.isSpeaking else { return }
         if ttsAudioEngine.isRunning {
@@ -753,8 +854,7 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
             stopListening()
         }
         unloadWhisper()
-        releasePiper()
-        isPreparingSpeechOutput = false
+        releaseKokoro()
     }
 
     func deleteWhisperModel() {
@@ -858,130 +958,101 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         listeningRestartToken = UUID()
     }
 
-    // MARK: - Piper Integration
+    // MARK: - Kokoro (Text-to-Speech)
 
-    private func getPiperModelPaths(for backend: SpeechOutputBackend) -> (model: String, config: String)? {
-        let modelName: String
-        switch backend {
-        case .piperAmy:
-            modelName = "en_US-amy-medium.onnx"
-        case .piperNorman:
-            modelName = "en_US-norman-medium.onnx"
-        default:
-            return nil
-        }
-        
-        if let path = Bundle.main.path(forResource: modelName, ofType: nil) ?? 
-                      Bundle.main.path(forResource: (modelName as NSString).deletingPathExtension, ofType: (modelName as NSString).pathExtension) {
-            return (path, path + ".json")
-        }
-        
-        if let path = Bundle.main.path(forResource: modelName, ofType: nil, inDirectory: "PiperAudioFiles") {
-            return (path, path + ".json")
-        }
-        
-        // Also check if we have a direct path within the app bundle by searching
-        if let resourcePath = Bundle.main.resourcePath {
-            let url = URL(fileURLWithPath: resourcePath).appendingPathComponent("PiperAudioFiles/\(modelName)")
-            if FileManager.default.fileExists(atPath: url.path) {
-                return (url.path, url.path + ".json")
-            }
-        }
-        
-        return nil
+    nonisolated var isKokoroModelDownloaded: Bool {
+        KokoroModelStore.isWeightsDownloaded
     }
-    
-    private func loadPiper(backend: SpeechOutputBackend) async {
-        guard let paths = getPiperModelPaths(for: backend) else {
-            publishError("Could not find Piper model files for \(backend.title)")
-            return
-        }
-        
-        guard let docsURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            publishError("Could not access Documents directory for espeak-ng data")
-            return
-        }
-        
-        do {
-            try ensureEspeakDataInstalled(inRoot: docsURL)
-        } catch {
-            publishError("Failed to install espeak-ng data: \(error.localizedDescription)")
-            return
-        }
-        
-        let espeakDataPath = docsURL.path
+
+    private func loadKokoro(voice: KokoroVoice, downloadIfNeeded: Bool) async -> Bool {
+        KokoroDiagnostics.log("prepare", "voice=\(voice.rawValue) ready=\(KokoroModelStore.isReady(for: voice)) downloadIfNeeded=\(downloadIfNeeded) loaded=\(kokoroSynthesizer != nil)"
+        )
         isPreparingSpeechOutput = true
-        speechBackendStatus = "Preparing \(backend.title)…"
-        let modelPath = paths.model
-        let configPath = paths.config
-        let pointerAddress = await Task.detached(priority: .userInitiated) {
-            piper_create(modelPath, configPath, espeakDataPath).map { UInt(bitPattern: $0) }
-        }.value
+        defer {
+            isPreparingSpeechOutput = false
+            speechOutputDownloadProgress = nil
+        }
+
+        if !KokoroModelStore.isReady(for: voice) {
+            guard downloadIfNeeded else { return false }
+            speechBackendStatus = String(localized: "Downloading \(voice.displayName)…")
+            speechOutputDownloadProgress = 0
+            do {
+                try await KokoroModelStore.download(voice: voice) { fraction in
+                    Task { @MainActor [weak self] in
+                        self?.speechOutputDownloadProgress = fraction
+                    }
+                }
+            } catch is CancellationError {
+                KokoroDiagnostics.log("prepare", "download cancelled")
+                return false
+            } catch {
+                KokoroDiagnostics.log("prepare", "download FAILED: \(error)")
+                publishError(String(localized: "Could not download \(voice.displayName): \(error.localizedDescription)"))
+                speechBackendStatus = statusMessage(for: .system)
+                return false
+            }
+        }
+
+        // The user may have switched voices (or back to the system voice)
+        // while the download ran.
+        guard speechOutputBackend.kokoroVoice == voice else { return false }
+
+        if kokoroSynthesizer == nil {
+            // Loading under Xcode's Metal API Validation would crash the app
+            // inside the first MLX gather; fail visibly instead.
+            if KokoroDiagnostics.isMetalValidationEnabled {
+                KokoroDiagnostics.log("prepare", "REFUSED: \(KokoroDiagnostics.metalValidationMessage) [\(KokoroDiagnostics.metalEnvironmentSummary)]")
+                publishError(KokoroDiagnostics.metalValidationMessage)
+                speechBackendStatus = statusMessage(for: .system)
+                return false
+            }
+            speechBackendStatus = String(localized: "Preparing \(voice.displayName)…")
+            let weightsURL = KokoroModelStore.weightsURL
+            let synthesizer = await Task.detached(priority: .userInitiated) {
+                KokoroSynthesizer(weightsURL: weightsURL)
+            }.value
+            guard speechOutputBackend.kokoroVoice == voice else { return false }
+            // The first generateAudio call also compiles the MLX graph; doing
+            // it on a throwaway phrase moves that cost into "Preparing…".
+            await synthesizer.warmUp(voice: voice)
+            guard speechOutputBackend.kokoroVoice == voice else { return false }
+            kokoroSynthesizer = synthesizer
+        }
+        speechBackendStatus = statusMessage(for: .kokoro(voice))
+        KokoroDiagnostics.log("prepare", "READY voice=\(voice.rawValue)")
+        return true
+    }
+
+    private func releaseKokoro() {
+        if kokoroSynthesizer != nil || kokoroLoadTask != nil {
+            KokoroDiagnostics.log("release", "loaded=\(kokoroSynthesizer != nil) loadInFlight=\(kokoroLoadTask != nil)")
+        }
+        kokoroLoadTask?.cancel()
+        kokoroLoadTask = nil
+        kokoroIdleUnloadTask?.cancel()
+        kokoroIdleUnloadTask = nil
+        kokoroPlaybackGeneration = UUID()
+        kokoroSynthesisTask?.cancel()
+        kokoroSynthesisTask = nil
+        kokoroSynthesizer = nil
         isPreparingSpeechOutput = false
-
-        guard speechOutputBackend == backend else {
-            if let pointerAddress, let synth = OpaquePointer(bitPattern: pointerAddress) {
-                piper_free(synth)
-            }
-            return
-        }
-        guard let pointerAddress, let synth = OpaquePointer(bitPattern: pointerAddress) else {
-            publishError("Failed to initialize Piper synthesizer")
-            return
-        }
-        piperSynthesizer = synth
-        speechBackendStatus = statusMessage(for: backend)
+        speechOutputDownloadProgress = nil
     }
 
-    private func releasePiper() {
-        piperLoadTask?.cancel()
-        piperLoadTask = nil
-        piperSynthesisTask?.cancel()
-        piperSynthesisTask = nil
-        if let synth = piperSynthesizer {
-            piper_free(synth)
-            piperSynthesizer = nil
+    func deleteKokoroModel() {
+        releaseKokoro()
+        if speechOutputBackend != .system {
+            speechOutputBackend = .system
         }
+        KokoroModelStore.deleteAll()
     }
 
-    private func ensureEspeakDataInstalled(inRoot rootURL: URL) throws {
-        let dataURL = rootURL.appendingPathComponent("espeak-ng-data", isDirectory: true)
-        let requiredFiles = [
-            "en_dict",
-            "phondata",
-            "phonindex",
-            "phontab"
-        ]
-        let fileManager = FileManager.default
-
-        if fileManager.fileExists(atPath: dataURL.path) {
-            let hasRequiredFiles = requiredFiles.allSatisfy { fileName in
-                fileManager.fileExists(atPath: dataURL.appendingPathComponent(fileName).path)
-            }
-            if !hasRequiredFiles {
-                try? fileManager.removeItem(at: dataURL)
-            }
-        }
-
-        try EspeakLib.ensureBundleInstalled(inRoot: rootURL)
-
-        let missingFiles = requiredFiles.filter { fileName in
-            !fileManager.fileExists(atPath: dataURL.appendingPathComponent(fileName).path)
-        }
-        guard missingFiles.isEmpty else {
-            throw NSError(
-                domain: "SpeechManager",
-                code: -2,
-                userInfo: [NSLocalizedDescriptionKey: "Missing compiled espeak-ng files: \(missingFiles.joined(separator: ", "))"]
-            )
-        }
-    }
-    
     private func configureAndStartTTSEngine() throws {
         if !ttsGraphConfigured {
-            // 22050 Hz mono matches the Piper voice models; the mixer handles
-            // sample-rate conversion to whatever the active output route uses.
-            guard let format = AVAudioFormat(standardFormatWithSampleRate: 22050, channels: 1) else {
+            // 24 kHz mono matches Kokoro's output; the mixer converts to
+            // whatever the active output route uses.
+            guard let format = AVAudioFormat(standardFormatWithSampleRate: KokoroSynthesizer.sampleRate, channels: 1) else {
                 throw NSError(domain: "SpeechManager", code: -1,
                               userInfo: [NSLocalizedDescriptionKey: "Could not create TTS audio format"])
             }
@@ -995,12 +1066,22 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         }
     }
 
-    private func speakWithPiper(_ text: String) {
-        guard let synth = piperSynthesizer else {
-            publishError("Piper synthesizer not loaded")
+    /// Synthesizes `text` sentence by sentence on a background task and
+    /// streams each chunk into the player as soon as it's ready, so the
+    /// first words play while later sentences are still being generated.
+    private func speakWithKokoro(_ text: String, voice: KokoroVoice) {
+        guard let synthesizer = kokoroSynthesizer else {
+            speakWithSystemVoice(text)
             return
         }
-        
+        let chunks = SpeechTextPreparer.chunks(SpeechTextPreparer.clean(text))
+        KokoroDiagnostics.log("speak", "voice=\(voice.rawValue) chars=\(text.count) chunks=\(chunks.count) first=\(chunks.first?.count ?? 0) chars"
+        )
+        guard !chunks.isEmpty else {
+            finishKokoroPlayback()
+            return
+        }
+
         do {
             if autoStopAfterSilence {
                 try activateBargeInCapableSession()
@@ -1009,104 +1090,113 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
                 try session.setCategory(.playback, mode: .default, options: [.duckOthers])
                 try session.setActive(true, options: .notifyOthersOnDeactivation)
             }
-        } catch {
-            publishError("Failed to activate audio for playback: \(error.localizedDescription)")
-            return
-        }
-
-        // Connect and start the engine now that the playback route is active so
-        // the mixer -> output connection picks up the real hardware format.
-        do {
             try configureAndStartTTSEngine()
         } catch {
-            publishError("Audio engine failed to start: \(error.localizedDescription)")
+            KokoroDiagnostics.log("speak", "audio session/engine FAILED: \(error)")
+            publishError(String(localized: "Audio playback failed: \(error.localizedDescription)"))
+            speakWithSystemVoice(text)
             return
         }
 
         isSpeaking = true
         ttsPlayerNode.play()
-        
-        piperSynthesisTask?.cancel()
-        
-        piperSynthesisTask = Task.detached { [weak self] in
-            let options = piper_default_synthesize_options(synth)
-            var mutableOptions = options
-            
-            let startResult = text.withCString { cString in
-                piper_synthesize_start(synth, cString, &mutableOptions)
-            }
-            
-            guard startResult == PIPER_OK else {
-                await MainActor.run {
-                    self?.publishError("Failed to start Piper synthesis")
-                    self?.stopSpeaking()
-                }
-                return
-            }
-            
-            var chunk = piper_audio_chunk()
-            var scheduledFinal = false
-            while !Task.isCancelled {
-                let nextResult = piper_synthesize_next(synth, &chunk)
-                if nextResult == PIPER_DONE { break }
-                if nextResult != PIPER_OK {
-                    await MainActor.run {
-                        self?.publishError("Error during Piper synthesis")
-                    }
-                    break
-                }
+        kokoroIdleUnloadTask?.cancel()
+        kokoroIdleUnloadTask = nil
+        let generation = kokoroPlaybackGeneration
+        let utteranceStart = CACurrentMediaTime()
 
-                let numSamples = Int(chunk.num_samples)
-                guard numSamples > 0 else {
-                    if chunk.is_last { break }
+        kokoroSynthesisTask?.cancel()
+        kokoroSynthesisTask = Task.detached(priority: .userInitiated) { [weak self] in
+            var scheduled = 0
+            for chunk in chunks {
+                if Task.isCancelled { return }
+                let samples: [Float]
+                do {
+                    samples = try await synthesizer.synthesize(chunk, voice: voice)
+                } catch KokoroError.textTooLong {
+                    // Chunks are sized well under the limit; skip the rare
+                    // outlier rather than abort the whole reply.
                     continue
-                }
-                
-                guard let format = AVAudioFormat(standardFormatWithSampleRate: Double(chunk.sample_rate), channels: 1) else {
-                    continue
-                }
-                
-                guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(numSamples)) else {
-                    continue
-                }
-                pcmBuffer.frameLength = AVAudioFrameCount(numSamples)
-                if let channelData = pcmBuffer.floatChannelData?[0] {
-                    for i in 0..<numSamples {
-                        channelData[i] = chunk.samples[i]
+                } catch {
+                    await MainActor.run { [weak self] in
+                        guard let self, self.kokoroPlaybackGeneration == generation else { return }
+                        self.publishError(error.localizedDescription)
+                        self.finishKokoroPlayback()
                     }
+                    return
                 }
-                
-                let isLast = chunk.is_last
-                if isLast { scheduledFinal = true }
-                await MainActor.run {
-                    self?.ttsPlayerNode.scheduleBuffer(pcmBuffer, at: nil, options: []) {
-                        if isLast {
-                            Task { @MainActor in
-                                guard let self = self else { return }
-                                self.isSpeaking = false
-                                self.currentlySpeakingMessageID = nil
-                                self.speechCompletionVersion += 1
-                            }
-                        }
-                    }
+                if Task.isCancelled { return }
+                guard let buffer = Self.makePCMBuffer(samples: samples) else { continue }
+                scheduled += 1
+                if scheduled == 1 {
+                    KokoroDiagnostics.log("speak", "first audio scheduled after \(KokoroDiagnostics.millis(since: utteranceStart)) ms")
                 }
-
-                if isLast { break }
+                await MainActor.run { [weak self] in
+                    guard let self, self.kokoroPlaybackGeneration == generation else { return }
+                    self.ttsPlayerNode.scheduleBuffer(buffer, at: nil, options: [])
+                }
             }
+            if Task.isCancelled { return }
+            KokoroDiagnostics.log("speak", "all \(scheduled)/\(chunks.count) chunks scheduled in \(KokoroDiagnostics.millis(since: utteranceStart)) ms")
 
-            // If synthesis ended without a non-empty final chunk (empty last
-            // chunk, or PIPER_DONE before any is_last), no scheduleBuffer
-            // completion will fire. Reset state directly so playback isn't left
-            // "speaking" forever and the speech queue can advance.
-            if !scheduledFinal && !Task.isCancelled {
-                await MainActor.run {
-                    guard let self = self else { return }
-                    self.isSpeaking = false
-                    self.currentlySpeakingMessageID = nil
-                    self.speechCompletionVersion += 1
+            // A short silent tail is the single "last" buffer: its
+            // played-back callback ends the utterance no matter how many of
+            // the chunks above were skipped.
+            let tail = Self.makePCMBuffer(samples: [Float](repeating: 0, count: Int(KokoroSynthesizer.sampleRate / 20)))
+            await MainActor.run { [weak self] in
+                guard let self, self.kokoroPlaybackGeneration == generation else { return }
+                guard let tail else {
+                    self.finishKokoroPlayback()
+                    return
+                }
+                self.ttsPlayerNode.scheduleBuffer(tail, at: nil, options: [], completionCallbackType: .dataPlayedBack) { _ in
+                    Task { @MainActor [weak self] in
+                        guard let self, self.kokoroPlaybackGeneration == generation else { return }
+                        self.finishKokoroPlayback()
+                    }
                 }
             }
         }
+    }
+
+    private func finishKokoroPlayback() {
+        KokoroDiagnostics.log("speak", "playback finished")
+        isSpeaking = false
+        currentlySpeakingMessageID = nil
+        speechCompletionVersion += 1
+        scheduleKokoroIdleUnload()
+    }
+
+    private func scheduleKokoroIdleUnload() {
+        kokoroIdleUnloadTask?.cancel()
+        kokoroIdleUnloadTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.kokoroIdleUnloadInterval * 1_000_000_000))
+            guard !Task.isCancelled, let self, self.kokoroSynthesizer != nil else { return }
+            // Still mid-utterance or queueing more speech: try again later.
+            guard !self.isSpeaking, self.speechQueue.isEmpty else {
+                self.scheduleKokoroIdleUnload()
+                return
+            }
+            KokoroDiagnostics.log("release", "idle for \(Int(Self.kokoroIdleUnloadInterval)) s — unloading weights")
+            self.releaseKokoro()
+            if let voice = self.speechOutputBackend.kokoroVoice {
+                self.speechBackendStatus = String(localized: "\(voice.displayName) will prepare when next used.")
+            }
+        }
+    }
+
+    nonisolated private static func makePCMBuffer(samples: [Float]) -> AVAudioPCMBuffer? {
+        guard !samples.isEmpty,
+              let format = AVAudioFormat(standardFormatWithSampleRate: KokoroSynthesizer.sampleRate, channels: 1),
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(samples.count)),
+              let channel = buffer.floatChannelData?[0] else {
+            return nil
+        }
+        buffer.frameLength = AVAudioFrameCount(samples.count)
+        samples.withUnsafeBufferPointer { source in
+            channel.update(from: source.baseAddress!, count: samples.count)
+        }
+        return buffer
     }
 
     private func speakWithSystemVoice(_ text: String) {
@@ -1132,22 +1222,21 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         utterance.rate = 0.5
 
         synthesizer.speak(utterance)
-        speechBackendStatus = statusMessage(for: .system)
         isSpeaking = true
-    }
-
-    private func publishError(_ message: String) {
-        errorMessage = message
-        errorVersion += 1
     }
 
     private func statusMessage(for backend: SpeechOutputBackend) -> String {
         switch backend {
         case .system:
-            return "System voice is ready."
-        case .piperAmy, .piperNorman:
-            return "\(backend.title) is ready."
+            return String(localized: "System voice is ready.")
+        case .kokoro(let voice):
+            return String(localized: "\(voice.displayName) is ready.")
         }
+    }
+
+    private func publishError(_ message: String) {
+        errorMessage = message
+        errorVersion += 1
     }
 }
 

@@ -396,6 +396,11 @@ struct ChatView: View {
                         runtimePerformancePill(status, onDismiss: dismissRuntimePerformanceToast)
                     }
 
+                    if speechManager.isPreparingSpeechOutput {
+                        preparingVoicePill
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+
                     if let notice = modelManager.lastAutoSelectionNotice {
                         AutoSelectionToastView(
                             message: notice.message,
@@ -420,6 +425,9 @@ struct ChatView: View {
             .onAppear {
                 migrateFullResponseDefaultsIfNeeded()
                 prewarmModel()
+                if autoRead {
+                    speechManager.prewarmSpeechOutputIfNeeded()
+                }
                 showRuntimePerformanceToastIfNeeded(runtimePerformanceStatus)
             }
             .onDisappear {
@@ -888,7 +896,8 @@ struct ChatView: View {
                                 showsQuickActions: message.role == .assistant
                                     && historyManager.currentMessages.last?.id == message.id
                                     && !message.isStreaming
-                                    && canStartChatRequest,
+                                    && canStartChatRequest
+                                    && smartReplyStylesEnabled,
                                 // Keep the bubble on the live streaming buffer
                                 // until the message is finalized — the persisted
                                 // message.content stays empty during streaming
@@ -1122,6 +1131,7 @@ struct ChatView: View {
                 }
                 dismissKeyboard()
                 speechManager.stopListening()
+                speechManager.prewarmSpeechOutputIfNeeded()
                 voiceConversationMode = true
             } : nil
         )
@@ -1729,14 +1739,36 @@ struct ChatView: View {
         .accessibilityHint(Text(String(localized: "Tap to dismiss")))
     }
 
+    /// Shown while Kokoro weights load (or download) so a tap on Speak never
+    /// looks ignored during the multi-second first-use preparation.
+    private var preparingVoicePill: some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text(speechManager.speechBackendStatus)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.thinMaterial, in: Capsule())
+        .accessibilityElement(children: .combine)
+    }
+
     private func speakReplyButton(for message: ChatMessage) -> some View {
         Button {
             toggleSpeechPlayback(for: message)
         } label: {
-            Label(
-                speechManager.isSpeaking ? String(localized: "Stop Speaking") : String(localized: "Speak Reply"),
-                systemImage: speechManager.isSpeaking ? "speaker.slash.fill" : "speaker.wave.2.fill"
-            )
+            HStack(spacing: 6) {
+                if speechManager.isPreparingSpeechOutput {
+                    ProgressView().controlSize(.mini)
+                    Text(String(localized: "Preparing voice…"))
+                } else {
+                    Label(
+                        speechManager.isSpeaking ? String(localized: "Stop Speaking") : String(localized: "Speak Reply"),
+                        systemImage: speechManager.isSpeaking ? "speaker.slash.fill" : "speaker.wave.2.fill"
+                    )
+                }
+            }
             .font(.caption.weight(.semibold))
             .foregroundStyle(.blue)
             .padding(.horizontal, 14)
@@ -1843,6 +1875,7 @@ struct ChatView: View {
             }
             dismissKeyboard()
             speechManager.stopListening()
+            speechManager.prewarmSpeechOutputIfNeeded()
             voiceConversationMode = true
         } label: {
             Image(systemName: "waveform")

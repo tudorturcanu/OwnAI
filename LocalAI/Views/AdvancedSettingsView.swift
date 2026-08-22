@@ -20,9 +20,11 @@ struct AdvancedSettingsView: View {
     @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
     @AppStorage("messageTextScale") private var messageTextScale: Double = 1.0
     @AppStorage("autoRead") private var autoRead = false
-    @AppStorage("speechOutputBackend") private var speechOutputBackendRaw = SpeechOutputBackend.system.rawValue
     @AppStorage(RAGEngine.neuralEmbeddingsDefaultsKey) private var neuralEmbeddingsEnabled = false
     @State private var whisperModelPresent = false
+    @State private var kokoroModelPresent = false
+    @State private var showKokoroDownloadAlert = false
+    @State private var pendingKokoroBackend: SpeechOutputBackend?
 
     private var pdfOCRMode: PDFOCRMode {
         PDFOCRMode(rawValue: pdfOCRModeRaw) ?? .preferNativeText
@@ -34,20 +36,6 @@ struct AdvancedSettingsView: View {
 
     private var imageProcessingMode: ImageProcessingMode {
         ImageProcessingMode(rawValue: imageProcessingModeRaw) ?? .fast
-    }
-
-    private var speechOutputBackend: SpeechOutputBackend {
-        SpeechOutputBackend(rawValue: speechOutputBackendRaw) ?? .system
-    }
-
-    private func selectSpeechOutputBackend(_ backend: SpeechOutputBackend) {
-        speechOutputBackendRaw = backend.rawValue
-        guard speechManager.speechOutputBackend != backend else { return }
-        speechManager.stopSpeaking()
-        speechManager.speechOutputBackend = backend
-        Task {
-            await speechManager.prepareSpeechOutputIfNeeded()
-        }
     }
 
     var body: some View {
@@ -72,7 +60,163 @@ struct AdvancedSettingsView: View {
                 }
             }
             whisperModelPresent = speechManager.isWhisperModelDownloaded
+            kokoroModelPresent = speechManager.isKokoroModelDownloaded
         }
+        .alert(
+            kokoroDownloadAlertTitle,
+            isPresented: $showKokoroDownloadAlert,
+            presenting: pendingKokoroBackend
+        ) { backend in
+            Button("Download") {
+                activateSpeechOutputBackend(backend)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { backend in
+            Text(kokoroDownloadAlertMessage(for: backend))
+        }
+    }
+
+    private var kokoroDownloadAlertTitle: String {
+        guard let voice = pendingKokoroBackend?.kokoroVoice else { return "" }
+        return String(localized: "Download \(voice.displayName)?")
+    }
+
+    private func kokoroDownloadAlertMessage(for backend: SpeechOutputBackend) -> String {
+        if KokoroModelStore.isWeightsDownloaded {
+            return String(localized: "A small voice file (under 1 MB) will be downloaded.")
+        }
+        return String(localized: "A one-time ~\(KokoroModelStore.approximateWeightsMegabytes) MB download. Speech then works fully offline.")
+    }
+
+    // MARK: - Speech Output (Voice)
+
+    private var availableSpeechOutputBackends: [SpeechOutputBackend] {
+        SpeechManager.isKokoroSupportedOnCurrentDevice ? SpeechOutputBackend.allCases : [.system]
+    }
+
+    private func selectSpeechOutputBackend(_ backend: SpeechOutputBackend) {
+        guard speechManager.speechOutputBackend != backend else { return }
+        // A voice that still needs its one-time download is confirmed first;
+        // the selection only changes once the user agrees.
+        if let voice = backend.kokoroVoice, !KokoroModelStore.isReady(for: voice) {
+            pendingKokoroBackend = backend
+            showKokoroDownloadAlert = true
+            return
+        }
+        activateSpeechOutputBackend(backend)
+    }
+
+    private func activateSpeechOutputBackend(_ backend: SpeechOutputBackend) {
+        KokoroDiagnostics.log("settings", "selected \(backend.rawValue)")
+        speechManager.stopSpeaking()
+        speechManager.speechOutputBackend = backend
+        guard backend != .system else { return }
+
+        Task {
+            let ready = await speechManager.prepareSpeechOutputIfNeeded(downloadIfNeeded: true)
+            KokoroDiagnostics.log("settings", "prepare finished ready=\(ready)")
+            await MainActor.run {
+                kokoroModelPresent = speechManager.isKokoroModelDownloaded
+                if !ready, speechManager.speechOutputBackend == backend {
+                    speechManager.speechOutputBackend = .system
+                }
+            }
+        }
+    }
+
+    private func deleteKokoroModel() {
+        speechManager.deleteKokoroModel()
+        kokoroModelPresent = speechManager.isKokoroModelDownloaded
+    }
+
+    private var speechOutputRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 14) {
+                rowIcon(systemImage: "waveform", tint: .pink)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Voice")
+                        .font(.body)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.primary)
+
+                    Menu {
+                        ForEach(availableSpeechOutputBackends) { backend in
+                            Button {
+                                selectSpeechOutputBackend(backend)
+                            } label: {
+                                if backend == speechManager.speechOutputBackend {
+                                    Label(backend.title, systemImage: "checkmark")
+                                } else {
+                                    Text(backend.title)
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(speechManager.speechOutputBackend.title)
+                                .font(.subheadline)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Spacer(minLength: 8)
+
+                            if speechManager.isPreparingSpeechOutput {
+                                ProgressView().controlSize(.small)
+                            } else {
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.caption2)
+                                    .fontWeight(.semibold)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .background(Color.pink.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    .disabled(speechManager.isPreparingSpeechOutput)
+                    .accessibilityLabel("Voice")
+                    .accessibilityValue(speechManager.speechOutputBackend.title)
+
+                    Text(speechOutputSubtitle)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            if speechManager.speechOutputBackend == .system && kokoroModelPresent && !speechManager.isPreparingSpeechOutput {
+                Button(role: .destructive) {
+                    deleteKokoroModel()
+                } label: {
+                    Text("Delete Kokoro Voice Model (~\(KokoroModelStore.approximateWeightsMegabytes) MB)")
+                        .font(.footnote.weight(.medium))
+                        .foregroundStyle(.red)
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 48)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+    }
+
+    private var speechOutputSubtitle: String {
+        if speechManager.speechOutputDownloadProgress != nil {
+            return String(localized: "Downloading…")
+        }
+        if speechManager.isPreparingSpeechOutput {
+            return speechManager.speechBackendStatus
+        }
+        if !SpeechManager.isKokoroSupportedOnCurrentDevice {
+            return String(localized: "Kokoro voices need an A14 or newer device.")
+        }
+        let backend = speechManager.speechOutputBackend
+        if let voice = backend.kokoroVoice, !KokoroModelStore.isReady(for: voice) {
+            return String(localized: "\(voice.displayName) needs a one-time ~\(KokoroModelStore.approximateWeightsMegabytes) MB download.")
+        }
+        return backend.subtitle
     }
 
     private func selectSpeechInputBackend(_ backend: SpeechInputBackend) {
@@ -352,65 +496,15 @@ struct AdvancedSettingsView: View {
 
     private var behaviorSection: some View {
         advancedSection("Behavior") {
-            HStack(spacing: 14) {
-                rowIcon(systemImage: "waveform", tint: .pink)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Voice Backend")
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.primary)
-
-                    Menu {
-                        ForEach(SpeechOutputBackend.allCases) { backend in
-                            Button {
-                                selectSpeechOutputBackend(backend)
-                            } label: {
-                                if backend == speechOutputBackend {
-                                    Label(backend.title, systemImage: "checkmark")
-                                } else {
-                                    Text(backend.title)
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Text(speechOutputBackend.title)
-                                .font(.subheadline)
-                                .multilineTextAlignment(.leading)
-                                .fixedSize(horizontal: false, vertical: true)
-
-                            Spacer(minLength: 8)
-
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .accessibilityHidden(true)
-                        }
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 12)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .background(Color.pink.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
-                    }
-                    .accessibilityLabel("Voice Backend")
-                    .accessibilityValue(speechOutputBackend.title)
-
-                    Text(speechOutputBackend.subtitle)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-
-            if SpeechManager.isWhisperEnabled {
-                sectionDivider
-
-                speechInputRow
-            }
+            speechOutputRow
 
             sectionDivider
+
+            if SpeechManager.isWhisperEnabled {
+                speechInputRow
+
+                sectionDivider
+            }
 
             advancedToggleRow(
                 icon: "speaker.wave.2.fill",
