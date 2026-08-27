@@ -12,8 +12,6 @@ struct DataPrivacySheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(ModelManager.self) private var modelManager
 
-    /// Mirrors ChatView.isVoiceConversationEnabled — voice conversation mode is hidden app-wide.
-    private static let isVoiceConversationEnabled = false
 
     var body: some View {
         NavigationStack {
@@ -57,20 +55,18 @@ struct DataPrivacySheet: View {
                         .padding(.top, 4)
                     }
 
-                    if Self.isVoiceConversationEnabled {
-                        sectionCard(
-                            icon: "waveform",
-                            iconColor: .orange,
-                            title: "Voice Conversation Mode"
-                        ) {
-                            Text("If you enable Conversation Mode, the app can keep listening between turns and speak replies aloud on-device.")
-                                .font(.subheadline)
-                                .foregroundStyle(Color.adaptive(white: 0.45))
+                    sectionCard(
+                        icon: "waveform",
+                        iconColor: .orange,
+                        title: "Voice Conversation Mode"
+                    ) {
+                        Text("If you enable Conversation Mode, the app can keep listening between turns and speak replies aloud on-device.")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.adaptive(white: 0.45))
 
-                            Text("You can turn this off at any time in Chat or Settings.")
-                                .font(.caption)
-                                .foregroundStyle(Color.adaptive(white: 0.5))
-                        }
+                        Text("You can turn this off at any time in Chat or Settings.")
+                            .font(.caption)
+                            .foregroundStyle(Color.adaptive(white: 0.5))
                     }
 
                     if modelManager.isAppleIntelligenceDeviceSupported {

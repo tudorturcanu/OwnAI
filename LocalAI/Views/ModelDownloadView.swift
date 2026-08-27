@@ -1009,8 +1009,6 @@ struct ModelCard: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var isHovered = false
-    @State private var testResult: ModelQuickTestResult?
-    @State private var isRunningBenchmark = false
     @State private var isThinkingEnabled = false
     @State private var showConsentSheet = false
     @State private var pendingAction: (() -> Void)?
@@ -1129,15 +1127,9 @@ struct ModelCard: View {
         }
         .onAppear {
             syncThinkingPreference()
-            if testResult == nil {
-                testResult = modelManager.quickTestResult(for: model.id)
-            }
         }
         .onChange(of: modelManager.selectedModelID) { _, _ in
             syncThinkingPreference()
-        }
-        .onChange(of: modelManager.modelHealthRevision) { _, _ in
-            testResult = modelManager.quickTestResult(for: model.id)
         }
         .sheet(isPresented: $showConsentSheet) {
             ModelConsentSheet(model: model) {
@@ -1235,43 +1227,6 @@ struct ModelCard: View {
                 }
             }
 
-            if (model.downloadState.isDownloaded || model.isAppleFoundation) && (model.engine != .appleFoundation || modelManager.isAppleIntelligenceAvailable) {
-                if let result = testResult {
-                    HStack(spacing: 6) {
-                        Image(systemName: result.success ? "checkmark.circle.fill" : "xmark.octagon.fill")
-                            .foregroundStyle(result.success ? .green : .red)
-                        Text(result.success ? String(localized: "Passed") : String(localized: "Failed"))
-                            .font(.caption)
-                            .foregroundStyle(Color.adaptive(white: 0.5))
-                    }
-
-                    Text(String(format: String(localized: "Last test: %lldms • %@", defaultValue: "Last test: %lldms • %@"), Int64(result.durationMs), result.responseSnippet))
-                        .font(.caption2)
-                        .foregroundStyle(Color.adaptive(white: 0.5))
-                        .lineLimit(1)
-                    if let firstToken = result.medianFirstTokenMs {
-                        Text(String(format: String(
-                            localized: "First response: %lldms",
-                            defaultValue: "First response: %lldms"
-                        ), Int64(firstToken)))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                    }
-                }
-
-                Button {
-                    runBenchmark()
-                } label: {
-                    Label(
-                        isRunningBenchmark ? String(localized: "Testing…") : String(localized: "Test on This Device"),
-                        systemImage: "gauge.with.dots.needle.50percent"
-                    )
-                    .font(.caption.weight(.semibold))
-                    .frame(minHeight: 44)
-                }
-                .disabled(isRunningBenchmark || llmEngine.state == .generating || llmEngine.state == .loading)
-                .accessibilityHint(String(localized: "Measures model loading and response speed on this device."))
-            }
         }
     }
 
@@ -1503,19 +1458,6 @@ struct ModelCard: View {
     private func startDownload() {
         requireConsentAndPerform {
             modelManager.downloadModel(model.id, selectWhenFinished: true)
-        }
-    }
-
-    private func runBenchmark() {
-        requireConsentAndPerform {
-            guard !isRunningBenchmark else { return }
-            isRunningBenchmark = true
-            Task {
-                let result = await llmEngine.runQuickTest(model: model)
-                modelManager.saveQuickTestResult(result)
-                testResult = result
-                isRunningBenchmark = false
-            }
         }
     }
 

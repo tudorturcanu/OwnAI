@@ -359,7 +359,7 @@ actor RAGEngine {
             }
         }
 
-        let mergedCandidates = mergeAdjacentCandidates(selectedCandidates)
+        let mergedCandidates = mergeAdjacentCandidates(expandingNeighbours(of: selectedCandidates, within: scopedChunks))
             .sorted { lhs, rhs in
                 if lhs.score != rhs.score {
                     return lhs.score > rhs.score
@@ -709,6 +709,59 @@ actor RAGEngine {
         "that", "the", "their", "this", "to", "und", "was", "what", "when",
         "where", "which", "who", "why", "with", "you", "your"
     ]
+
+    /// Widens each document's best hit to the chunks either side of it.
+    ///
+    /// Chunking packs sentences to a character target with no regard for where a
+    /// clause begins or ends, so a provision longer than that target is split
+    /// across consecutive chunks. Scored independently, the half that phrases
+    /// the question wins and the half carrying the rest of the answer can miss
+    /// the cut entirely — a lease clause whose notice period and its fee land in
+    /// different chunks answers only half of "what are my obligations".
+    ///
+    /// Only the top hit per document is widened, so the added context stays
+    /// bounded at two chunks per document rather than scaling with `limit`, and
+    /// neighbours are scored below the hit that pulled them in so they never
+    /// displace a directly matched chunk in the final ranking.
+    /// `mergeAdjacentCandidates` then stitches each run back into one passage.
+    private func expandingNeighbours(
+        of selected: [(chunk: TextChunk, score: Double)],
+        within scopedChunks: [TextChunk]
+    ) -> [(chunk: TextChunk, score: Double)] {
+        guard !selected.isEmpty else { return selected }
+
+        func key(_ chunk: TextChunk) -> String {
+            "\(chunk.conversationID)|\(chunk.documentID)|\(chunk.sequenceIndex)"
+        }
+        func neighbourKey(_ chunk: TextChunk, offset: Int) -> String {
+            "\(chunk.conversationID)|\(chunk.documentID)|\(chunk.sequenceIndex + offset)"
+        }
+
+        var chunksByKey: [String: TextChunk] = [:]
+        for chunk in scopedChunks {
+            chunksByKey[key(chunk)] = chunk
+        }
+
+        var present = Set(selected.map { key($0.chunk) })
+        var bestByDocument: [UUID: (chunk: TextChunk, score: Double)] = [:]
+        for candidate in selected {
+            if let existing = bestByDocument[candidate.chunk.documentID], existing.score >= candidate.score {
+                continue
+            }
+            bestByDocument[candidate.chunk.documentID] = candidate
+        }
+
+        var expanded = selected
+        for candidate in bestByDocument.values {
+            for offset in [-1, 1] {
+                let neighbour = neighbourKey(candidate.chunk, offset: offset)
+                guard !present.contains(neighbour), let chunk = chunksByKey[neighbour] else { continue }
+                present.insert(neighbour)
+                expanded.append((chunk: chunk, score: candidate.score * 0.5))
+            }
+        }
+        return expanded
+    }
 
     private func mergeAdjacentCandidates(
         _ candidates: [(chunk: TextChunk, score: Double)]

@@ -10,6 +10,7 @@ import UIKit
 
 struct AIPersonalityView: View {
     @Environment(MonetizationManager.self) private var monetizationManager
+    @Environment(SpeechManager.self) private var speechManager
     @AppStorage("systemPrompt") private var storedSystemPrompt = AIResponseDefaults.defaultSystemPrompt
     // Must match LLMEngine's registered defaults, or opening this screen
     // would silently "change" the values before the user touches anything.
@@ -23,6 +24,9 @@ struct AIPersonalityView: View {
     @State private var draftTopP = 1.0
     @State private var draftMaxTokens = AIResponseDefaults.maxTokens
     @State private var draftResponseCharacterLimit = AIResponseDefaults.responseCharacterLimit
+    /// `SpeechOutputBackend` raw value; mirrors `speechManager.speechOutputBackend`.
+    @State private var draftVoice = SpeechOutputBackend.system.rawValue
+    @State private var draftSpeechRate = UserPersonalityPreset.defaultSpeechRate
     @State private var showUpgradeSheet = false
     @State private var isEditorPresented = false
     @State private var isImportPresented = false
@@ -663,7 +667,9 @@ struct AIPersonalityView: View {
             temperature: draftTemperature,
             topP: draftTopP,
             maxTokens: draftMaxTokens,
-            responseCharacterLimit: draftResponseCharacterLimit
+            responseCharacterLimit: draftResponseCharacterLimit,
+            voice: draftVoice,
+            speechRate: draftSpeechRate
         )
         isEditorPresented = true
     }
@@ -728,6 +734,7 @@ struct AIPersonalityView: View {
             draftTopP = 1.0
             draftMaxTokens = AIResponseDefaults.maxTokens
             draftResponseCharacterLimit = AIResponseDefaults.responseCharacterLimit
+            draftSpeechRate = UserPersonalityPreset.defaultSpeechRate
         }
     }
 
@@ -739,6 +746,13 @@ struct AIPersonalityView: View {
         let responseLimit = responseLengthOptions.contains(preset.responseCharacterLimit)
             ? preset.responseCharacterLimit
             : AIResponseDefaults.responseCharacterLimit
+        // Imported/edited presets may name a voice that doesn't exist (a typo,
+        // or a voice from a newer build); drop it rather than store garbage.
+        let voice = preset.voice.flatMap { SpeechOutputBackend(rawValue: $0)?.rawValue }
+        let speechRate = min(
+            max(preset.speechRate, UserPersonalityPreset.speechRateRange.lowerBound),
+            UserPersonalityPreset.speechRateRange.upperBound
+        )
 
         return UserPersonalityPreset(
             id: preset.id,
@@ -748,7 +762,9 @@ struct AIPersonalityView: View {
             temperature: min(max(preset.temperature, 0.0), 1.0),
             topP: min(max(preset.topP, 0.0), 1.0),
             maxTokens: min(max(preset.maxTokens, 64), 4096),
-            responseCharacterLimit: responseLimit
+            responseCharacterLimit: responseLimit,
+            voice: voice,
+            speechRate: speechRate
         )
     }
 
@@ -762,6 +778,8 @@ struct AIPersonalityView: View {
         draftTopP = storedTopP
         draftMaxTokens = storedMaxTokens
         draftResponseCharacterLimit = storedResponseCharacterLimit
+        draftVoice = speechManager.speechOutputBackend.rawValue
+        draftSpeechRate = speechManager.speechRate
     }
 
     private func syncInitialDraftsFromStorage() {
@@ -778,6 +796,73 @@ struct AIPersonalityView: View {
         storedTopP = draftTopP
         storedMaxTokens = draftMaxTokens
         storedResponseCharacterLimit = draftResponseCharacterLimit
+        applyVoiceSelection(draftVoice)
+        speechManager.speechRate = draftSpeechRate
+    }
+
+    /// Switches the speech backend to `rawValue` when that voice is usable
+    /// right now. A Kokoro voice that isn't downloaded yet is left alone —
+    /// Settings › Advanced owns the download flow and its confirmation —
+    /// so picking a personality never silently kicks off a 315 MB download.
+    private func applyVoiceSelection(_ rawValue: String) {
+        guard let backend = SpeechOutputBackend(rawValue: rawValue),
+              backend != speechManager.speechOutputBackend else { return }
+        if let voice = backend.kokoroVoice {
+            guard SpeechManager.isKokoroSupportedOnCurrentDevice,
+                  KokoroModelStore.isReady(for: voice) else { return }
+        }
+        speechManager.stopSpeaking()
+        speechManager.speechOutputBackend = backend
+    }
+
+    private var voiceOptions: [SpeechOutputBackend] {
+        SpeechManager.isKokoroSupportedOnCurrentDevice ? SpeechOutputBackend.allCases : [.system]
+    }
+
+    private func voiceTitle(for rawValue: String) -> String {
+        SpeechOutputBackend(rawValue: rawValue)?.title ?? String(localized: "System Voice")
+    }
+
+    /// Explains why a chosen Kokoro voice won't take effect yet, if it won't.
+    private var voiceAvailabilityNote: LocalizedStringKey {
+        guard let backend = SpeechOutputBackend(rawValue: draftVoice),
+              let voice = backend.kokoroVoice else {
+            return "Used when replies are read aloud and in voice conversations."
+        }
+        if !SpeechManager.isKokoroSupportedOnCurrentDevice {
+            return "Kokoro voices need an A14 or newer device; the system voice will be used."
+        }
+        if !KokoroModelStore.isReady(for: voice) {
+            return "Download this voice in Settings › Advanced › Voice to use it."
+        }
+        return "Used when replies are read aloud and in voice conversations."
+    }
+
+    private var voiceRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(String(localized: "Voice"))
+                        .font(.body)
+                        .foregroundStyle(.primary)
+                    Text(voiceAvailabilityNote)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 12)
+
+                Picker(String(localized: "Voice"), selection: $draftVoice) {
+                    ForEach(voiceOptions) { backend in
+                        Text(backend.title).tag(backend.rawValue)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(.secondary)
+            }
+        }
+        .padding(16)
     }
 
     private func discardDraftChanges() {
@@ -842,6 +927,24 @@ struct AIPersonalityView: View {
                     )
                     .tint(.teal)
                 }
+
+                Divider()
+                    .padding(.leading, 16)
+
+                voiceRow
+
+                Divider()
+                    .padding(.leading, 16)
+
+                sliderParameterRow(
+                    title: "Speaking Speed",
+                    valueText: String(format: "%.2f×", draftSpeechRate),
+                    help: "Pace for spoken replies. 1.00× is the voice's natural speed.",
+                    tint: .pink
+                ) {
+                    Slider(value: $draftSpeechRate, in: UserPersonalityPreset.speechRateRange, step: 0.05)
+                        .tint(.pink)
+                }
             }
             .locked(if: !monetizationManager.canUse(.advancedPersonality), overlay: lockedOverlay)
         }
@@ -853,6 +956,14 @@ struct AIPersonalityView: View {
         draftTopP = preset.topP
         draftMaxTokens = preset.maxTokens
         draftResponseCharacterLimit = AIResponseDefaults.responseCharacterLimit
+        // Built-in presets only *suggest* a voice; one that can't be used
+        // here (unsupported device, not downloaded) leaves the current choice.
+        if let voice = preset.voice,
+           SpeechManager.isKokoroSupportedOnCurrentDevice,
+           KokoroModelStore.isReady(for: voice) {
+            draftVoice = SpeechOutputBackend.kokoro(voice).rawValue
+        }
+        draftSpeechRate = preset.speechRate
     }
 
     private func applyUserPreset(_ preset: UserPersonalityPreset) {
@@ -862,6 +973,10 @@ struct AIPersonalityView: View {
         draftTopP = sanitized.topP
         draftMaxTokens = sanitized.maxTokens
         draftResponseCharacterLimit = sanitized.responseCharacterLimit
+        if let voice = sanitized.voice {
+            draftVoice = voice
+        }
+        draftSpeechRate = sanitized.speechRate
     }
 
     private func upsertUserPreset(_ preset: UserPersonalityPreset, editingID: String?) {
@@ -877,7 +992,9 @@ struct AIPersonalityView: View {
                 temperature: updated.temperature,
                 topP: updated.topP,
                 maxTokens: updated.maxTokens,
-                responseCharacterLimit: updated.responseCharacterLimit
+                responseCharacterLimit: updated.responseCharacterLimit,
+                voice: updated.voice,
+                speechRate: updated.speechRate
             )
             current[idx] = updated
         } else {

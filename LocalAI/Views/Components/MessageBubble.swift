@@ -66,14 +66,13 @@ struct AssistantMarkdownView: View, Equatable {
 
     private static let lightHaptic = UIImpactFeedbackGenerator(style: .light)
 
-    /// URL scheme used to make inline `[Source n]` citations tappable. Taps are
-    /// intercepted by the enclosing message via `\.openURL`; see `MessageBubble`.
-    static let sourceURLScheme = "localai-source"
-
-    /// Matches the `[Source n]` markers the model is instructed to emit so they
-    /// can be turned into tappable links that map to the numbered source chips.
+    /// Matches a `[Source n]` marker together with the whitespace and any comma
+    /// that introduces it, so removing one leaves clean prose rather than a
+    /// stranded ", ." Attribution lives in the Document Sources sheet, not in
+    /// the reply; the model is told not to emit these, but small models copy the
+    /// convention from the passage headers anyway, so strip what leaks through.
     private static let sourceMarkerRegex = try? NSRegularExpression(
-        pattern: #"\[Source (\d+)\]"#
+        pattern: #"[ \t]*,?[ \t]*\[Source \d+\]"#
     )
 
     /// Matches a complete bare `<svg>…</svg>` document sitting in prose. Small
@@ -85,7 +84,7 @@ struct AssistantMarkdownView: View, Equatable {
     )
 
     /// Wraps unfenced `<svg>…</svg>` documents in a ```svg fence so they route
-    /// through `RenderableCodeBlockView`. Render-only, like `linkifySources`.
+    /// through `RenderableCodeBlockView`. Render-only, like `stripSourceMarkers`.
     /// Text already inside a fence must pass through untouched (a nested fence
     /// would split the block), so only the outside-fence segments are rewritten.
     static func fenceBareSVG(_ text: String) -> String {
@@ -104,15 +103,83 @@ struct AssistantMarkdownView: View, Equatable {
         return rewritten.joined(separator: "```")
     }
 
-    /// Rewrites `[Source n]` markers into markdown links (`[Source n](localai-source://n)`)
-    /// without touching the persisted message — this is render-only.
-    static func linkifySources(_ text: String) -> String {
+    /// Matches one finished GFM delimiter cell (`---`, `:--`, `--:`, `:-:`).
+    private static let delimiterCellRegex = try? NSRegularExpression(
+        pattern: #"^\s*:?-+:?\s*$"#
+    )
+
+    /// Splits a table line into its cells, dropping the optional outer pipes.
+    private static func tableCells(_ line: String) -> [String] {
+        var trimmed = line.trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("|") { trimmed.removeFirst() }
+        if trimmed.hasSuffix("|") { trimmed.removeLast() }
+        return trimmed.components(separatedBy: "|")
+    }
+
+    private static func isTableLine(_ line: String) -> Bool {
+        line.trimmingCharacters(in: .whitespaces).hasPrefix("|")
+    }
+
+    /// A delimiter row only makes cmark emit a table when every cell is dashes
+    /// *and* the cell count matches the header — `|---|---` under a four-column
+    /// header is still a half-typed paragraph.
+    private static func isDelimiterRow(_ line: String, cellCount: Int) -> Bool {
+        guard let regex = delimiterCellRegex, cellCount > 0 else { return false }
+        let cells = tableCells(line)
+        guard cells.count == cellCount else { return false }
+        return cells.allSatisfy { cell in
+            regex.firstMatch(in: cell, range: NSRange(cell.startIndex..., in: cell)) != nil
+        }
+    }
+
+    /// Withholds a table header whose delimiter row hasn't finished streaming.
+    /// Without this the header and its partial `|-----|----` flash as raw pipes
+    /// for as long as the model takes to finish that line — very visible on a
+    /// slow on-device model — before snapping into the rendered grid. Once the
+    /// delimiter row is complete the table renders and grows row by row, so only
+    /// the two-line pre-table state is ever hidden. Render-only and
+    /// streaming-only, like `stripSourceMarkers`.
+    static func hideStreamingTableHeader(_ text: String) -> String {
+        guard text.contains("|") else { return text }
+        // An odd number of fences means the tail is inside an open code block,
+        // where pipes are literal text and must keep streaming through.
+        let fenceCount = text.components(separatedBy: "```").count - 1
+        guard fenceCount.isMultiple(of: 2) else { return text }
+
+        var lines = text.components(separatedBy: "\n")
+        // A trailing newline yields an empty component; the header still counts.
+        var end = lines.count
+        while end > 0, lines[end - 1].trimmingCharacters(in: .whitespaces).isEmpty { end -= 1 }
+        var start = end
+        while start > 0, isTableLine(lines[start - 1]) { start -= 1 }
+
+        // Only the header (+ partial delimiter) is ever withheld. A longer run of
+        // pipe lines with no valid delimiter isn't a table at all — leave it be.
+        let run = end - start
+        guard run > 0, run <= 2 else { return text }
+        if run == 2, isDelimiterRow(lines[start + 1], cellCount: tableCells(lines[start]).count) {
+            return text
+        }
+
+        lines.removeSubrange(start..<lines.count)
+        return lines.joined(separator: "\n")
+    }
+
+    /// Removes `[Source n]` markers from the rendered reply without touching the
+    /// persisted message — this is render-only. The Document Sources sheet is
+    /// where a reader inspects what a reply drew on, so a marker mid-sentence
+    /// points at nothing; small models also tend to emit the same one two or
+    /// three times in a row.
+    static func stripSourceMarkers(_ text: String) -> String {
         guard text.contains("[Source "), let regex = sourceMarkerRegex else { return text }
         let range = NSRange(text.startIndex..., in: text)
-        return regex.stringByReplacingMatches(
-            in: text,
-            range: range,
-            withTemplate: "[Source $1](\(sourceURLScheme)://$1)"
+        let stripped = regex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
+        // A marker that opened a sentence leaves the sentence starting with its
+        // own punctuation; drop that before the markdown parser sees it.
+        return stripped.replacingOccurrences(
+            of: #"(?m)^[ \t]*[.,;:][ \t]*"#,
+            with: "",
+            options: .regularExpression
         )
     }
 
@@ -121,7 +188,9 @@ struct AssistantMarkdownView: View, Equatable {
         // The engine throttles UI updates (~12/sec, with adaptive back-off if a
         // parse is slow), so re-parsing the growing response stays smooth. Code
         // blocks fall back to plain text while streaming via AsyncCodeBlockView.
-        Markdown(Self.linkifySources(Self.fenceBareSVG(content)))
+        Markdown(Self.stripSourceMarkers(Self.fenceBareSVG(
+            isStreaming ? Self.hideStreamingTableHeader(content) : content
+        )))
             .markdownTextStyle(\.link) {
                 ForegroundColor(.accentColor)
                 FontWeight(.semibold)
@@ -297,6 +366,9 @@ struct MessageBubble: View {
     let onSpeak: ((ChatMessage) -> Void)?
     let onSearchWeb: ((ChatMessage) -> Void)?
     let onFollowUp: ((ChatMessage, String) -> Void)?
+    /// Opens the Document Sources sheet scoped to the passages this reply drew
+    /// on. Present only for assistant replies that were document-grounded.
+    let onShowSources: ((ChatMessage) -> Void)?
     let showsQuickActions: Bool
     /// Only the active row observes this object. Completed rows and ChatView
     /// stay outside the token-by-token invalidation graph.
@@ -312,8 +384,6 @@ struct MessageBubble: View {
     @State private var showStats = false
     /// The `[Source n]` citation the reader last tapped, used to briefly pulse the
     /// matching chip so they can connect an inline citation to its document.
-    @State private var highlightedSourceNumber: Int?
-    @State private var highlightClearTask: Task<Void, Never>?
     private let userLeadingInset: CGFloat = 60
     private let assistantTrailingInset: CGFloat = 16
     private let collapsedThinkingHeight: CGFloat = 76
@@ -335,6 +405,7 @@ struct MessageBubble: View {
         onSpeak: ((ChatMessage) -> Void)? = nil,
         onSearchWeb: ((ChatMessage) -> Void)? = nil,
         onFollowUp: ((ChatMessage, String) -> Void)? = nil,
+        onShowSources: ((ChatMessage) -> Void)? = nil,
         showsQuickActions: Bool = false,
         streamingState: ChatStreamingState? = nil
     ) {
@@ -353,6 +424,7 @@ struct MessageBubble: View {
         self.onSpeak = onSpeak
         self.onSearchWeb = onSearchWeb
         self.onFollowUp = onFollowUp
+        self.onShowSources = onShowSources
         self.showsQuickActions = showsQuickActions
         self.streamingState = streamingState
     }
@@ -391,7 +463,6 @@ struct MessageBubble: View {
         let thinkingText = displayedThinking
         let hasThinking = !thinkingText.isEmpty
         let hasAnswerContent = !displayedContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let sourceTitles = message.sourceTitles
 
         HStack(alignment: .top, spacing: 12) {
             if message.role == .user {
@@ -422,10 +493,6 @@ struct MessageBubble: View {
                                 }
                             }
                         }
-                }
-
-                if message.role == .assistant && !sourceTitles.isEmpty {
-                    sourceChips(sourceTitles)
                 }
 
                 if showsContinue, let onContinue {
@@ -460,7 +527,6 @@ struct MessageBubble: View {
                 }
             }
             .frame(maxWidth: message.role == .assistant ? .infinity : nil, alignment: .leading)
-            .environment(\.openURL, sourceOpenURLAction)
         }
         .opacity(appeared ? 1 : 0)
         .offset(y: appeared ? 0 : 10)
@@ -781,6 +847,14 @@ struct MessageBubble: View {
 
         Divider()
 
+        if let onShowSources, message.role == .assistant, !message.sourceTitles.isEmpty {
+            Button {
+                onShowSources(message)
+            } label: {
+                Label(String(localized: "Show Sources"), systemImage: "text.document.fill")
+            }
+        }
+
         if let onTogglePin {
             Button {
                 onTogglePin(message)
@@ -927,79 +1001,6 @@ struct MessageBubble: View {
             ),
             reduceMotion: reduceMotion
         )
-    }
-
-    /// Intercepts taps on inline `[Source n]` citation links (see
-    /// `AssistantMarkdownView.linkifySources`). Source links pulse the matching
-    /// chip; any other URL falls through to the system handler.
-    private var sourceOpenURLAction: OpenURLAction {
-        OpenURLAction { url in
-            guard url.scheme == AssistantMarkdownView.sourceURLScheme,
-                  let number = Int(url.host ?? "") else {
-                return .systemAction
-            }
-            highlightSource(number)
-            return .handled
-        }
-    }
-
-    private func highlightSource(_ number: Int) {
-        guard number >= 1, number <= message.sourceTitles.count else { return }
-        Self.lightHaptic.impactOccurred()
-        highlightClearTask?.cancel()
-        withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7)) {
-            highlightedSourceNumber = number
-        }
-        highlightClearTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(2))
-            guard !Task.isCancelled else { return }
-            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) {
-                highlightedSourceNumber = nil
-            }
-        }
-    }
-
-    private func sourceChips(_ sourceTitles: [String]) -> some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(Array(sourceTitles.enumerated()), id: \.offset) { index, title in
-                        let number = index + 1
-                        let isHighlighted = highlightedSourceNumber == number
-                        HStack(spacing: 6) {
-                            Text("\(number)")
-                                .font(.caption2.weight(.bold))
-                                .foregroundStyle(.white)
-                                .frame(width: 16, height: 16)
-                                .background(isHighlighted ? Color.accentColor : Color.adaptive(white: 0.55))
-                                .clipShape(Circle())
-                            Text(title)
-                                .lineLimit(1)
-                        }
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(isHighlighted ? Color.accentColor : Color.adaptive(white: 0.4))
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(isHighlighted ? Color.accentColor.opacity(0.12) : Color.adaptiveCard.opacity(0.92))
-                        .clipShape(Capsule())
-                        .overlay(
-                            Capsule()
-                                .stroke(Color.accentColor, lineWidth: isHighlighted ? 1.5 : 0)
-                        )
-                        .scaleEffect(isHighlighted ? 1.05 : 1)
-                        .id(number)
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-            .frame(maxWidth: 280, alignment: .leading)
-            .onChange(of: highlightedSourceNumber) { _, newValue in
-                guard let newValue else { return }
-                withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8)) {
-                    proxy.scrollTo(newValue, anchor: .center)
-                }
-            }
-        }
     }
 
     private func thinkingCard(thinkingText: String, showsStreamingIndicator: Bool) -> some View {

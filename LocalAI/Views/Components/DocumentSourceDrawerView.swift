@@ -5,6 +5,20 @@ struct DocumentSourceDrawerView: View {
     @Environment(\.dismiss) private var dismiss
 
     let document: ConversationDocument
+    /// Section titles the last answer's retrieval used (parsed from the reply's
+    /// source titles). Matching cards get a badge so the reader can jump from
+    /// an answer to the exact passages behind it. Empty when the sheet is
+    /// opened from the attachment chip rather than from a reply.
+    var highlightedSectionTitles: Set<String> = []
+
+    @State private var isPreviewingOriginal = false
+
+    /// The retained copy of the imported file, when there is one. Documents
+    /// imported before originals were kept — and any whose copy failed — have
+    /// no file to open and simply don't show the button.
+    private var originalFileURL: URL? {
+        DocumentManager.originalFileURL(for: document)
+    }
 
     private var extractedPageCountText: String {
         if document.totalPages == 0 {
@@ -57,7 +71,8 @@ struct DocumentSourceDrawerView: View {
                             title: String(localized: "Document excerpt"),
                             snippet: document.content,
                             isOCR: hasOCRContent,
-                            textToCopy: document.content
+                            textToCopy: document.content,
+                            isHighlighted: false
                         )
                     } else {
                         LazyVStack(spacing: 12) {
@@ -68,7 +83,8 @@ struct DocumentSourceDrawerView: View {
                                     snippet: snippet,
                                     isOCR: sectionIsOCR(section),
                                     textToCopy: text(for: section),
-                                    sectionNumber: index + 1
+                                    sectionNumber: index + 1,
+                                    isHighlighted: highlightedSectionTitles.contains(section.title)
                                 )
                             }
                         }
@@ -134,6 +150,28 @@ struct DocumentSourceDrawerView: View {
                 }
             }
 
+            if let originalFileURL {
+                Button {
+                    isPreviewingOriginal = true
+                } label: {
+                    Label(String(localized: "Open Original"), systemImage: "doc.text.magnifyingglass")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.blue.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.blue)
+                .sheet(isPresented: $isPreviewingOriginal) {
+                    DocumentPreviewSheet(
+                        url: originalFileURL,
+                        title: document.name,
+                        onClose: { isPreviewingOriginal = false }
+                    )
+                    .ignoresSafeArea()
+                }
+            }
+
             VStack(alignment: .leading, spacing: 8) {
                 LabeledContent(String(localized: "Source span"), value: extractedPageCountText)
                 LabeledContent(String(localized: "File size"), value: fileSizeText)
@@ -174,14 +212,41 @@ struct DocumentSourceDrawerView: View {
         .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
     }
 
+    /// The page badge shown beside a section title. PDF sections are already
+    /// titled "Page 3" (or "Page 3 (OCR)") by the extractor, so a badge would
+    /// just repeat the heading; it only earns its place on documents whose
+    /// sections carry real titles. The badge also can't be trusted to name the
+    /// page when it does duplicate: it counts sections, and a page that yielded
+    /// no text produces none, which shifts every number after it.
+    private func pageBadgeText(title: String, sectionNumber: Int?) -> String? {
+        guard let sectionNumber else { return nil }
+        let label = String(
+            format: String(localized: "Page %lld", defaultValue: "Page %lld"),
+            Int64(sectionNumber)
+        )
+        guard !title.localizedCaseInsensitiveContains(label) else { return nil }
+        return label
+    }
+
     private func sectionCard(
         title: String,
         snippet: String,
         isOCR: Bool,
         textToCopy: String,
-        sectionNumber: Int? = nil
+        sectionNumber: Int? = nil,
+        isHighlighted: Bool = false
     ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        let pageBadge = pageBadgeText(title: title, sectionNumber: sectionNumber)
+        return VStack(alignment: .leading, spacing: 12) {
+            if isHighlighted {
+                HStack(spacing: 6) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .accessibilityHidden(true)
+                    Text(String(localized: "Used in answer"))
+                }
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.blue)
+            }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 8) {
@@ -190,8 +255,8 @@ struct DocumentSourceDrawerView: View {
                             .foregroundStyle(Color.adaptive(white: 0.12))
                             .lineLimit(2)
 
-                        if let sectionNumber {
-                            Text(String(format: String(localized: "Page %lld", defaultValue: "Page %lld"), Int64(sectionNumber)))
+                        if let pageBadge {
+                            Text(pageBadge)
                                 .font(.caption.weight(.semibold))
                                 .foregroundStyle(Color.adaptive(white: 0.48))
                         }
@@ -220,7 +285,7 @@ struct DocumentSourceDrawerView: View {
                 NavigationLink {
                     DocumentSourceTextView(
                         title: title,
-                        subtitle: sectionNumber.map { String(format: String(localized: "Page %lld", defaultValue: "Page %lld"), Int64($0)) },
+                        subtitle: pageBadge,
                         text: textToCopy,
                         isOCR: isOCR
                     )
@@ -247,7 +312,10 @@ struct DocumentSourceDrawerView: View {
                 .fill(isOCR ? Color.orange.opacity(0.06) : Color.blue.opacity(0.05))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(isOCR ? Color.orange.opacity(0.18) : Color.blue.opacity(0.14), lineWidth: 1)
+                        .stroke(
+                            isHighlighted ? Color.blue.opacity(0.55) : (isOCR ? Color.orange.opacity(0.18) : Color.blue.opacity(0.14)),
+                            lineWidth: isHighlighted ? 1.5 : 1
+                        )
                 )
         )
     }

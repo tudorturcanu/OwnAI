@@ -15,7 +15,34 @@ struct PersonalityPreset: Identifiable, Equatable {
     let temperature: Double
     let topP: Double
     let maxTokens: Int
-    
+    /// Suggested Kokoro voice. Applied only when that voice is downloaded
+    /// and the device can run it; otherwise the user's current voice stays.
+    let voice: KokoroVoice?
+    /// Speech-rate multiplier; see `UserPersonalityPreset.speechRateRange`.
+    let speechRate: Double
+
+    init(
+        id: String,
+        name: String,
+        icon: String,
+        systemPrompt: String,
+        temperature: Double,
+        topP: Double,
+        maxTokens: Int,
+        voice: KokoroVoice? = nil,
+        speechRate: Double = UserPersonalityPreset.defaultSpeechRate
+    ) {
+        self.id = id
+        self.name = name
+        self.icon = icon
+        self.systemPrompt = systemPrompt
+        self.temperature = temperature
+        self.topP = topP
+        self.maxTokens = maxTokens
+        self.voice = voice
+        self.speechRate = speechRate
+    }
+
     static let presets: [PersonalityPreset] = [
         PersonalityPreset(
             id: "general",
@@ -37,7 +64,9 @@ Teach step-by-step with clear structure and simple language. Start with a short 
 """,
             temperature: 0.6,
             topP: 0.95,
-            maxTokens: AIResponseDefaults.maxTokens
+            maxTokens: AIResponseDefaults.maxTokens,
+            voice: .emma,
+            speechRate: 0.95
         ),
         PersonalityPreset(
             id: "coding",
@@ -46,7 +75,8 @@ Teach step-by-step with clear structure and simple language. Start with a short 
             systemPrompt: "You are an expert software engineer. Provide clean, efficient code and technical explanations. Focus on best practices and performance.",
             temperature: 0.3,
             topP: 0.9,
-            maxTokens: AIResponseDefaults.maxTokens
+            maxTokens: AIResponseDefaults.maxTokens,
+            voice: .michael
         ),
         PersonalityPreset(
             id: "meeting",
@@ -59,7 +89,8 @@ Turn rough notes into concise, structured outputs. Prefer bullet points and clea
 """,
             temperature: 0.4,
             topP: 0.9,
-            maxTokens: AIResponseDefaults.maxTokens
+            maxTokens: AIResponseDefaults.maxTokens,
+            voice: .george
         ),
         PersonalityPreset(
             id: "creative",
@@ -68,7 +99,9 @@ Turn rough notes into concise, structured outputs. Prefer bullet points and clea
             systemPrompt: "You are a creative writer. Use evocative language and storytelling techniques. Be imaginative and vivid in your descriptions.",
             temperature: 0.9,
             topP: 1.0,
-            maxTokens: AIResponseDefaults.maxTokens
+            maxTokens: AIResponseDefaults.maxTokens,
+            voice: .bella,
+            speechRate: 0.95
         ),
         PersonalityPreset(
             id: "concise",
@@ -77,7 +110,9 @@ Turn rough notes into concise, structured outputs. Prefer bullet points and clea
             systemPrompt: "You are a concise assistant. Provide short, direct answers without fluff. Get straight to the point.",
             temperature: 0.3,
             topP: 0.8,
-            maxTokens: 256
+            maxTokens: 256,
+            voice: .fenrir,
+            speechRate: 1.1
         ),
         PersonalityPreset(
             id: "friendly",
@@ -86,7 +121,8 @@ Turn rough notes into concise, structured outputs. Prefer bullet points and clea
             systemPrompt: "You are a friendly and enthusiastic assistant. Be warm, encouraging, and use a positive tone in all your responses.",
             temperature: 0.8,
             topP: 0.95,
-            maxTokens: AIResponseDefaults.maxTokens
+            maxTokens: AIResponseDefaults.maxTokens,
+            voice: .heart
         )
     ]
 }

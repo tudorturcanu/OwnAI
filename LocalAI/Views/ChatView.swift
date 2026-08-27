@@ -31,7 +31,6 @@ struct ChatView: View {
     @State private var isPhotoPickerPresented = false
     @State private var documentImportState: DocumentImportState = .idle
     @AppStorage("autoRead") private var autoRead = false
-    private static let isVoiceConversationEnabled = false
 
     // Deliberately not persisted: a voice session is ephemeral, and restoring
     // it at launch would present the full-screen voice UI with a live
@@ -69,6 +68,14 @@ struct ChatView: View {
     @State private var lastGenerationWasEphemeral: Bool = false
     @State private var activeMlxVisionImageKey: String?
     @State private var selectedDocumentForSources: ConversationDocument?
+    /// Section titles to badge when the sources sheet is opened from a reply's
+    /// "Show Sources"; cleared when it is opened from the attachment chip.
+    @State private var sourceHighlightTitles: Set<String> = []
+    /// Set while a document removal awaits the user's confirmation.
+    @State private var documentPendingRemoval: ConversationDocument?
+    /// What the document pipeline is doing before generation starts, shown as a
+    /// capsule like `warmingUpIndicator`. Nil outside document retrieval.
+    @State private var retrievalStatus: String?
     @State private var generatedFollowUpSuggestions: [UUID: [String]] = [:]
     @State private var postResponseEnrichmentTask: Task<Void, Never>?
     @State private var streamingState = ChatStreamingState()
@@ -188,6 +195,10 @@ struct ChatView: View {
             }
             .onChange(of: voiceConversationMode) {
                 if voiceConversationMode {
+                    guard SpeechManager.isVoiceConversationEnabled else {
+                        voiceConversationMode = false
+                        return
+                    }
                     guard monetizationManager.canUse(.voiceMode) else {
                         voiceConversationMode = false
                         upgradeFeature = .voiceMode
@@ -319,7 +330,10 @@ struct ChatView: View {
                     .environment(monetizationManager)
             }
             .sheet(item: $selectedDocumentForSources) { document in
-                DocumentSourceDrawerView(document: document)
+                DocumentSourceDrawerView(
+                    document: document,
+                    highlightedSectionTitles: sourceHighlightTitles
+                )
             }
             .sheet(isPresented: $isEditSheetPresented, onDismiss: {
                 editingMessage = nil
@@ -425,7 +439,12 @@ struct ChatView: View {
             .onAppear {
                 migrateFullResponseDefaultsIfNeeded()
                 prewarmModel()
-                if autoRead {
+                // Load the selected Kokoro voice ahead of the first Speak /
+                // voice session. Skipped on 4 GB phones, where the ~330 MB
+                // would compete with the chat model; they pay a one-time
+                // "Preparing voice…" on first use instead. No-op unless a
+                // Kokoro voice is selected and already downloaded.
+                if autoRead || !DeviceResourcePolicy.current.isLowMemoryPhone {
                     speechManager.prewarmSpeechOutputIfNeeded()
                 }
                 showRuntimePerformanceToastIfNeeded(runtimePerformanceStatus)
@@ -558,6 +577,19 @@ struct ChatView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
 
+            // Document retrieval happens before the reply placeholder exists, so
+            // without this the send button goes quiet for the whole search —
+            // on-device query embedding included — and the app reads as hung
+            // exactly while it does its most distinctive work.
+            if let retrievalStatus, !llmEngine.isPrewarming {
+                VStack {
+                    retrievalStatusIndicator(retrievalStatus)
+                        .padding(.top, 12)
+                    Spacer()
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+
             if showAttachmentOptions {
                 // Dimmed background backdrop
                 Color.black.opacity(0.3)
@@ -676,6 +708,27 @@ struct ChatView: View {
                 .stroke(Color.adaptiveBorder(opacity: 0.45), lineWidth: 1)
         )
         .accessibilityLabel(String(localized: "Warming up"))
+    }
+
+    private func retrievalStatusIndicator(_ status: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "text.magnifyingglass")
+                .font(.caption.weight(.semibold))
+
+            Text(status)
+                .font(.caption.weight(.semibold))
+                .shimmering(active: true, bandSize: 0.22)
+        }
+        .foregroundStyle(.blue)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
+        .clipShape(Capsule())
+        .overlay(
+            Capsule()
+                .stroke(Color.adaptiveBorder(opacity: 0.45), lineWidth: 1)
+        )
+        .accessibilityLabel(status)
     }
 
     // MARK: - In-Chat Search
@@ -892,6 +945,9 @@ struct ChatView: View {
                                 onFollowUp: { _, followUpText in
                                     messageText = followUpText
                                     sendMessage()
+                                },
+                                onShowSources: { message in
+                                    showSources(for: message)
                                 },
                                 showsQuickActions: message.role == .assistant
                                     && historyManager.currentMessages.last?.id == message.id
@@ -1124,17 +1180,24 @@ struct ChatView: View {
                 messageText = text
                 sendMessage()
             },
-            onVoiceConversation: Self.isVoiceConversationEnabled ? {
-                guard monetizationManager.canUse(.voiceMode) else {
-                    upgradeFeature = .voiceMode
-                    return
-                }
-                dismissKeyboard()
-                speechManager.stopListening()
-                speechManager.prewarmSpeechOutputIfNeeded()
-                voiceConversationMode = true
-            } : nil
+            onVoiceConversation: voiceConversationAction
         )
+    }
+
+    /// `nil` while the voice conversation feature is hidden, which also removes
+    /// the empty state's entry point.
+    private var voiceConversationAction: (() -> Void)? {
+        guard SpeechManager.isVoiceConversationEnabled else { return nil }
+        return {
+            guard monetizationManager.canUse(.voiceMode) else {
+                upgradeFeature = .voiceMode
+                return
+            }
+            dismissKeyboard()
+            speechManager.stopListening()
+            speechManager.prewarmSpeechOutputIfNeeded()
+            voiceConversationMode = true
+        }
     }
 
     private var pendingSelectedModel: ModelInfo? {
@@ -1468,6 +1531,7 @@ struct ChatView: View {
                             .foregroundStyle(.blue)
 
                         Button {
+                            sourceHighlightTitles = []
                             selectedDocumentForSources = document
                         } label: {
                             documentChipLabel(for: document)
@@ -1475,10 +1539,7 @@ struct ChatView: View {
                         .buttonStyle(.plain)
 
                         Button {
-                            guard let conversationID = historyManager.currentConversationID else { return }
-                            withAnimation(.spring(response: 0.3)) {
-                                documentManager.removeDocument(id: document.id, from: conversationID)
-                            }
+                            documentPendingRemoval = document
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.caption)
@@ -1501,6 +1562,24 @@ struct ChatView: View {
             }
             .padding(.horizontal, 20)
             .padding(.top, 12)
+        }
+        .confirmationDialog(
+            String(localized: "Remove this document?"),
+            isPresented: Binding(
+                get: { documentPendingRemoval != nil },
+                set: { if !$0 { documentPendingRemoval = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: documentPendingRemoval
+        ) { document in
+            Button(String(localized: "Remove Document"), role: .destructive) {
+                guard let conversationID = historyManager.currentConversationID else { return }
+                withAnimation(.spring(response: 0.3)) {
+                    documentManager.removeDocument(id: document.id, from: conversationID)
+                }
+            }
+        } message: { document in
+            Text(String(format: String(localized: "\"%@\" and its extracted text are deleted from this chat. Answers can no longer draw on it.", defaultValue: "\"%@\" and its extracted text are deleted from this chat. Answers can no longer draw on it."), document.name))
         }
         .transition(.move(edge: .bottom).combined(with: .opacity))
     }
@@ -1861,7 +1940,7 @@ struct ChatView: View {
                 : String(localized: "Start voice input"))
 
             // Hands-free voice conversation (full-screen).
-            if Self.isVoiceConversationEnabled {
+            if SpeechManager.isVoiceConversationEnabled {
                 voiceConversationButton
             }
         }
@@ -3994,17 +4073,35 @@ struct ChatView: View {
         }
 
         let configuration = promptBudgetConfiguration(for: model)
+        let usesCompactInstructions = configuration.inputTokenBudget < Self.compactInstructionsBudgetThreshold
         let attachedDocuments = documentManager.documents(for: conversationID)
         let prefersNewestAttachment = requestPrefersNewestAttachment(effectiveRequest)
         let latestAttachedDocumentSnippet = prefersNewestAttachment
             ? latestAttachedDocumentSnippet(for: conversationID)
             : nil
 
+        withAnimation(.easeInOut(duration: 0.2)) {
+            retrievalStatus = String(localized: "Searching documents…")
+        }
+        defer {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                retrievalStatus = nil
+            }
+        }
+
         let snippets = await documentManager.retrieveRelevantSnippets(
             for: effectiveRequest,
             conversationID: conversationID,
             limit: 4
         )
+
+        if let located = snippets.first(where: { $0.chunk.sourceLocationLabel != nil }),
+           let label = located.chunk.sourceLocationLabel {
+            retrievalStatus = String(
+                format: String(localized: "Reading %@…", defaultValue: "Reading %@…"),
+                label
+            )
+        }
 
         let strongSnippets = snippets.filter { item in
             item.document.id == attachedDocuments.first?.id || item.chunk.score >= 0.22
@@ -4019,8 +4116,12 @@ struct ChatView: View {
                 )
             }
             if let latestAttachedDocumentSnippet {
-                let retainedSnippets = prefersNewestAttachment ? [] : strongSnippets
-                documentSnippets = retainedSnippets.map { item in
+                // The ranked passages lead, because they are the ones selected to
+                // answer this question. The newest attachment still rides along so
+                // that "this"/"the attachment" style requests resolve against it,
+                // but it never replaces retrieval: a question can name the
+                // attachment and still depend on text far past its opening.
+                documentSnippets = strongSnippets.map { item in
                     PromptBudgeter.DocumentSnippet(
                         title: item.document.name,
                         location: item.chunk.sourceLocationLabel,
@@ -4031,12 +4132,25 @@ struct ChatView: View {
                     snippet.title == latestAttachedDocumentSnippet.title &&
                     snippet.location == latestAttachedDocumentSnippet.location
                 }
-                documentSnippets.insert(latestAttachedDocumentSnippet, at: 0)
+                // Shrink the orientation snippet when ranked passages accompany it,
+                // so the head of the document cannot consume the whole budget and
+                // push the passages that actually answer the question out.
+                let orientationSnippet = documentSnippets.isEmpty
+                    ? latestAttachedDocumentSnippet
+                    : PromptBudgeter.DocumentSnippet(
+                        title: latestAttachedDocumentSnippet.title,
+                        location: latestAttachedDocumentSnippet.location,
+                        content: PromptBudgeter.snippetSizedText(
+                            latestAttachedDocumentSnippet.content,
+                            maxTokens: 260
+                        )
+                    )
+                documentSnippets.append(orientationSnippet)
             }
             let instructions = """
-            \(documentAnsweringInstructions)
+            \(documentAnsweringInstructions(compact: usesCompactInstructions))
             The retrieved passages are ranked by relevance. Use higher-ranked passages and exact matches first.
-            Cite sources inline as [Source n] when you rely on them.
+            Do not write "[Source n]" markers in the answer. The app shows the sources beneath your reply; name the section or heading in prose instead when it helps the reader.
             """
             let reservedTokens = PromptBudgeter.estimatedTokenCount(instructions + "\n\nUser request: \(effectiveRequest)")
             let package = PromptBudgeter.documentPackage(
@@ -4071,7 +4185,7 @@ struct ChatView: View {
             )
         }
         let instructions = """
-        \(documentAnsweringInstructions)
+        \(documentAnsweringInstructions(compact: usesCompactInstructions))
         """
         let reservedTokens = PromptBudgeter.estimatedTokenCount(instructions + "\n\nUser request: \(effectiveRequest)")
         let package = PromptBudgeter.documentPackage(
@@ -4106,14 +4220,66 @@ struct ChatView: View {
         )
     }
 
-    private var documentAnsweringInstructions: String {
-        """
+    /// Budget below which the instructions are condensed. Apple's Foundation
+    /// model and low-memory phones (capped at 2,048 context tokens by
+    /// `DeviceResourcePolicy.maximumContextTokens`) can land near the floor of
+    /// `PromptBudgeter.Configuration`, and instructions are charged against the
+    /// same budget as the passages — on a small window the full wording would
+    /// buy guidance at the price of the evidence it is meant to govern.
+    private static let compactInstructionsBudgetThreshold = 1_500
+
+    private func documentAnsweringInstructions(compact: Bool) -> String {
+        guard !compact else {
+            return """
+            You have access to documents that belong only to this chat.
+            The text below is extracted from the user's own attachment; answer from it rather than saying you cannot open a file.
+            A passage labelled "Newest attached document" is the opening of the most recent attachment; prefer it for "this", "that", or "the receipt", and the ranked passages otherwise.
+            State every obligation, deadline, amount, condition, and exception the passages contain, even if that runs long, but add nothing they do not state.
+            When asked for exact wording, quote it verbatim in quotation marks.
+            """
+        }
+
+        return """
         You have access to documents that belong only to this chat.
         Treat document text shown below as readable extracted text from the user's attachment, not as an external file.
         When the user asks whether you can see, read, inspect, or describe a document, answer from the extracted text instead of saying you cannot provide a visual receipt or asking the user to provide details already present in the source.
-        Source 1 is the newest attached chat document when present; prefer it for references to "this", "that", "there", "the receipt", "the OCR", or the current attachment.
+        A passage labelled "Newest attached document" is the opening of the most recently attached file; prefer it for references to "this", "that", "there", "the receipt", "the OCR", or the current attachment, and prefer the ranked passages for every other question.
         If useful text is present, summarize the concrete contents directly. If it is limited, say what is available and what is missing.
+        Here completeness outweighs the usual preference for short answers: state every obligation, deadline, amount, condition, and exception the passages contain, even when that takes more than a few sentences. Cover the whole of a provision rather than its first requirement.
+        Length must come from the passages, never from padding: add nothing they do not state, and do not restate a point to make the answer longer.
+        Do not join separate provisions with "only if", "otherwise", "unless", or "instead" unless the passages state that relationship. Where the document keeps two requirements separate, report them separately, even when one appears to be the alternative to the other.
+        When the user asks for the exact wording of a clause, reproduce it verbatim in quotation marks before explaining it.
         """
+    }
+
+    /// Opens the Document Sources sheet scoped to the reply's evidence. Source
+    /// titles are stored as "name · location", with merged runs joined by "-"
+    /// ("Page 2-Page 3"), so the location half is split back into the section
+    /// titles the drawer's cards carry.
+    private func showSources(for message: ChatMessage) {
+        guard let conversationID = historyManager.currentConversationID else { return }
+        let documents = documentManager.documents(for: conversationID) + documentManager.libraryDocuments
+        let separator = " · "
+
+        var matchedDocument: ConversationDocument?
+        var titles: Set<String> = []
+        for sourceTitle in message.sourceTitles {
+            let components = sourceTitle.components(separatedBy: separator)
+            guard let name = components.first else { continue }
+            guard let document = documents.first(where: { $0.name == name }) else { continue }
+            if matchedDocument == nil {
+                matchedDocument = document
+            }
+            guard document.id == matchedDocument?.id, components.count > 1 else { continue }
+            let location = components.dropFirst().joined(separator: separator)
+            for part in location.components(separatedBy: "-") {
+                titles.insert(part.trimmingCharacters(in: .whitespaces))
+            }
+        }
+
+        guard let matchedDocument else { return }
+        sourceHighlightTitles = titles
+        selectedDocumentForSources = matchedDocument
     }
 
     private func requestPrefersNewestAttachment(_ request: String) -> Bool {

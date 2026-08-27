@@ -91,7 +91,7 @@ struct UpgradeView: View {
                 }
             }
 
-            Text(String(localized: "Everything runs on your device — no account, no cloud, works offline. Pro unlocks the full local toolkit: every model, richer document chat, and hands-free voice."))
+            Text(proSummary)
                 .font(.subheadline)
                 .foregroundStyle(Color.adaptive(white: 0.48))
         }
@@ -99,6 +99,14 @@ struct UpgradeView: View {
         .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .shadow(color: .black.opacity(0.04), radius: 10, y: 4)
+    }
+
+    /// Drops the voice clause while hands-free conversation mode is hidden, so
+    /// the paywall never sells a feature the build doesn't ship.
+    private var proSummary: String {
+        SpeechManager.isVoiceConversationEnabled
+            ? String(localized: "Everything runs on your device — no account, no cloud, works offline. Pro unlocks the full local toolkit: every model, richer document chat, and hands-free voice.")
+            : String(localized: "Everything runs on your device — no account, no cloud, works offline. Pro unlocks the full local toolkit: every model and richer document chat.")
     }
 
     private var featureList: some View {
@@ -125,12 +133,14 @@ struct UpgradeView: View {
                     title: String(localized: "Unlimited docs per chat"),
                     subtitle: String(localized: "Move beyond the free single-document workflow.")
                 )
-                Divider().padding(.leading, 52)
-                upgradeRow(
-                    icon: "waveform",
-                    title: String(localized: "Hands-free conversation mode"),
-                    subtitle: String(localized: "Automatic listen and spoken replies for faster voice use.")
-                )
+                if SpeechManager.isVoiceConversationEnabled {
+                    Divider().padding(.leading, 52)
+                    upgradeRow(
+                        icon: "waveform",
+                        title: String(localized: "Hands-free conversation mode"),
+                        subtitle: String(localized: "Automatic listen and spoken replies for faster voice use.")
+                    )
+                }
                 Divider().padding(.leading, 52)
                 upgradeRow(
                     icon: "books.vertical.fill",

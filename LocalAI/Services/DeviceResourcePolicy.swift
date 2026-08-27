@@ -42,9 +42,17 @@ struct DeviceResourcePolicy: Equatable, Sendable {
     /// Download size is only an approximation, so low-memory phones use a
     /// deliberately conservative hard ceiling until a model passes real-device
     /// readiness testing.
+    ///
+    /// iPad gets a larger share than iPhone: iPadOS grants a higher jetsam
+    /// limit for the same RAM, the app carries the increased-memory-limit
+    /// entitlement, and an iPad isn't competing with an incoming call or the
+    /// camera. At 0.35 an 8 GB iPad was capped at 2.8 GB, which silently hid
+    /// every 3–4 GB model even though `currentDeviceFit` rates them `.supported`
+    /// on iPad up to 4.6 GB. 0.5 keeps the two ladders in agreement and still
+    /// lands under `safePeakResidentMemoryBytes` once runtime overhead is added.
     nonisolated var usableModelBudgetGB: Double {
         if isLowMemoryPhone { return 1.0 }
-        return physicalMemoryGB * 0.35
+        return physicalMemoryGB * (isPad ? 0.5 : 0.35)
     }
 
     nonisolated var maximumGenerationTokens: Int {

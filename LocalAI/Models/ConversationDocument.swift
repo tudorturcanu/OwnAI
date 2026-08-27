@@ -20,6 +20,11 @@ struct ConversationDocument: Identifiable, Equatable, Codable {
     let ocrQuality: DocumentExtractionQuality
     let createdAt: Date
     let sourceURL: URL?
+    /// Name of the copy of the original file kept inside the app's own storage,
+    /// or nil for documents imported before originals were retained. The picked
+    /// `sourceURL` is security-scoped and unusable once import ends, so this is
+    /// the only handle that can reopen the real file later.
+    let storedFileName: String?
 
     init(
         id: UUID = UUID(),
@@ -33,7 +38,8 @@ struct ConversationDocument: Identifiable, Equatable, Codable {
         textOrigin: DocumentTextOrigin = .native,
         ocrQuality: DocumentExtractionQuality = .normal,
         createdAt: Date = Date(),
-        sourceURL: URL?
+        sourceURL: URL?,
+        storedFileName: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -47,6 +53,7 @@ struct ConversationDocument: Identifiable, Equatable, Codable {
         self.ocrQuality = ocrQuality
         self.createdAt = createdAt
         self.sourceURL = sourceURL
+        self.storedFileName = storedFileName
     }
 
     init(from attachedDocument: AttachedDocument, maxCharacters: Int) {
@@ -68,7 +75,8 @@ struct ConversationDocument: Identifiable, Equatable, Codable {
             isTrimmed: normalizedContent.count > maxCharacters || attachedDocument.isTrimmed,
             textOrigin: attachedDocument.textOrigin,
             ocrQuality: attachedDocument.ocrQuality,
-            sourceURL: attachedDocument.url.isFileURL ? attachedDocument.url : nil
+            sourceURL: attachedDocument.url.isFileURL ? attachedDocument.url : nil,
+            storedFileName: attachedDocument.storedFileName
         )
     }
 
@@ -85,6 +93,7 @@ struct ConversationDocument: Identifiable, Equatable, Codable {
         case ocrQuality
         case createdAt
         case sourceURL
+        case storedFileName
     }
 
     init(from decoder: Decoder) throws {
@@ -101,6 +110,9 @@ struct ConversationDocument: Identifiable, Equatable, Codable {
         ocrQuality = try container.decodeIfPresent(DocumentExtractionQuality.self, forKey: .ocrQuality) ?? .normal
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? .distantPast
         sourceURL = try container.decodeIfPresent(URL.self, forKey: .sourceURL)
+        // Absent for documents stored before originals were retained: those keep
+        // working as text-only, they simply cannot open the source file.
+        storedFileName = try container.decodeIfPresent(String.self, forKey: .storedFileName)
     }
 
     var iconName: String {

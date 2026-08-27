@@ -24,7 +24,10 @@ struct AttachedDocument: Identifiable, Equatable {
     let isTrimmed: Bool
     let textOrigin: DocumentTextOrigin
     let ocrQuality: DocumentExtractionQuality
-    
+    /// Name of the copy kept in app storage, set during import while the
+    /// security-scoped URL is still readable. Nil when the copy failed.
+    var storedFileName: String? = nil
+
     var name: String {
         url.lastPathComponent.removingPercentEncoding ?? url.lastPathComponent
     }
@@ -195,6 +198,18 @@ final class DocumentManager {
                 // Small delay so the user sees the completed progress
                 try? await Task.sleep(for: .milliseconds(200))
 
+                // Copy the bytes now: `url` is security-scoped, and the access
+                // granted by `startAccessingSecurityScopedResource` above ends
+                // with this function. Nothing can reopen the picked file after
+                // that, so a copy made later would simply fail.
+                // Off the main actor: this copies the whole file, which can be
+                // tens of megabytes. Security-scoped access is process-wide and
+                // still held by the caller, so a detached read is legitimate,
+                // and awaiting here keeps the copy inside that window.
+                let storedFileName = await Task.detached(priority: .userInitiated) {
+                    Self.storeOriginalFile(at: url)
+                }.value
+
                 return AttachedDocument(
                     url: url,
                     content: extraction.text,
@@ -204,7 +219,8 @@ final class DocumentManager {
                     fileSize: fileSize,
                     isTrimmed: extraction.text.count > documentProcessingMode.maxStoredCharacters,
                     textOrigin: extraction.textOrigin,
-                    ocrQuality: extraction.ocrQuality
+                    ocrQuality: extraction.ocrQuality,
+                    storedFileName: storedFileName
                 )
             }
 
@@ -420,6 +436,7 @@ final class DocumentManager {
             documentsByConversationID[conversationID] = documents
         }
         savePersistedDocuments()
+        pruneOrphanedOriginalFiles()
         Task {
             await ragEngine.clear(documentID: id, conversationID: conversationID)
         }
@@ -428,6 +445,7 @@ final class DocumentManager {
     func clearDocuments(for conversationID: UUID) {
         documentsByConversationID.removeValue(forKey: conversationID)
         savePersistedDocuments()
+        pruneOrphanedOriginalFiles()
         Task {
             await ragEngine.clearConversation(conversationID)
         }
@@ -472,8 +490,80 @@ final class DocumentManager {
     func clearAllDocuments() {
         documentsByConversationID.removeAll()
         savePersistedDocuments()
+        pruneOrphanedOriginalFiles()
         Task {
             await ragEngine.clearAll()
+        }
+    }
+
+    // MARK: - Retained originals
+
+    /// Verbatim copies of imported documents, kept so the source file can be
+    /// reopened later. Mirrors how `ImageAttachmentManager` keeps image bytes.
+    nonisolated static var originalFilesDirectory: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("document_originals", isDirectory: true)
+    }
+
+    /// Copies a picked file into app storage, returning the generated name to
+    /// persist alongside the document. Must be called while the caller still
+    /// holds security-scoped access to `url`. Returns nil if the copy fails —
+    /// import continues, the document is simply text-only.
+    nonisolated static func storeOriginalFile(at url: URL) -> String? {
+        let directory = originalFilesDirectory
+        guard (try? FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )) != nil else { return nil }
+
+        let fileExtension = url.pathExtension
+        let fileName = fileExtension.isEmpty
+            ? UUID().uuidString
+            : "\(UUID().uuidString).\(fileExtension)"
+        let destination = directory.appendingPathComponent(fileName)
+        do {
+            // Read-then-write rather than copyItem: a file-provider URL may need
+            // its bytes materialized, and copyItem can fail across containers.
+            let data = try Data(contentsOf: url, options: .mappedIfSafe)
+            try data.write(to: destination, options: [.atomic, .completeFileProtection])
+            return fileName
+        } catch {
+            try? FileManager.default.removeItem(at: destination)
+            documentDiagnostic("original copy failed file=\(url.lastPathComponent) error=\(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// The retained original for a document, or nil when it predates retention,
+    /// its copy failed, or the file has since been pruned.
+    nonisolated static func originalFileURL(for document: ConversationDocument) -> URL? {
+        guard let storedFileName = document.storedFileName else { return nil }
+        let url = originalFilesDirectory.appendingPathComponent(storedFileName)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    func originalFileURL(for document: ConversationDocument) -> URL? {
+        Self.originalFileURL(for: document)
+    }
+
+    /// Deletes retained originals that no live document references. Documents
+    /// are copied by value into branched conversations, so several chats can
+    /// share one stored file; deleting eagerly at each removal site would pull
+    /// the file out from under a branch that still points at it. Sweeping by
+    /// reference is the only accounting that stays correct as documents are
+    /// removed, cleared, branched, and pruned by the storage budget.
+    private func pruneOrphanedOriginalFiles() {
+        let referenced = Set(
+            documentsByConversationID.values
+                .flatMap { $0 }
+                .compactMap(\.storedFileName)
+        )
+        let directory = Self.originalFilesDirectory
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path) else {
+            return
+        }
+        for name in names where !referenced.contains(name) {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
         }
     }
 
@@ -631,6 +721,10 @@ final class DocumentManager {
                 documentsByConversationID[conversationID] = documents
             }
         }
+
+        // The budget drops whole documents; their retained originals are the
+        // larger half of what that reclaims.
+        pruneOrphanedOriginalFiles()
 
         return true
     }

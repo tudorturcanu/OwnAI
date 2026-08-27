@@ -649,6 +649,7 @@
 "End voice conversation" = "Terminar conversación de voz";
 "Enter a new name for this conversation." = "Escribe un nombre nuevo para esta conversación.";
 "Everything runs on your device — no account, no cloud, works offline. Pro unlocks the full local toolkit: every model, richer document chat, and hands-free voice." = "Todo funciona en tu dispositivo: sin cuenta, sin nube y sin conexión. Pro desbloquea el kit local completo: todos los modelos, chat de documentos más completo y voz manos libres.";
+"Everything runs on your device — no account, no cloud, works offline. Pro unlocks the full local toolkit: every model and richer document chat." = "Todo funciona en tu dispositivo: sin cuenta, sin nube y sin conexión. Pro desbloquea el kit local completo: todos los modelos y chat de documentos más completo.";
 "Explain how recursion works with a simple example" = "Explica cómo funciona la recursión con un ejemplo sencillo";
 "Explain photosynthesis like I'm in middle school" = "Explica la fotosíntesis como si estuviera en secundaria";
 "Explain why the sky is blue" = "Explica por qué el cielo es azul";
@@ -996,3 +997,52 @@
 "Own AI needs to open briefly to answer with the on-device model." = "Own AI debe abrirse brevemente para responder con el modelo local.";
 "The app is still starting up. Try again." = "La app todavía se está iniciando. Inténtalo de nuevo.";
 "No on-device model is available. Open Own AI once to finish setup, then try again." = "No hay ningún modelo local disponible. Abre Own AI una vez para completar la configuración y vuelve a intentarlo.";
+
+/* Kokoro voices, voice mode, personality voice (Aug 2026) */
+"System Voice" = "Voz del sistema";
+"Built-in Apple speech" = "Voz integrada de Apple";
+"System voice is ready." = "La voz del sistema está lista.";
+"%@ will prepare when first used." = "%@ se preparará al usarse por primera vez.";
+"%@ will prepare when next used." = "%@ se preparará la próxima vez que se use.";
+"Download %@ in Settings to use it." = "Descarga %@ en Ajustes para usarla.";
+"Downloading %@…" = "Descargando %@…";
+"Preparing %@…" = "Preparando %@…";
+"%@ is ready." = "%@ está lista.";
+"Could not download %@: %@" = "No se pudo descargar %@: %@";
+"Audio playback failed: %@" = "Error en la reproducción de audio: %@";
+"Voice" = "Voz";
+"Downloading…" = "Descargando…";
+"Download %@?" = "¿Descargar %@?";
+"A small voice file (under 1 MB) will be downloaded." = "Se descargará un pequeño archivo de voz (menos de 1 MB).";
+"A one-time ~%lld MB download. Speech then works fully offline." = "Una descarga única de unos %lld MB. Después, la voz funciona completamente sin conexión.";
+"%@ needs a one-time ~%lld MB download." = "%@ necesita una descarga única de unos %lld MB.";
+"Delete Kokoro Voice Model (~%lld MB)" = "Eliminar modelo de voz Kokoro (~%lld MB)";
+"Kokoro voices need an A14 or newer device." = "Las voces Kokoro necesitan un dispositivo con chip A14 o posterior.";
+"The Kokoro voice download did not complete." = "La descarga de la voz Kokoro no se completó.";
+"Kokoro voice files are missing. Download the voice again in Settings." = "Faltan archivos de la voz Kokoro. Vuelve a descargar la voz en Ajustes.";
+"The selected Kokoro voice file is damaged." = "El archivo de la voz Kokoro seleccionada está dañado.";
+"This passage is too long for the Kokoro voice." = "Este fragmento es demasiado largo para la voz Kokoro.";
+"British English" = "Inglés británico";
+"US English" = "Inglés de EE. UU.";
+"female" = "femenina";
+"male" = "masculina";
+"Preparing voice…" = "Preparando la voz…";
+"Preparing voice" = "Preparando la voz";
+"Downloading model files — including optional voice models for reading replies aloud — uses a network request to **Hugging Face Inc.** (model hosting provider). This request may include your IP address and device request headers." = "La descarga de archivos de modelo, incluidos los modelos de voz opcionales para leer respuestas en voz alta, usa una solicitud de red a **Hugging Face Inc.** (proveedor de alojamiento de modelos). Esta solicitud puede incluir tu dirección IP y las cabeceras de tu dispositivo.";
+"Keep current voice" = "Mantener la voz actual";
+"Speaking Speed" = "Velocidad de habla";
+"Used when replies are read aloud and in voice conversations. A Kokoro voice is applied only once it has been downloaded in Settings › Advanced." = "Se usa al leer respuestas en voz alta y en conversaciones de voz. Una voz Kokoro solo se aplica una vez descargada en Ajustes › Avanzado.";
+"Pace for spoken replies. 1.00× is the voice's natural speed." = "Ritmo de las respuestas habladas. 1,00× es la velocidad natural de la voz.";
+"Used when replies are read aloud and in voice conversations." = "Se usa al leer respuestas en voz alta y en conversaciones de voz.";
+"Kokoro voices need an A14 or newer device; the system voice will be used." = "Las voces Kokoro necesitan un dispositivo con chip A14 o posterior; se usará la voz del sistema.";
+"Download this voice in Settings › Advanced › Voice to use it." = "Descarga esta voz en Ajustes › Avanzado › Voz para usarla.";
+
+"Open Original" = "Abrir original";
+
+"Show Sources" = "Mostrar fuentes";
+"Used in answer" = "Usado en la respuesta";
+"Remove this document?" = "¿Quitar este documento?";
+"Remove Document" = "Quitar documento";
+"\"%@\" and its extracted text are deleted from this chat. Answers can no longer draw on it." = "«%@» y su texto extraído se eliminan de este chat. Las respuestas ya no podrán basarse en él.";
+"Searching documents…" = "Buscando en los documentos…";
+"Reading %@…" = "Leyendo %@…";

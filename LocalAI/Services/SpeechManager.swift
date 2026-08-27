@@ -170,6 +170,12 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     /// (~1 min) model load is improved. Flip to `true` to re-enable the UI.
     nonisolated static let isWhisperEnabled = false
 
+    /// Feature flag: the hands-free full-screen voice conversation is hidden
+    /// for release until the listen/speak turn-taking loop is better tested.
+    /// Dictation and Speak/Read Aloud are unaffected. Flip to `true` to
+    /// re-enable the entry points.
+    nonisolated static let isVoiceConversationEnabled = false
+
     @ObservationIgnored @AppStorage("speechInputBackend") private var persistedSpeechInputBackend = SpeechInputBackend.system.rawValue
     /// Optional ISO language code for Whisper (nil = auto-detect / multilingual).
     @ObservationIgnored @AppStorage("speechInputLanguage") private var speechInputLanguage = ""
@@ -228,6 +234,23 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         }
     }
 
+    @ObservationIgnored @AppStorage("speechRate") private var persistedSpeechRate = UserPersonalityPreset.defaultSpeechRate
+
+    /// Speech-rate multiplier applied to both Kokoro (`speed`) and the system
+    /// voice. Personalities set it; 1.0 is the voice's natural pace.
+    var speechRate: Double = UserPersonalityPreset.defaultSpeechRate {
+        didSet {
+            // Assigning inside didSet doesn't re-trigger the observer, so the
+            // clamp is applied in place and then persisted once.
+            let clamped = min(max(speechRate, UserPersonalityPreset.speechRateRange.lowerBound),
+                              UserPersonalityPreset.speechRateRange.upperBound)
+            if clamped != speechRate {
+                speechRate = clamped
+            }
+            persistedSpeechRate = speechRate
+        }
+    }
+
     /// The Kokoro voice to synthesize with, or nil when the system voice is
     /// selected or this device can't run MLX.
     private var activeKokoroVoice: KokoroVoice? {
@@ -259,9 +282,75 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
            savedBackend == .system || Self.isKokoroSupportedOnCurrentDevice {
             speechOutputBackend = savedBackend
         }
+        speechRate = min(max(persistedSpeechRate, UserPersonalityPreset.speechRateRange.lowerBound),
+                         UserPersonalityPreset.speechRateRange.upperBound)
         speechBackendStatus = speechOutputBackend == .system
             ? statusMessage(for: .system)
             : String(localized: "\(speechOutputBackend.title) will prepare when first used.")
+
+        installAudioObservers()
+    }
+
+    /// Kokoro plays through `ttsAudioEngine`, which iOS stops on an audio
+    /// route/configuration change (headphones, Bluetooth, the voice-mode
+    /// switch to `.playAndRecord`) or an interruption (phone call, Siri).
+    /// `AVSpeechSynthesizer` reports those through its delegate, but a
+    /// stopped engine just never plays the final buffer — so `isSpeaking`
+    /// would stay true forever and the voice-conversation loop would never
+    /// re-arm the microphone. Resume when we can, otherwise end the
+    /// utterance cleanly.
+    private func installAudioObservers() {
+        let center = NotificationCenter.default
+        center.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: ttsAudioEngine,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.handleTTSEngineConfigurationChange()
+            }
+        }
+        center.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notification in
+            let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+            let type = rawType.flatMap(AVAudioSession.InterruptionType.init(rawValue:))
+            Task { @MainActor [weak self] in
+                self?.handleAudioSessionInterruption(type)
+            }
+        }
+    }
+
+    private var isKokoroPlaybackActive: Bool {
+        isSpeaking && kokoroSynthesizer != nil && (kokoroSynthesisTask != nil || ttsGraphConfigured)
+            && !synthesizer.isSpeaking
+    }
+
+    private func handleTTSEngineConfigurationChange() {
+        guard isKokoroPlaybackActive else { return }
+        // Scheduled buffers survive an engine stop; restarting the engine and
+        // the player resumes them on the new route.
+        do {
+            if !ttsAudioEngine.isRunning {
+                ttsAudioEngine.prepare()
+                try ttsAudioEngine.start()
+            }
+            ttsPlayerNode.play()
+            KokoroDiagnostics.log("speak", "audio configuration changed — playback resumed")
+        } catch {
+            KokoroDiagnostics.log("speak", "audio configuration changed — could not resume (\(error)); ending utterance")
+            stopSpeaking()
+        }
+    }
+
+    private func handleAudioSessionInterruption(_ type: AVAudioSession.InterruptionType?) {
+        guard type == .began, isKokoroPlaybackActive else { return }
+        // There is no meaningful "resume mid-sentence" after a phone call;
+        // end the utterance so the UI and the voice loop move on.
+        KokoroDiagnostics.log("speak", "audio session interrupted — ending utterance")
+        stopSpeaking()
     }
 
     func startListening() throws {
@@ -1104,6 +1193,7 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         kokoroIdleUnloadTask = nil
         let generation = kokoroPlaybackGeneration
         let utteranceStart = CACurrentMediaTime()
+        let speed = speechRate
 
         kokoroSynthesisTask?.cancel()
         kokoroSynthesisTask = Task.detached(priority: .userInitiated) { [weak self] in
@@ -1112,7 +1202,7 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
                 if Task.isCancelled { return }
                 let samples: [Float]
                 do {
-                    samples = try await synthesizer.synthesize(chunk, voice: voice)
+                    samples = try await synthesizer.synthesize(chunk, voice: voice, speed: speed)
                 } catch KokoroError.textTooLong {
                     // Chunks are sized well under the limit; skip the rare
                     // outlier rather than abort the whole reply.
@@ -1219,7 +1309,9 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
 
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = AVSpeechSynthesisVoice(language: "en-US")
-        utterance.rate = 0.5
+        // 0.5 is AVSpeechUtteranceDefaultSpeechRate; scale it by the same
+        // multiplier Kokoro uses so a personality's pace carries across voices.
+        utterance.rate = Float(0.5 * speechRate)
 
         synthesizer.speak(utterance)
         isSpeaking = true

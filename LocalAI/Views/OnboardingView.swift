@@ -31,8 +31,6 @@ struct OnboardingView: View {
         2
     }
 
-    /// Mirrors ChatView.isVoiceConversationEnabled — voice conversation mode is hidden app-wide.
-    private static let isVoiceConversationEnabled = false
 
     private var onboardingRecommendationData: (model: ModelInfo, recommendation: ModelManager.OnboardingRecommendation)? {
         guard let recommendation = modelManager.onboardingRecommendation(),
@@ -219,7 +217,7 @@ struct OnboardingView: View {
                         String(localized: "Powered by highly optimized on-device models.")
                 )
                 
-                if Self.isVoiceConversationEnabled {
+                if SpeechManager.isVoiceConversationEnabled {
                     featureRow(
                         icon: "waveform",
                         color: .blue,

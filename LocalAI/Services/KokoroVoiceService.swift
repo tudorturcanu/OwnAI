@@ -205,14 +205,15 @@ actor KokoroSynthesizer {
 
     /// Synthesizes one chunk of already-cleaned text. Chunks must stay under
     /// Kokoro's 510-phoneme limit; see `SpeechTextPreparer.chunks(_:)`.
-    func synthesize(_ text: String, voice: KokoroVoice) throws -> [Float] {
+    func synthesize(_ text: String, voice: KokoroVoice, speed: Double = 1.0) throws -> [Float] {
         let style = try loadStyle(for: voice)
         let started = CACurrentMediaTime()
         do {
             let (samples, _) = try engine.generateAudio(
                 voice: style,
                 language: voice.isBritish ? .enGB : .enUS,
-                text: text
+                text: text,
+                speed: Float(speed)
             )
             let audioSeconds = Double(samples.count) / Self.sampleRate
             KokoroDiagnostics.log("synthesize", "chars=\(text.count) audio=\(String(format: "%.2f", audioSeconds))s in \(KokoroDiagnostics.millis(since: started)) ms"
@@ -256,7 +257,7 @@ actor KokoroSynthesizer {
 
     func warmUp(voice: KokoroVoice) {}
 
-    func synthesize(_ text: String, voice: KokoroVoice) throws -> [Float] {
+    func synthesize(_ text: String, voice: KokoroVoice, speed: Double = 1.0) throws -> [Float] {
         throw KokoroError.unsupportedDevice
     }
 }

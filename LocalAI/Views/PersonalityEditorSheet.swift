@@ -84,6 +84,30 @@ struct PersonalityEditorSheet: View {
                     }
                 }
 
+                Section {
+                    Picker(String(localized: "Voice"), selection: voiceSelection) {
+                        Text(String(localized: "Keep current voice")).tag("")
+                        ForEach(voiceOptions) { backend in
+                            Text(backend.title).tag(backend.rawValue)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text(String(localized: "Speaking Speed"))
+                            Spacer()
+                            Text(String(format: "%.2f×", draft.speechRate))
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                        Slider(value: $draft.speechRate, in: UserPersonalityPreset.speechRateRange, step: 0.05)
+                    }
+                } header: {
+                    Text(String(localized: "Voice"))
+                } footer: {
+                    Text(String(localized: "Used when replies are read aloud and in voice conversations. A Kokoro voice is applied only once it has been downloaded in Settings › Advanced."))
+                }
+
                 Section(String(localized: "Preview")) {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 10) {
@@ -119,6 +143,19 @@ struct PersonalityEditorSheet: View {
                 }
             }
         }
+    }
+
+    private var voiceOptions: [SpeechOutputBackend] {
+        SpeechManager.isKokoroSupportedOnCurrentDevice ? SpeechOutputBackend.allCases : [.system]
+    }
+
+    /// `draft.voice` is optional (nil = keep current); the picker needs a
+    /// non-optional tag, so "" stands in for nil.
+    private var voiceSelection: Binding<String> {
+        Binding(
+            get: { draft.voice ?? "" },
+            set: { draft.voice = $0.isEmpty ? nil : $0 }
+        )
     }
 
     private func responseLengthLabel(for limit: Int) -> String {
