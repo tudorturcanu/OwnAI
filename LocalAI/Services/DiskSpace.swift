@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum DiskSpace {
+nonisolated enum DiskSpace {
     static func availableGB() -> Double {
         let homeURL = URL(fileURLWithPath: NSHomeDirectory())
         if let values = try? homeURL.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]),

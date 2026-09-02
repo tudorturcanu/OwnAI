@@ -7,7 +7,49 @@
 
 import Foundation
 
-enum MLXStorage {
+/// Pure file-system work with no shared state, so it stays off the main actor
+/// and can be called from the download, import and model-load paths alike.
+nonisolated enum MLXStorage {
+    /// Files that make up an MLX checkpoint. Doubles as the Hub download
+    /// allowlist and as the copy allowlist for user-imported folders, so a
+    /// snapshot from either path contains the same set of artifacts (and no
+    /// README, sample images or `.git` directory riding along).
+    static let modelArtifactGlobs = [
+        "config.json",
+        "params.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "added_tokens.json",
+        "tokenizer.model",
+        "tekken.json",
+        "sentencepiece.bpe.model",
+        "vocab.json",
+        "merges.txt",
+        "special_tokens_map.json",
+        "generation_config.json",
+        "chat_template.json",
+        "chat_template.jinja",
+        "processor_config.json",
+        "preprocessor_config.json",
+        "image_processor_config.json",
+        "optiq_metadata.json",
+        "*.safetensors",
+        "*.safetensors.index.json",
+        "*.bin"
+    ]
+
+    /// True when `filename` matches one of `modelArtifactGlobs`.
+    static func isModelArtifact(_ filename: String) -> Bool {
+        let name = filename.lowercased()
+        return modelArtifactGlobs.contains { glob in
+            let pattern = glob.lowercased()
+            if pattern.hasPrefix("*") {
+                return name.hasSuffix(String(pattern.dropFirst()))
+            }
+            return name == pattern
+        }
+    }
+
     struct ArtifactValidationReport: Equatable {
         let isValid: Bool
         let checkedDirectory: URL?
@@ -226,6 +268,10 @@ enum MLXStorage {
             )
         }
 
+        // Hoisted: this used to be a static-set lookup, but imported models make
+        // it a potential lock + allocation, and the loop below runs per file.
+        let requiresProcessorConfig = ModelInfo.isVisionModel(modelID)
+
         var hasConfig = false
         var hasTokenizer = false
         var hasWeights = false
@@ -257,13 +303,13 @@ enum MLXStorage {
             if filename.hasSuffix(".safetensors") || filename.hasSuffix(".bin") {
                 hasWeights = true
             }
-            let hasRequiredProcessorConfig = !ModelInfo.vlmMLXModelIDs.contains(modelID) || hasProcessorConfig
+            let hasRequiredProcessorConfig = !requiresProcessorConfig || hasProcessorConfig
             if hasConfig && hasWeights && (hasTokenizer || (hasVocab && hasMerges)) && hasRequiredProcessorConfig {
                 return ArtifactValidationReport(isValid: true, checkedDirectory: directory, missingRequirements: [])
             }
         }
 
-        let hasRequiredProcessorConfig = !ModelInfo.vlmMLXModelIDs.contains(modelID) || hasProcessorConfig
+        let hasRequiredProcessorConfig = !requiresProcessorConfig || hasProcessorConfig
         var missingRequirements: [String] = []
         if !hasConfig {
             missingRequirements.append("config.json or params.json")

@@ -24,7 +24,7 @@ struct AttachmentOptionsPopup: View {
                         .foregroundStyle(Color.primary)
                 }
                 
-                Text(String(localized: "Select a file format to upload to your AI session"))
+                Text(String(localized: "Choose what to attach to this conversation."))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -64,7 +64,7 @@ struct AttachmentOptionsPopup: View {
                                 .font(.body.weight(.semibold))
                                 .foregroundStyle(Color.primary)
                             
-                            Text(String(localized: "Upload images from your photo library"))
+                            Text(String(localized: "Choose an image from your photo library."))
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }
@@ -182,10 +182,15 @@ struct AttachmentOptionsPopup: View {
 
 // Reusable scale transition on button press
 struct PressedScaleButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
-            .animation(.spring(response: 0.2, dampingFraction: 0.7), value: configuration.isPressed)
+            .scaleEffect(!reduceMotion && configuration.isPressed ? 0.97 : 1.0)
+            .animation(
+                reduceMotion ? nil : .spring(response: 0.2, dampingFraction: 0.7),
+                value: configuration.isPressed
+            )
     }
 }
 

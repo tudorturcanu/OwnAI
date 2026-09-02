@@ -13,12 +13,13 @@ struct ChatEmptyStateView: View {
     let isAppleIntelligenceAvailable: Bool
     let personalityLabel: (name: String, icon: String)?
     let onDownloadModel: () -> Void
-    let onSuggestion: (String) -> Void
+    let onSuggestion: (ChatSuggestion) -> Void
     /// Starts the hands-free voice conversation. nil hides the invitation
     /// (voice mode disabled, or no model ready to talk to).
     var onVoiceConversation: (() -> Void)? = nil
 
     @State private var suggestions: [ChatSuggestion] = ChatSuggestions.pool.shuffled().prefix(7).map { $0 }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 32) {
@@ -140,12 +141,14 @@ struct ChatEmptyStateView: View {
                 HStack(spacing: 12) {
                     ForEach(suggestions) { suggestion in
                         SuggestionCard(icon: suggestion.icon, title: suggestion.title, subtitle: suggestion.subtitle) {
-                            onSuggestion(suggestion.prompt)
+                            onSuggestion(suggestion)
                         }
                     }
                 }
                 .padding(.horizontal, 20)
+                .scrollTargetLayout()
             }
+            .scrollTargetBehavior(.viewAligned)
             .padding(.bottom, 20)
         }
         .frame(maxWidth: .infinity)
@@ -163,7 +166,7 @@ struct ChatEmptyStateView: View {
             Text(statusTitle)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(Color.adaptive(white: 0.35))
-                .shimmering(active: isWarmingUp, bandSize: 0.22)
+                .shimmering(active: isWarmingUp && !reduceMotion, bandSize: 0.22)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)

@@ -142,9 +142,11 @@ struct DataPrivacySheet: View {
             HStack(spacing: 8) {
                 Image(systemName: icon)
                     .foregroundStyle(iconColor)
+                    .accessibilityHidden(true)
                 Text(title)
                     .font(.headline)
                     .foregroundStyle(Color.adaptive(white: 0.2))
+                    .accessibilityAddTraits(.isHeader)
             }
             
             content()
@@ -162,6 +164,7 @@ struct DataPrivacySheet: View {
                 .fill(Color.blue.opacity(0.5))
                 .frame(width: 5, height: 5)
                 .padding(.top, 6)
+                .accessibilityHidden(true)
             Text(text)
                 .font(.subheadline)
                 .foregroundStyle(Color.adaptive(white: 0.45))
@@ -174,6 +177,7 @@ struct DataPrivacySheet: View {
                 .font(.caption)
                 .foregroundStyle(.green)
                 .frame(width: 18)
+                .accessibilityHidden(true)
             Text(text)
                 .font(.subheadline)
                 .foregroundStyle(Color.adaptive(white: 0.4))

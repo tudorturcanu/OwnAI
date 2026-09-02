@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct PersonalityEditorSheet: View {
     @Environment(\.dismiss) private var dismiss
@@ -27,7 +28,9 @@ struct PersonalityEditorSheet: View {
                 } header: {
                     Text(String(localized: "Basics"))
                 } footer: {
-                    Text(String(localized: "Tip: Use an SF Symbol name like “sparkles” or “terminal”."))
+                    Text(iconIsUnknown
+                         ? String(localized: "No SF Symbol by that name — “sparkles” will be used instead.")
+                         : String(localized: "Tip: Use an SF Symbol name like “sparkles” or “terminal”."))
                 }
 
                 Section(String(localized: "System Prompt")) {
@@ -111,7 +114,7 @@ struct PersonalityEditorSheet: View {
                 Section(String(localized: "Preview")) {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 10) {
-                            Image(systemName: draft.icon.isEmpty ? "sparkles" : draft.icon)
+                            Image(systemName: resolvedIcon)
                                 .foregroundStyle(.secondary)
                                 .accessibilityHidden(true)
                             Text(draft.name.isEmpty ? String(localized: "Untitled") : draft.name)
@@ -136,13 +139,28 @@ struct PersonalityEditorSheet: View {
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button(String(localized: "Save")) {
-                        onSave(draft)
+                        var saved = draft
+                        saved.icon = resolvedIcon
+                        onSave(saved)
                         dismiss()
                     }
                     .disabled(draft.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
         }
+    }
+
+    /// The icon that will actually render: a name UIKit doesn't know resolves
+    /// to nothing at all, so fall back rather than save an invisible glyph.
+    private var resolvedIcon: String {
+        let trimmed = draft.icon.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, UIImage(systemName: trimmed) != nil else { return "sparkles" }
+        return trimmed
+    }
+
+    private var iconIsUnknown: Bool {
+        let trimmed = draft.icon.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && UIImage(systemName: trimmed) == nil
     }
 
     private var voiceOptions: [SpeechOutputBackend] {

@@ -72,11 +72,9 @@ struct SiriSettingsView: View {
             }
 
             // Add to Siri button
-            if #available(iOS 16.0, *) {
-                ShortcutsLink()
-                    .shortcutsLinkStyle(.automaticOutline)
-                    .frame(maxWidth: 260)
-            }
+            ShortcutsLink()
+                .shortcutsLinkStyle(.automaticOutline)
+                .frame(maxWidth: 260)
         }
         .padding(.vertical, 8)
     }
@@ -127,6 +125,7 @@ struct SiriSettingsView: View {
 
     private let siriPhrases = [
         "Ask Own AI [your question]",
+        "Get an answer from Own AI",
         "Chat with Own AI",
         "Talk to Own AI",
         "Hey Own AI",
@@ -191,8 +190,8 @@ struct SiriSettingsView: View {
             description: "The app opens with your question pre-filled and automatically sends it to your selected AI model."
         ),
         (
-            title: "Everything stays on-device",
-            description: "Your conversation is processed entirely on your iPhone. Nothing leaves your device."
+            title: "Own AI handles the response",
+            description: "Siri hands your request to Own AI. Local models answer on-device; Apple Intelligence may use Apple processing when selected."
         ),
     ]
 
@@ -245,7 +244,7 @@ struct SiriSettingsView: View {
                             .font(.body)
                             .fontWeight(.medium)
 
-                        Text("Siri only launches Own AI — your actual question and response never pass through Apple's servers.")
+                        Text("Siri processes your spoken request under Apple's privacy terms, then hands it to Own AI. Local models generate the response on-device; Apple Intelligence may use Apple processing when selected.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)

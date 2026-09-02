@@ -19,8 +19,13 @@ struct ContentView: View {
     @AppStorage("hasShownOnboarding") private var hasShownOnboarding = false
     @State private var showOnboarding = false
     @State private var upgradeFeature: PremiumFeature?
+    @State private var modelAwaitingUpgradeSelection: ModelInfo?
+    @State private var modelAwaitingConsent: ModelInfo?
     /// Populated by the Siri App Intent; ChatView observes this to auto-send.
     @State private var siriPendingQuery: String?
+    /// Siri requests received before onboarding completes wait here so setup is
+    /// never silently marked finished just to reveal the chat underneath it.
+    @State private var postOnboardingSiriQuery: String?
     @State private var showCellularRestrictionAlert = false
 
     /// True on iPad-width layouts, where chat history lives in a persistent
@@ -110,9 +115,10 @@ struct ContentView: View {
                                 Button {
                                     speechManager.stopSpeaking()
                                     if monetizationManager.isPremiumModel(model) && !monetizationManager.hasPro {
+                                        modelAwaitingUpgradeSelection = model
                                         upgradeFeature = .allModels
                                     } else {
-                                        modelManager.selectModel(model.id)
+                                        selectModelWithConsent(model)
                                     }
                                 } label: {
                                     if !modelManager.isAutomaticSelectionEnabled && modelManager.selectedModel?.id == model.id {
@@ -174,7 +180,6 @@ struct ContentView: View {
                 .environment(historyManager)
                 .environment(monetizationManager)
                 .environment(modelManager)
-                .environmentObject(modelManager)
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -182,18 +187,31 @@ struct ContentView: View {
                 .environment(historyManager)
                 .environment(modelManager)
                 .environment(monetizationManager)
-                .environmentObject(modelManager)
         }
-        .sheet(isPresented: $showOnboarding, onDismiss: { hasShownOnboarding = true }) {
-            OnboardingView(isPresented: $showOnboarding)
+        .fullScreenCover(isPresented: $showOnboarding) {
+            OnboardingView(isPresented: $showOnboarding, onComplete: completeOnboarding)
                 .environment(llmEngine)
                 .environment(modelManager)
                 .environment(monetizationManager)
-                .environmentObject(modelManager)
                 .interactiveDismissDisabled()
         }
+        .sheet(item: $modelAwaitingConsent) { model in
+            ModelConsentSheet(model: model) {
+                UserDefaults.standard.set(true, forKey: consentKey(for: model))
+                modelAwaitingConsent = nil
+                modelManager.selectModel(model.id)
+            } onCancel: {
+                modelAwaitingConsent = nil
+            }
+        }
         .sheet(item: $upgradeFeature) { feature in
-            UpgradeView(feature: feature)
+            UpgradeView(feature: feature) {
+                guard feature == .allModels, let model = modelAwaitingUpgradeSelection else { return }
+                modelAwaitingUpgradeSelection = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    selectModelWithConsent(model)
+                }
+            }
                 .environment(monetizationManager)
         }
         .onAppear {
@@ -208,10 +226,16 @@ struct ContentView: View {
             guard let query = notification.userInfo?[OwnAISiriQueryKey.query] as? String,
                   !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             else { return }
+
+            guard hasShownOnboarding else {
+                postOnboardingSiriQuery = query
+                showOnboarding = true
+                return
+            }
+
             // Dismiss any open sheets so the chat is visible.
             showHistory = false
             showSettings = false
-            showOnboarding = false
             // Small delay to let sheet dismissal animate before auto-sending.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                 siriPendingQuery = query
@@ -246,6 +270,18 @@ struct ContentView: View {
 
     private var downloadedModels: [ModelInfo] {
         modelManager.models.filter { $0.downloadState.isDownloaded }
+    }
+
+    private func consentKey(for model: ModelInfo) -> String {
+        "modelConsent.\(model.id)"
+    }
+
+    private func selectModelWithConsent(_ model: ModelInfo) {
+        guard UserDefaults.standard.bool(forKey: consentKey(for: model)) else {
+            modelAwaitingConsent = model
+            return
+        }
+        modelManager.selectModel(model.id)
     }
 
     private var modelSelectorAccessibilityLabel: String {
@@ -328,11 +364,20 @@ struct ContentView: View {
     private func handleIncomingURL(_ url: URL) {
         showHistory = false
         showSettings = false
-        showOnboarding = false
 
         if let conversationID = conversationID(from: url),
            historyManager.conversations.contains(where: { $0.id == conversationID }) {
             historyManager.selectConversation(conversationID)
+        }
+    }
+
+    private func completeOnboarding() {
+        hasShownOnboarding = true
+
+        guard let query = postOnboardingSiriQuery else { return }
+        postOnboardingSiriQuery = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+            siriPendingQuery = query
         }
     }
 

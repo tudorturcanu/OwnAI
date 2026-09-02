@@ -154,10 +154,11 @@ final class DocumentManager {
         
         extractionProgress = 0.1
         let pdfOCRMode = Self.currentPDFOCRMode()
+        let ocrBackend = DocumentOCRBackend.current
         let documentProcessingMode = Self.currentDocumentProcessingMode()
         
         let ext = url.pathExtension.lowercased()
-        Self.documentDiagnostic("process start file=\(url.lastPathComponent) ext=\(ext) size=\(fileSize) ocrMode=\(pdfOCRMode.rawValue) processingMode=\(documentProcessingMode.rawValue)")
+        Self.documentDiagnostic("process start file=\(url.lastPathComponent) ext=\(ext) size=\(fileSize) ocrMode=\(pdfOCRMode.rawValue) ocrBackend=\(ocrBackend.rawValue) processingMode=\(documentProcessingMode.rawValue)")
         let performanceInterval = PerformanceLogger.begin(
             "DocumentExtraction",
             label: "Document extraction",
@@ -175,16 +176,29 @@ final class DocumentManager {
 
         do {
             let attachedDocument = try await MemoryProfiler.measure("DocumentManager.processFile(\(url.lastPathComponent))") {
-                let extractionTask = Task.detached(priority: .userInitiated) {
-                    try Self.extractContent(
-                        at: url,
-                        fileExtension: ext,
-                        pdfOCRMode: pdfOCRMode,
-                        documentProcessingMode: documentProcessingMode
-                    )
+                let extractionTask: Task<ExtractionResult, Error>
+                if ocrBackend == .glmOCR, Self.isOCREligibleFileExtension(ext) {
+                    extractionTask = Task { @MainActor in
+                        try await Self.extractContentUsingGLMOCR(
+                            at: url,
+                            fileExtension: ext,
+                            pdfOCRMode: pdfOCRMode,
+                            documentProcessingMode: documentProcessingMode
+                        )
+                    }
+                } else {
+                    extractionTask = Task.detached(priority: .userInitiated) {
+                        try Self.extractContent(
+                            at: url,
+                            fileExtension: ext,
+                            pdfOCRMode: pdfOCRMode,
+                            documentProcessingMode: documentProcessingMode
+                        )
+                    }
                 }
-                Self.documentDiagnostic("extraction started file=\(url.lastPathComponent) timeoutSeconds=30")
-                let extraction = try await Self.valueWithExtractionTimeout(from: extractionTask)
+                let timeout: Duration = ocrBackend == .glmOCR ? .seconds(180) : Self.extractionTimeout
+                Self.documentDiagnostic("extraction started file=\(url.lastPathComponent) ocrBackend=\(ocrBackend.rawValue)")
+                let extraction = try await Self.valueWithExtractionTimeout(from: extractionTask, timeout: timeout)
 
                 extractionProgress = 0.9
 
@@ -237,7 +251,8 @@ final class DocumentManager {
 
     nonisolated
     private static func valueWithExtractionTimeout(
-        from extractionTask: Task<ExtractionResult, Error>
+        from extractionTask: Task<ExtractionResult, Error>,
+        timeout: Duration
     ) async throws -> ExtractionResult {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
@@ -258,9 +273,9 @@ final class DocumentManager {
 
                 Task {
                     do {
-                        try await Task.sleep(for: extractionTimeout)
+                        try await Task.sleep(for: timeout)
                         extractionTask.cancel()
-                        Self.documentDiagnostic("extraction timed out timeoutSeconds=30")
+                        Self.documentDiagnostic("extraction timed out")
                         race.resumeOnce {
                             continuation.resume(throwing: DocumentError.extractionTimedOut)
                         }
@@ -727,6 +742,182 @@ final class DocumentManager {
         pruneOrphanedOriginalFiles()
 
         return true
+    }
+
+    nonisolated
+    private static func isOCREligibleFileExtension(_ fileExtension: String) -> Bool {
+        fileExtension == "pdf" || [
+            "png", "jpg", "jpeg", "heic", "heif", "tif", "tiff", "bmp", "webp"
+        ].contains(fileExtension)
+    }
+
+    /// Enhanced OCR remains an opt-in document backend rather than a chat
+    /// prompt convention. Unsupported/missing-model cases fall back to Apple
+    /// Vision so importing a document never becomes dependent on a model file.
+    private static func extractContentUsingGLMOCR(
+        at url: URL,
+        fileExtension: String,
+        pdfOCRMode: PDFOCRMode,
+        documentProcessingMode: DocumentProcessingMode
+    ) async throws -> ExtractionResult {
+        guard GLMOCRService.shared.isModelReady else {
+            documentDiagnostic("enhanced OCR unavailable; falling back to Apple Vision")
+            return try await fallbackExtraction(
+                at: url,
+                fileExtension: fileExtension,
+                pdfOCRMode: pdfOCRMode,
+                documentProcessingMode: documentProcessingMode
+            )
+        }
+
+        do {
+            if fileExtension == "pdf" {
+                return try await extractPDFUsingGLMOCR(
+                    at: url,
+                    pdfOCRMode: pdfOCRMode,
+                    maxPages: documentProcessingMode.maxPDFPages
+                )
+            }
+
+            guard let image = UIImage(contentsOfFile: url.path) else {
+                throw DocumentError.extractionFailed
+            }
+            guard let recognizedText = try await GLMOCRService.shared.recognizeText(in: [image]).first else {
+                throw GLMOCRError.emptyOutput
+            }
+            let text = recognizedText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { throw DocumentError.emptyDocument }
+            return ExtractionResult(
+                text: text,
+                sections: [DocumentSection(title: "Image (Enhanced OCR)", lowerBound: 0, upperBound: text.count)],
+                extractedPages: 1,
+                totalPages: 1,
+                textOrigin: .ocr,
+                ocrQuality: ocrQuality(didUseOCR: true, ocrCharacterCount: text.count)
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            documentDiagnostic("enhanced OCR failed; falling back to Apple Vision error=\(error.localizedDescription)")
+            return try await fallbackExtraction(
+                at: url,
+                fileExtension: fileExtension,
+                pdfOCRMode: pdfOCRMode,
+                documentProcessingMode: documentProcessingMode
+            )
+        }
+    }
+
+    private struct EnhancedOCRPage {
+        let number: Int
+        let nativeText: String?
+        let shouldUseOCR: Bool
+        let renderedImage: UIImage?
+    }
+
+    private static func extractPDFUsingGLMOCR(
+        at url: URL,
+        pdfOCRMode: PDFOCRMode,
+        maxPages: Int
+    ) async throws -> ExtractionResult {
+        try Task.checkCancellation()
+        guard let pdfDocument = PDFDocument(url: url) else {
+            throw DocumentError.extractionFailed
+        }
+
+        let totalPages = pdfDocument.pageCount
+        let pagesToExtract = min(totalPages, max(1, maxPages))
+        var pages: [EnhancedOCRPage] = []
+        var images: [UIImage] = []
+        pages.reserveCapacity(pagesToExtract)
+
+        for index in 0..<pagesToExtract {
+            try Task.checkCancellation()
+            guard let page = pdfDocument.page(at: index) else { continue }
+            let nativeText = page.string?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let shouldUseOCR: Bool
+            switch pdfOCRMode {
+            case .preferNativeText:
+                shouldUseOCR = nativeText?.isEmpty ?? true
+            case .ocrScannedPages:
+                shouldUseOCR = shouldOCRScannedPage(nativeText)
+            case .ocrAllPages:
+                shouldUseOCR = true
+            }
+            let image = shouldUseOCR ? renderPDFPage(page) : nil
+            if let image { images.append(image) }
+            pages.append(
+                EnhancedOCRPage(
+                    number: index + 1,
+                    nativeText: nativeText,
+                    shouldUseOCR: shouldUseOCR,
+                    renderedImage: image
+                )
+            )
+        }
+
+        let recognizedPages = try await GLMOCRService.shared.recognizeText(in: images)
+        guard recognizedPages.count == images.count else {
+            throw DocumentError.extractionFailed
+        }
+        var recognitionIndex = 0
+        var fullText = ""
+        var sections: [DocumentSection] = []
+        var didUseNativeText = false
+        var didUseOCR = false
+        var ocrCharacterCount = 0
+
+        for page in pages {
+            try Task.checkCancellation()
+            if page.shouldUseOCR, page.renderedImage != nil, recognitionIndex < recognizedPages.count {
+                let text = recognizedPages[recognitionIndex]
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                recognitionIndex += 1
+                if !text.isEmpty {
+                    append(
+                        pageText: text,
+                        title: "Page \(page.number) (Enhanced OCR)",
+                        to: &fullText,
+                        sections: &sections
+                    )
+                    didUseOCR = true
+                    ocrCharacterCount += text.count
+                    continue
+                }
+            }
+
+            if let nativeText = page.nativeText, !nativeText.isEmpty {
+                append(pageText: nativeText, title: "Page \(page.number)", to: &fullText, sections: &sections)
+                didUseNativeText = true
+            }
+        }
+
+        let normalized = fullText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { throw DocumentError.emptyDocument }
+        return ExtractionResult(
+            text: normalized,
+            sections: normalizedSections(for: normalized, originalText: fullText, sections: sections),
+            extractedPages: pagesToExtract,
+            totalPages: totalPages,
+            textOrigin: provenanceOrigin(didUseNativeText: didUseNativeText, didUseOCR: didUseOCR),
+            ocrQuality: ocrQuality(didUseOCR: didUseOCR, ocrCharacterCount: ocrCharacterCount)
+        )
+    }
+
+    private static func fallbackExtraction(
+        at url: URL,
+        fileExtension: String,
+        pdfOCRMode: PDFOCRMode,
+        documentProcessingMode: DocumentProcessingMode
+    ) async throws -> ExtractionResult {
+        try await Task.detached(priority: .userInitiated) {
+            try extractContent(
+                at: url,
+                fileExtension: fileExtension,
+                pdfOCRMode: pdfOCRMode,
+                documentProcessingMode: documentProcessingMode
+            )
+        }.value
     }
 
     nonisolated

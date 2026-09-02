@@ -27,7 +27,7 @@ struct MemorySettingsView: View {
                 Text(String(localized: "Memory is off by default. If you enable it, Own AI stores only your name or details you explicitly ask it to remember. Notes stay on this device and never leave it."))
             }
 
-            if memoryStore.isEnabled {
+            if memoryStore.isEnabled || !memoryStore.facts.isEmpty {
                 Section {
                     if memoryStore.facts.isEmpty {
                         Text(String(localized: "Nothing remembered yet. Notes appear here as you chat, or add one yourself."))
@@ -51,12 +51,14 @@ struct MemorySettingsView: View {
                         }
                     }
 
-                    Button {
-                        addText = ""
-                        isAddNotePresented = true
-                    } label: {
-                        Label(String(localized: "Add a Note"), systemImage: "plus")
-                            .font(.subheadline)
+                    if memoryStore.isEnabled {
+                        Button {
+                            addText = ""
+                            isAddNotePresented = true
+                        } label: {
+                            Label(String(localized: "Add a Note"), systemImage: "plus")
+                                .font(.subheadline)
+                        }
                     }
                 } header: {
                     Text(String(localized: "Remembered"))
@@ -98,13 +100,13 @@ struct MemorySettingsView: View {
                 editingFact = nil
             }
             Button(String(localized: "Save")) {
-                if let fact = editingFact, isValidNote(editText) {
-                    memoryStore.update(fact, to: editText)
-                }
+                guard let fact = editingFact else { return }
+                memoryStore.update(fact, to: editText)
                 editingFact = nil
             }
+            .disabled(!isValidNote(editText))
         } message: {
-            Text(String(localized: "Notes are kept short — up to 160 characters."))
+            Text(String(localized: "Notes must be between 6 and 160 characters."))
         }
         .alert(
             String(localized: "Add a Note"),
@@ -113,12 +115,11 @@ struct MemorySettingsView: View {
             TextField(String(localized: "Something Own AI should remember"), text: $addText)
             Button(String(localized: "Cancel"), role: .cancel) {}
             Button(String(localized: "Save")) {
-                if isValidNote(addText) {
-                    memoryStore.add([addText])
-                }
+                memoryStore.add([addText])
             }
+            .disabled(!isValidNote(addText))
         } message: {
-            Text(String(localized: "Notes are kept short — up to 160 characters."))
+            Text(String(localized: "Notes must be between 6 and 160 characters."))
         }
     }
 }

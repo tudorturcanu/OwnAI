@@ -21,7 +21,7 @@ struct ModelDownloadView: View {
 
     private var downloadedModels: [ModelInfo] {
         modelManager.models
-            .filter { $0.engine == .mlx && $0.downloadState.isDownloaded }
+            .filter { $0.engine == .mlx && !$0.isImported && $0.downloadState.isDownloaded }
             .sorted { lhs, rhs in
                 if lhs.name != rhs.name {
                     return lhs.name < rhs.name
@@ -31,7 +31,7 @@ struct ModelDownloadView: View {
     }
 
     private var familyGroups: [ModelFamilyGroup] {
-        let familyOrder = ModelFamily.allCases.filter { $0 != .appleIntelligence }
+        let familyOrder = ModelFamily.allCases.filter { $0 != .appleIntelligence && $0 != .imported }
         return familyOrder.compactMap { family in
             let models = modelManager.models
                 .filter { modelManager.shouldShowModelInCatalog($0) && $0.family == family && $0.engine == .mlx }
@@ -153,6 +153,8 @@ struct ModelDownloadView: View {
                 if !downloadedModels.isEmpty {
                     DownloadedModelsSection(models: downloadedModels)
                 }
+
+                ImportedModelsSection(models: modelManager.importedModels)
 
                 DisclosureGroup(isExpanded: $isShowingAllModels) {
                     VStack(alignment: .leading, spacing: 12) {
@@ -308,6 +310,10 @@ struct DownloadedModelRow: View {
     @State private var showDeleteConfirmation = false
     @State private var pendingAction: (() -> Void)?
     @State private var upgradeFeature: PremiumFeature?
+    /// Imported models are named after whatever the source folder was called,
+    /// which is often `snapshot` or `models--org--name`.
+    @State private var showRenameAlert = false
+    @State private var renameText = ""
 
     private var isSelected: Bool {
         modelManager.selectedModel?.id == model.id
@@ -325,6 +331,7 @@ struct DownloadedModelRow: View {
                 .frame(width: 38, height: 38)
                 .background((isSelected ? Color.green : Color.blue).opacity(0.09))
                 .clipShape(RoundedRectangle(cornerRadius: 11))
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(model.name)
@@ -334,7 +341,7 @@ struct DownloadedModelRow: View {
                     .truncationMode(.tail)
 
                 HStack(spacing: 6) {
-                    Text("\(model.family.title) • \(model.sizeLabel)")
+                    Text("\(model.sourceLabel) • \(model.sizeLabel)")
                         .font(.caption)
                         .foregroundStyle(Color.adaptive(white: 0.45))
                         .lineLimit(1)
@@ -367,7 +374,7 @@ struct DownloadedModelRow: View {
                 Image(systemName: isLockedPremiumModel ? "crown.fill" : (isSelected ? "checkmark" : "circle"))
                     .font(.body.weight(.bold))
                 .foregroundStyle(isSelected ? .white : .blue)
-                .frame(width: 40, height: 40)
+                .frame(width: 44, height: 44)
                 .background(isSelected ? Color.blue : Color.blue.opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             }
@@ -381,7 +388,7 @@ struct DownloadedModelRow: View {
                 Image(systemName: "trash")
                     .font(.body)
                     .foregroundStyle(.red.opacity(0.8))
-                    .frame(width: 40, height: 40)
+                    .frame(width: 44, height: 44)
                     .background(Color.red.opacity(0.06))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
             }
@@ -390,7 +397,30 @@ struct DownloadedModelRow: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
-        .confirmationDialog(String(localized: "Delete Model?"), isPresented: $showDeleteConfirmation) {
+        .contextMenu {
+            if model.isImported {
+                Button {
+                    renameText = model.name
+                    showRenameAlert = true
+                } label: {
+                    Label(String(localized: "Rename"), systemImage: "pencil")
+                }
+            }
+        }
+        .alert(String(localized: "Rename Model"), isPresented: $showRenameAlert) {
+            TextField(String(localized: "Name"), text: $renameText)
+            Button(String(localized: "Save")) {
+                modelManager.renameImportedModel(model.id, to: renameText)
+            }
+            Button(String(localized: "Cancel"), role: .cancel) {}
+        } message: {
+            Text(String(localized: "Only the name shown in Own AI changes. The model files stay exactly as they are."))
+        }
+        .confirmationDialog(
+            String(localized: "Delete Model?"),
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
             Button(String(localized: "Delete"), role: .destructive) {
                 modelManager.deleteModel(model.id)
             }
@@ -411,7 +441,13 @@ struct DownloadedModelRow: View {
             }
         }
         .sheet(item: $upgradeFeature) { feature in
-            UpgradeView(feature: feature)
+            UpgradeView(feature: feature) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    requireConsentAndPerform {
+                        modelManager.selectModel(model.id)
+                    }
+                }
+            }
                 .environment(monetizationManager)
         }
     }
@@ -428,6 +464,166 @@ struct DownloadedModelRow: View {
 
         pendingAction = action
         showConsentSheet = true
+    }
+}
+
+/// "Bring your own model": the imported checkpoints plus the affordance that
+/// adds one. Deliberately separate from Downloaded Models — these are the
+/// user's own files, with no publisher, no health record and no re-download.
+struct ImportedModelsSection: View {
+    let models: [ModelInfo]
+
+    @Environment(MonetizationManager.self) private var monetizationManager
+
+    private var storageText: String {
+        let totalBytes = models.reduce(0.0) { $0 + $1.sizeGB } * 1_073_741_824
+        guard totalBytes > 0 else { return "" }
+        return String(
+            format: String(localized: "%@ on device", defaultValue: "%@ on device"),
+            ByteCountFormatter.string(fromByteCount: Int64(totalBytes), countStyle: .file)
+        )
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(String(localized: "Your Models"))
+                    .font(.headline)
+                    .foregroundStyle(Color.adaptive(white: 0.2))
+
+                Spacer()
+
+                if !storageText.isEmpty {
+                    Text(storageText)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(Color.adaptive(white: 0.5))
+                }
+            }
+
+            VStack(spacing: 0) {
+                ForEach(models) { model in
+                    DownloadedModelRow(model: model)
+                    // The catalog's thinking toggle lives in ModelCard, which
+                    // only renders inside a family detail view — and imported
+                    // models are deliberately not browsable by family. Without
+                    // this the toggle would be unreachable for them.
+                    if model.supportsThinkingToggle {
+                        ImportedThinkingRow(model: model)
+                    }
+                    Divider()
+                        .padding(.leading, 72)
+                }
+
+                ModelImportControl { start, progress in
+                    Button(action: start) {
+                        HStack(spacing: 10) {
+                            Image(systemName: progress == nil ? "square.and.arrow.down.on.square" : "arrow.down.circle.dotted")
+                                .font(.headline)
+                                .foregroundStyle(.blue)
+                                .frame(width: 38, height: 38)
+                                .background(Color.blue.opacity(0.09))
+                                .clipShape(RoundedRectangle(cornerRadius: 11))
+                                .accessibilityHidden(true)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(progress == nil
+                                     ? String(localized: "Import Model from Files")
+                                     : String(localized: "Copying model…"))
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(Color.adaptive(white: 0.14))
+
+                                if let progress {
+                                    ProgressView(value: progress)
+                                        .progressViewStyle(.linear)
+                                } else {
+                                    Text(isLocked ? ModelImportCopy.lockedHint : ModelImportCopy.requirements)
+                                        .font(.caption)
+                                        .foregroundStyle(Color.adaptive(white: 0.45))
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .multilineTextAlignment(.leading)
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                            Image(systemName: isLocked ? "crown.fill" : "chevron.right")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Color.adaptive(white: 0.55))
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 12)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(progress != nil)
+                }
+            }
+            .background(Color.adaptiveCard)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+        }
+    }
+
+    private var isLocked: Bool {
+        !monetizationManager.canUse(.importedModels)
+    }
+}
+
+/// Reasoning-mode switch for an imported model, detected from its chat template
+/// at import time rather than from its name.
+///
+/// Deliberately the same "Thinking On/Off" pill `ModelCard` uses, so the control
+/// reads identically wherever a reasoning model appears.
+private struct ImportedThinkingRow: View {
+    let model: ModelInfo
+
+    @Environment(ModelManager.self) private var modelManager
+    @Environment(LLMEngine.self) private var llmEngine
+    @State private var isOn = false
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(String(localized: "Thinking"))
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Color.adaptive(white: 0.14))
+                Text(String(localized: "Reason step by step before answering. Slower to first word."))
+                    .font(.caption)
+                    .foregroundStyle(Color.adaptive(white: 0.45))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button(action: toggle) {
+                HStack(spacing: 5) {
+                    Image(systemName: isOn ? "brain.head.profile.fill" : "brain.head.profile")
+                        .font(.caption2)
+                    Text(isOn ? String(localized: "On") : String(localized: "Off"))
+                        .font(.caption)
+                        .fontWeight(.medium)
+                }
+                .foregroundStyle(isOn ? .blue : Color.adaptive(white: 0.5))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(isOn ? Color.blue.opacity(0.1) : Color.adaptive(white: 0.95))
+                .clipShape(Capsule())
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(String(localized: "Thinking mode"))
+            .accessibilityValue(isOn ? String(localized: "On") : String(localized: "Off"))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .padding(.leading, 48)
+        .onAppear { isOn = modelManager.isThinkingEnabled(for: model) }
+    }
+
+    private func toggle() {
+        isOn.toggle()
+        modelManager.setThinkingEnabled(isOn, for: model)
+        // The mode is baked into the chat template when the session is built,
+        // so an open session would keep the old one until the next switch.
+        llmEngine.resetSession()
     }
 }
 
@@ -478,6 +674,7 @@ struct SimpleModelChoiceCard: View {
     @Environment(ModelManager.self) private var modelManager
     @Environment(MonetizationManager.self) private var monetizationManager
     @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showConsentSheet = false
     @State private var pendingAction: (() -> Void)?
     @State private var upgradeFeature: PremiumFeature?
@@ -615,8 +812,8 @@ struct SimpleModelChoiceCard: View {
                         .font(.subheadline.weight(.bold))
                     Text(actionTitle)
                         .font(.subheadline.weight(.semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .foregroundStyle(isSelected ? .white : .blue)
                 .frame(maxWidth: .infinity)
@@ -648,7 +845,11 @@ struct SimpleModelChoiceCard: View {
             }
         }
         .sheet(item: $upgradeFeature) { feature in
-            UpgradeView(feature: feature)
+            UpgradeView(feature: feature) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    performPrimaryAction()
+                }
+            }
                 .environment(monetizationManager)
         }
         .alert(
@@ -962,12 +1163,16 @@ struct FamilyLogoMark: View {
             return LinearGradient(colors: [.green.opacity(0.14), .mint.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .miniCPM:
             return LinearGradient(colors: [.cyan.opacity(0.12), .blue.opacity(0.07)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .mistral:
+            return LinearGradient(colors: [.orange.opacity(0.13), .red.opacity(0.07)], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .phi:
             return LinearGradient(colors: [.blue.opacity(0.08), .green.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .smol:
             return LinearGradient(colors: [.yellow.opacity(0.16), .orange.opacity(0.07)], startPoint: .topLeading, endPoint: .bottomTrailing)
         case .appleIntelligence:
             return LinearGradient(colors: [.orange.opacity(0.12), .pink.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
+        case .imported:
+            return LinearGradient(colors: [.blue.opacity(0.10), .indigo.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
         }
     }
 
@@ -1144,7 +1349,11 @@ struct ModelCard: View {
             }
         }
         .sheet(item: $upgradeFeature) { feature in
-            UpgradeView(feature: feature)
+            UpgradeView(feature: feature) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    resumeModelActionAfterUpgrade()
+                }
+            }
                 .environment(monetizationManager)
         }
     }
@@ -1309,8 +1518,7 @@ struct ModelCard: View {
                     Text(isThinkingEnabled ? String(localized: "Thinking On") : String(localized: "Thinking Off"))
                         .font(.caption)
                         .fontWeight(.medium)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .foregroundStyle(isThinkingEnabled ? .blue : Color.adaptive(white: 0.5))
                 .padding(.horizontal, 10)
@@ -1319,6 +1527,9 @@ struct ModelCard: View {
                 .clipShape(Capsule())
             }
             .buttonStyle(.plain)
+            .frame(minHeight: 44)
+            .accessibilityLabel(String(localized: "Thinking mode"))
+            .accessibilityValue(isThinkingEnabled ? String(localized: "On") : String(localized: "Off"))
         } else {
             InfoTag(icon: "brain.head.profile", text: LocalizedStringKey(String(localized: "Thinking")))
         }
@@ -1458,6 +1669,27 @@ struct ModelCard: View {
     private func startDownload() {
         requireConsentAndPerform {
             modelManager.downloadModel(model.id, selectWhenFinished: true)
+        }
+    }
+
+    private func resumeModelActionAfterUpgrade() {
+        switch model.downloadState {
+        case .builtin, .downloaded:
+            requireConsentAndPerform {
+                modelManager.selectModel(model.id)
+            }
+        case .notDownloaded:
+            if model.isBundled {
+                requireConsentAndPerform {
+                    modelManager.restoreBundledModel(model.id, selectWhenFinished: true)
+                }
+            } else if model.currentDeviceFit == .unsupported {
+                showHeavyDownloadConfirm = true
+            } else {
+                startDownload()
+            }
+        case .downloading, .validating, .error:
+            break
         }
     }
 
@@ -1748,8 +1980,7 @@ struct InfoTag: View {
             Text(text)
                 .font(.caption)
                 .fontWeight(.medium)
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(isHighlighted ? .green : Color.adaptive(white: 0.5))
         .padding(.horizontal, 10)
@@ -1902,7 +2133,7 @@ struct DownloadReadinessView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(Color.black.opacity(0.04), lineWidth: 1)
+                .stroke(Color.adaptiveBorder(opacity: 0.2), lineWidth: 1)
         )
     }
 
@@ -1912,8 +2143,7 @@ struct DownloadReadinessView: View {
                 .font(.caption2)
             Text(text)
                 .font(.caption2.weight(.medium))
-                .lineLimit(1)
-                .minimumScaleFactor(0.82)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .foregroundStyle(isWarning ? .orange : Color.adaptive(white: 0.45))
         .padding(.horizontal, 8)
@@ -2024,6 +2254,7 @@ struct DownloadButton: View {
     let sizeLabel: String
     var isResumable = false
     let action: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     
     var body: some View {
         Button(action: action) {
@@ -2037,8 +2268,7 @@ struct DownloadButton: View {
                     Text(String(format: String(localized: "%@ • Works offline after download", defaultValue: "%@ • Works offline after download"), sizeLabel))
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.78))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.9)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                 }
 
                 Spacer(minLength: 8)
@@ -2062,6 +2292,7 @@ struct DownloadButton: View {
 
 struct RestoreBundledButton: View {
     let action: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         Button(action: action) {
@@ -2075,8 +2306,7 @@ struct RestoreBundledButton: View {
                     Text(String(localized: "Included with the app • No download needed"))
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.78))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.9)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                 }
 
                 Spacer(minLength: 8)
@@ -2138,7 +2368,7 @@ struct UnsupportedModelButton: View {
                 .font(.caption)
                 .foregroundStyle(Color.adaptive(white: 0.5))
                 .multilineTextAlignment(.center)
-                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 12)
@@ -2151,7 +2381,7 @@ struct UnsupportedModelButton: View {
 struct DownloadingButton: View {
     let action: () -> Void
 
-    @ScaledMetric(relativeTo: .body) private var closeButtonSize = 32.0
+    @ScaledMetric(relativeTo: .body) private var closeButtonSize = 44.0
 
     private var panelShape: RoundedRectangle {
         RoundedRectangle(cornerRadius: 12)
@@ -2159,13 +2389,17 @@ struct DownloadingButton: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ProgressView()
-                .controlSize(.small)
-                .tint(.blue)
+            HStack(spacing: 12) {
+                ProgressView()
+                    .controlSize(.small)
+                    .tint(.blue)
 
-            Text(String(localized: "Loading"))
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.blue)
+                Text(String(localized: "Loading"))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.blue)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(String(localized: "Downloading model"))
 
             Spacer(minLength: 8)
 
@@ -2190,14 +2424,16 @@ struct DownloadingButton: View {
             panelShape
                 .strokeBorder(Color.blue.opacity(0.08), lineWidth: 1)
         )
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Loading")
     }
 }
 
 enum ModelDeletionCopy {
     static func message(for model: ModelInfo) -> String {
-        message(isBundled: model.isBundled)
+        if model.isImported {
+            // No re-download to fall back on: this is the only copy Own AI has.
+            return String(localized: "This will remove the imported model from your device. You'll need to import it again from Files to get it back.")
+        }
+        return message(isBundled: model.isBundled)
     }
 
     static func message(isBundled: Bool) -> String {
@@ -2224,7 +2460,12 @@ struct DeleteButton: View {
                 .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(ActionButtonStyle())
-        .confirmationDialog(String(localized: "Delete Model?"), isPresented: $showConfirmation) {
+        .accessibilityLabel(String(localized: "Delete model"))
+        .confirmationDialog(
+            String(localized: "Delete Model?"),
+            isPresented: $showConfirmation,
+            titleVisibility: .visible
+        ) {
             Button(String(localized: "Delete"), role: .destructive, action: action)
             Button(String(localized: "Cancel"), role: .cancel) {}
         } message: {

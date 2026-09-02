@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
@@ -13,12 +14,7 @@ struct SettingsView: View {
     @Environment(ChatHistoryManager.self) private var historyManager
     @Environment(ModelManager.self) private var modelManager
     @Environment(MonetizationManager.self) private var monetizationManager
-    @AppStorage(PDFOCRMode.storageKey) private var pdfOCRModeRaw = PDFOCRMode.preferNativeText.rawValue
-    @AppStorage("lowPowerMode") private var lowPowerMode = false
     @AppStorage("historyRetentionDays") private var historyRetentionDays = 0
-    @AppStorage("smartReplyStylesEnabled") private var smartReplyStylesEnabled = false
-    @AppStorage("inChatSearchEnabled") private var inChatSearchEnabled = false
-    @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
     @AppStorage("downloads.allowCellular") private var allowCellularDownloads = false
     @State private var showClearHistoryConfirmation = false
     @State private var showDataPrivacySheet = false
@@ -28,6 +24,9 @@ struct SettingsView: View {
     @State private var exportShareItems: [Any] = []
     @State private var isExportShareSheetPresented = false
     @State private var exportError: String?
+    @State private var supportFallbackMessage: String?
+
+    private static let supportAddress = "alice.turcanu91@gmail.com"
 
     private let retentionOptions = [0, 7, 30, 90]
 
@@ -112,6 +111,11 @@ struct SettingsView: View {
             } else {
                 exportShareItems = [destinationURL]
                 isExportShareSheetPresented = true
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                UIAccessibility.post(
+                    notification: .announcement,
+                    argument: String(localized: "Chat export ready")
+                )
             }
         }
     }
@@ -168,7 +172,12 @@ struct SettingsView: View {
                 .environment(monetizationManager)
         }
         .sheet(item: $upgradeFeature) { feature in
-            UpgradeView(feature: feature)
+            UpgradeView(feature: feature) {
+                guard feature == .conversationExport else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    exportAllChats()
+                }
+            }
                 .environment(monetizationManager)
         }
         .sheet(isPresented: $isExportShareSheetPresented, onDismiss: { discardExportArchive() }) {
@@ -184,6 +193,17 @@ struct SettingsView: View {
             Button("OK", role: .cancel) { exportError = nil }
         } message: {
             Text(exportError ?? "")
+        }
+        .alert(
+            "Support",
+            isPresented: Binding(
+                get: { supportFallbackMessage != nil },
+                set: { if !$0 { supportFallbackMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { supportFallbackMessage = nil }
+        } message: {
+            Text(supportFallbackMessage ?? "")
         }
     }
 
@@ -271,7 +291,6 @@ struct SettingsView: View {
                     .environment(llmEngine)
                     .environment(modelManager)
                     .environment(monetizationManager)
-                    .environmentObject(modelManager)
             } label: {
                 settingsRow(
                     icon: "square.stack.3d.up.fill",
@@ -485,10 +504,19 @@ struct SettingsView: View {
                 .padding(.vertical, 14)
             }
             .buttonStyle(.plain)
+            .disabled(historyManager.conversations.isEmpty)
+            .opacity(historyManager.conversations.isEmpty ? 0.5 : 1)
         }
         .alert("Delete all chats?", isPresented: $showClearHistoryConfirmation) {
             Button("Cancel", role: .cancel) { }
-            Button("Delete", role: .destructive) { historyManager.clearAllConversations() }
+            Button("Delete", role: .destructive) {
+                historyManager.clearAllConversations()
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                UIAccessibility.post(
+                    notification: .announcement,
+                    argument: String(localized: "All chats deleted")
+                )
+            }
         } message: {
             Text("This permanently removes every saved conversation from this device.")
         }
@@ -551,7 +579,6 @@ struct SettingsView: View {
         .sheet(isPresented: $showDataPrivacySheet) {
             DataPrivacySheet()
                 .environment(modelManager)
-                .environmentObject(modelManager)
         }
     }
 
@@ -628,6 +655,7 @@ struct SettingsView: View {
                 .font(.caption)
                 .fontWeight(.semibold)
                 .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -655,19 +683,17 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            .accessibilityHidden(true)
 
             Spacer(minLength: 8)
 
             Toggle(title, isOn: isOn)
                 .labelsHidden()
                 .tint(tint)
+                .accessibilityHint(Text(subtitle))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
-    }
-
-    private var pdfOCRMode: PDFOCRMode {
-        PDFOCRMode(rawValue: pdfOCRModeRaw) ?? .preferNativeText
     }
 
     private func rowIcon(systemImage: String, tint: Color) -> some View {
@@ -676,6 +702,7 @@ struct SettingsView: View {
             .foregroundStyle(tint)
             .frame(width: 34, height: 34)
             .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
+            .accessibilityHidden(true)
     }
 
     // MARK: - Helpers
@@ -692,10 +719,22 @@ struct SettingsView: View {
     }
 
     private func openMail(subject: String) {
-        let mailto = "mailto:alice.turcanu91@gmail.com?subject=\(subject)"
-        if let url = URL(string: mailto.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "") {
-            UIApplication.shared.open(url)
+        let mailto = "mailto:\(Self.supportAddress)?subject=\(subject)"
+        guard let url = URL(string: mailto.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""),
+              UIApplication.shared.canOpenURL(url) else {
+            // No mail client to hand the request to: leave the user with the
+            // address instead of an unexplained dead tap.
+            UIPasteboard.general.string = Self.supportAddress
+            supportFallbackMessage = String(
+                format: String(
+                    localized: "No mail app is set up on this device. The support address %@ was copied to your clipboard.",
+                    defaultValue: "No mail app is set up on this device. The support address %@ was copied to your clipboard."
+                ),
+                Self.supportAddress
+            )
+            return
         }
+        UIApplication.shared.open(url)
     }
 
     private func presentUpgradeSheet() {

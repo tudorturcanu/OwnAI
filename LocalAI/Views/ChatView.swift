@@ -36,9 +36,6 @@ struct ChatView: View {
     // it at launch would present the full-screen voice UI with a live
     // microphone before the user asked for it.
     @State private var voiceConversationMode = false
-    /// Message count when the voice session began, so closing the session can
-    /// tell whether it actually produced conversation worth archiving.
-    @State private var voiceSessionStartMessageCount = 0
     @State private var showExportSheet = false
     @FocusState private var isInputFocused: Bool
     @State private var showModelDownloadSheet = false
@@ -61,6 +58,7 @@ struct ChatView: View {
     @State private var selectedImage: UIImage?
     @State private var selectedImageData: Data?
     @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var photoItemAwaitingUpgrade: PhotosPickerItem?
     @State private var activeStreamingConversationID: UUID?
     @State private var activeStreamingAssistantID: UUID?
     @State private var pendingSessionReset = false
@@ -94,7 +92,7 @@ struct ChatView: View {
     @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
     @AppStorage("responseCharacterLimit") private var responseCharacterLimit = AIResponseDefaults.responseCharacterLimit
     @AppStorage("smartReplyStylesEnabled") private var smartReplyStylesEnabled = false
-    @AppStorage("inChatSearchEnabled") private var inChatSearchEnabled = false
+    @AppStorage("inChatSearchEnabled") private var inChatSearchEnabled = true
 
     @State private var editingMessage: ChatMessage?
     @State private var editedMessageText: String = ""
@@ -105,6 +103,7 @@ struct ChatView: View {
     @State private var isEditSheetPresented = false
     @State private var inChatSearchText: String = ""
     @State private var isInChatSearchActive = false
+    @FocusState private var isSearchFieldFocused: Bool
     /// Cached in-chat search matches in conversation order, rebuilt by
     /// `recomputeInChatSearchMatches()` when `inChatSearchCacheKey` changes.
     @State private var inChatSearchMatchIDs: [UUID] = []
@@ -205,7 +204,6 @@ struct ChatView: View {
                         return
                     }
                     speechManager.autoStopAfterSilence = true
-                    voiceSessionStartMessageCount = historyManager.currentMessages.count
                     // Warm the model now so it loads while the user speaks their
                     // first sentence, rather than paying that latency after the
                     // transcript is finalized. Idempotent and guarded.
@@ -223,17 +221,8 @@ struct ChatView: View {
                     speechManager.stopListening()
                     speechManager.stopSpeaking()
                     speechManager.releaseAudioSessionIfIdle()
-                    // Archive the session and open a fresh chat, so the next
-                    // voice conversation starts clean. Streaming that is still
-                    // finishing keeps writing into the archived conversation
-                    // by ID, so it is safe to switch away mid-reply. Skip when
-                    // the session added nothing, so opening and closing the
-                    // voice screen doesn't discard the chat on screen.
-                    if historyManager.currentMessages.count > voiceSessionStartMessageCount {
-                        withAnimation {
-                            historyManager.newConversation()
-                        }
-                    }
+                    // Keep the completed voice conversation visible. Starting a
+                    // fresh chat remains an explicit user action in the toolbar.
                 }
             }
             // The voice screen is a cover over the chat, so the conversation
@@ -305,7 +294,6 @@ struct ChatView: View {
                 .environment(llmEngine)
                 .environment(modelManager)
                 .environment(monetizationManager)
-                .environmentObject(modelManager)
             }
             .sheet(isPresented: $showModelConsentSheet) {
                 if let selectedModel = modelManager.selectedModel {
@@ -326,7 +314,22 @@ struct ChatView: View {
                 }
             }
             .sheet(item: $upgradeFeature) { feature in
-                UpgradeView(feature: feature)
+                UpgradeView(feature: feature) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        switch feature {
+                        case .unlimitedMessages:
+                            sendMessage()
+                        case .imageInput:
+                            guard let item = photoItemAwaitingUpgrade else { return }
+                            photoItemAwaitingUpgrade = nil
+                            processPhotoItem(item)
+                        case .voiceMode:
+                            requestVoiceConversation()
+                        default:
+                            break
+                        }
+                    }
+                }
                     .environment(monetizationManager)
             }
             .sheet(item: $selectedDocumentForSources) { document in
@@ -646,13 +649,14 @@ struct ChatView: View {
                             isInChatSearchActive.toggle()
                             if !isInChatSearchActive {
                                 inChatSearchText = ""
+                                isSearchFieldFocused = false
                             }
                         }
                     } label: {
                         Image(systemName: "magnifyingglass")
                             .font(.body.weight(.medium))
                             .foregroundStyle(isInChatSearchActive ? Color.blue : Color.adaptive(white: 0.3))
-                            .frame(width: 32, height: 32)
+                            .frame(width: 44, height: 44)
                             .background(Color.adaptive(white: 0.95))
                             .clipShape(Circle())
                     }
@@ -696,7 +700,7 @@ struct ChatView: View {
 
             Text(String(localized: "Warming up"))
                 .font(.caption.weight(.semibold))
-                .shimmering(active: true, bandSize: 0.22)
+                .shimmering(active: !reduceMotion, bandSize: 0.22)
         }
         .foregroundStyle(.blue)
         .padding(.horizontal, 14)
@@ -717,7 +721,7 @@ struct ChatView: View {
 
             Text(status)
                 .font(.caption.weight(.semibold))
-                .shimmering(active: true, bandSize: 0.22)
+                .shimmering(active: !reduceMotion, bandSize: 0.22)
         }
         .foregroundStyle(.blue)
         .padding(.horizontal, 14)
@@ -738,10 +742,15 @@ struct ChatView: View {
             Image(systemName: "magnifyingglass")
                 .font(.body.weight(.medium))
                 .foregroundStyle(Color.adaptive(white: 0.45))
+                .accessibilityHidden(true)
 
             TextField(String(localized: "Search in conversation…"), text: $inChatSearchText)
                 .textFieldStyle(.plain)
                 .font(.body)
+                .focused($isSearchFieldFocused)
+                .autocorrectionDisabled()
+                .submitLabel(.search)
+                .onSubmit { stepInChatSearchMatch(by: 1) }
 
             if !inChatSearchText.isEmpty {
                 let matchIDs = inChatSearchMatchIDs
@@ -760,7 +769,7 @@ struct ChatView: View {
                     } label: {
                         Image(systemName: "chevron.up")
                             .font(.caption.weight(.bold))
-                            .frame(width: 28, height: 28)
+                            .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
                     .accessibilityLabel(String(localized: "Previous match"))
@@ -770,7 +779,7 @@ struct ChatView: View {
                     } label: {
                         Image(systemName: "chevron.down")
                             .font(.caption.weight(.bold))
-                            .frame(width: 28, height: 28)
+                            .frame(width: 44, height: 44)
                             .contentShape(Rectangle())
                     }
                     .accessibilityLabel(String(localized: "Next match"))
@@ -781,6 +790,7 @@ struct ChatView: View {
             }
 
             Button {
+                isSearchFieldFocused = false
                 withAnimation(.spring(response: 0.3)) {
                     inChatSearchText = ""
                     isInChatSearchActive = false
@@ -796,6 +806,7 @@ struct ChatView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(.ultraThinMaterial)
+        .onAppear { isSearchFieldFocused = true }
     }
 
     /// Recomputes the cached in-chat matches. Every per-message lookup below
@@ -891,6 +902,96 @@ struct ChatView: View {
     
     // MARK: - Messages View
     
+    private func deleteMessage(_ message: ChatMessage) {
+        withAnimation(.spring(response: 0.3)) {
+            historyManager.deleteMessage(id: message.id)
+        }
+    }
+
+
+    /// One message row. Kept out of `messagesView` because the row and the
+    /// surrounding scroll chain together exceed what the type checker will
+    /// solve as a single expression.
+    @ViewBuilder
+    private func messageRow(for message: ChatMessage) -> some View {
+        let recoveryAction = retryAction(for: message)
+        MessageBubble(
+            message: message,
+            showsContinue: canContinue(message),
+            onContinue: canContinue(message) ? { continueResponse(for: message) } : nil,
+            recoveryAction: recoveryAction,
+            onEdit: { message in
+                startEdit(message)
+            },
+            onRegenerateMore: { message in
+                regenerate(message: message, style: .more)
+            },
+            onRegenerateLess: { message in
+                regenerate(message: message, style: .less)
+            },
+            smartReplyStyles: smartReplyStyles(for: message),
+            onSmartReplyStyle: { message, style in
+                regenerate(message: message, style: style)
+            },
+            followUpSuggestions: followUpSuggestions(for: message),
+            onBranchFromHere: { message in
+                branchConversation(from: message)
+            },
+            onTogglePin: { message in
+                historyManager.togglePinned(messageID: message.id, in: historyManager.currentConversationID)
+            },
+            onSpeak: { message in
+                if speechManager.isSpeaking && speechManager.currentlySpeakingMessageID == message.id {
+                    speechManager.stopSpeaking()
+                } else {
+                    speechManager.speak(message.content, messageID: message.id)
+                }
+            },
+            onSearchWeb: { message in
+                if let url = URL(string: "https://www.google.com/search?q=\(message.content.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
+                    UIApplication.shared.open(url)
+                }
+            },
+            onFollowUp: { _, followUpText in
+                messageText = followUpText
+                sendMessage()
+            },
+            onShowSources: { message in
+                showSources(for: message)
+            },
+            showsQuickActions: message.role == .assistant
+                && historyManager.currentMessages.last?.id == message.id
+                && !message.isStreaming
+                && canStartChatRequest,
+            // Keep the bubble on the live streaming buffer
+            // until the message is finalized — the persisted
+            // message.content stays empty during streaming
+            // (persistStreamingSnapshot doesn't publish it),
+            // so gating on the engine-cleared
+            // activeStreamingAssistantID handed off to an
+            // empty placeholder for a frame and blanked the
+            // reply. message.isStreaming flips false exactly
+            // when the final text is written, so the handoff
+            // is seamless.
+            streamingState: message.isStreaming
+                && streamingState.assistantID == message.id
+                ? streamingState
+                : nil,
+            onDelete: deleteMessage
+        )
+            .id(message.id)
+            .opacity(messageMatchesSearch(message) ? 1.0 : 0.25)
+            .animation(.easeInOut(duration: 0.2), value: inChatSearchText)
+            .background(
+                RoundedRectangle(cornerRadius: 18)
+                    .fill(Color.orange.opacity(isSearchFocused(message) ? 0.16 : 0))
+                    .padding(.horizontal, -8)
+                    .padding(.vertical, -6)
+            )
+            .animation(.easeInOut(duration: 0.35), value: highlightedMessageID)
+            .animation(.easeInOut(duration: 0.2), value: inChatSearchActiveMatchID)
+    }
+
     private var messagesView: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -904,104 +1005,7 @@ struct ChatView: View {
                         emptyStateView
                     } else {
                         ForEach(historyManager.currentMessages) { message in
-                            let recoveryAction = retryAction(for: message)
-                            MessageBubble(
-                                message: message,
-                                showsContinue: canContinue(message),
-                                onContinue: canContinue(message) ? { continueResponse(for: message) } : nil,
-                                recoveryAction: recoveryAction,
-                                onEdit: { message in
-                                    startEdit(message)
-                                },
-                                onRegenerateMore: { message in
-                                    regenerate(message: message, style: .more)
-                                },
-                                onRegenerateLess: { message in
-                                    regenerate(message: message, style: .less)
-                                },
-                                smartReplyStyles: smartReplyStyles(for: message),
-                                onSmartReplyStyle: { message, style in
-                                    regenerate(message: message, style: style)
-                                },
-                                followUpSuggestions: followUpSuggestions(for: message),
-                                onBranchFromHere: { message in
-                                    branchConversation(from: message)
-                                },
-                                onTogglePin: { message in
-                                    historyManager.togglePinned(messageID: message.id, in: historyManager.currentConversationID)
-                                },
-                                onSpeak: { message in
-                                    if speechManager.isSpeaking && speechManager.currentlySpeakingMessageID == message.id {
-                                        speechManager.stopSpeaking()
-                                    } else {
-                                        speechManager.speak(message.content, messageID: message.id)
-                                    }
-                                },
-                                onSearchWeb: { message in
-                                    if let url = URL(string: "https://www.google.com/search?q=\(message.content.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
-                                        UIApplication.shared.open(url)
-                                    }
-                                },
-                                onFollowUp: { _, followUpText in
-                                    messageText = followUpText
-                                    sendMessage()
-                                },
-                                onShowSources: { message in
-                                    showSources(for: message)
-                                },
-                                showsQuickActions: message.role == .assistant
-                                    && historyManager.currentMessages.last?.id == message.id
-                                    && !message.isStreaming
-                                    && canStartChatRequest
-                                    && smartReplyStylesEnabled,
-                                // Keep the bubble on the live streaming buffer
-                                // until the message is finalized — the persisted
-                                // message.content stays empty during streaming
-                                // (persistStreamingSnapshot doesn't publish it),
-                                // so gating on the engine-cleared
-                                // activeStreamingAssistantID handed off to an
-                                // empty placeholder for a frame and blanked the
-                                // reply. message.isStreaming flips false exactly
-                                // when the final text is written, so the handoff
-                                // is seamless.
-                                streamingState: message.isStreaming
-                                    && streamingState.assistantID == message.id
-                                    ? streamingState
-                                    : nil
-                            )
-                                .id(message.id)
-                                .opacity(messageMatchesSearch(message) ? 1.0 : 0.25)
-                                .animation(.easeInOut(duration: 0.2), value: inChatSearchText)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 18)
-                                        .fill(Color.orange.opacity(isSearchFocused(message) ? 0.16 : 0))
-                                        .padding(.horizontal, -8)
-                                        .padding(.vertical, -6)
-                                )
-                                .animation(.easeInOut(duration: 0.35), value: highlightedMessageID)
-                                .animation(.easeInOut(duration: 0.2), value: inChatSearchActiveMatchID)
-                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                    Button(role: .destructive) {
-                                        withAnimation(.spring(response: 0.3)) {
-                                            historyManager.deleteMessage(id: message.id)
-                                        }
-                                    } label: {
-                                        Label(String(localized: "Delete"), systemImage: "trash")
-                                    }
-                                }
-                                .swipeActions(edge: .leading, allowsFullSwipe: false) {
-                                    if message.role == .assistant,
-                                       historyManager.currentMessages.last?.id == message.id,
-                                       canStartChatRequest {
-                                        Button {
-                                            Self.mediumHaptic.impactOccurred()
-                                            regenerate(message: message, style: .more)
-                                        } label: {
-                                            Label(String(localized: "Regenerate"), systemImage: "arrow.clockwise")
-                                        }
-                                        .tint(.blue)
-                                    }
-                                }
+                            messageRow(for: message)
                         }
 
                         if let speakableMessage = latestSpeakableAssistantMessage {
@@ -1105,7 +1109,43 @@ struct ChatView: View {
                     proxy.scrollTo(matchID, anchor: .center)
                 }
             }
+            .overlay(alignment: .bottom) {
+                jumpToBottomButton(proxy: proxy)
+            }
         }
+    }
+
+    /// Way back to the newest message once the user has scrolled up. Without it
+    /// a reply that keeps streaming off-screen leaves no way down but a long
+    /// manual drag. Hidden while already following the tail.
+    @ViewBuilder
+    private func jumpToBottomButton(proxy: ScrollViewProxy) -> some View {
+        let isVisible = !isFollowingBottom
+            && !isScrollNearBottom
+            && !historyManager.currentMessages.isEmpty
+            && !isInChatSearchActive
+
+        Button {
+            scrollToBottomForced(proxy: proxy)
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(.footnote.weight(.bold))
+                .foregroundStyle(Color.adaptive(white: 0.25))
+                .frame(width: 36, height: 36)
+                .background(.regularMaterial, in: Circle())
+                .overlay(Circle().stroke(Color.adaptiveBorder(opacity: 0.5), lineWidth: 0.5))
+                .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
+        }
+        .frame(minWidth: 44, minHeight: 44)
+        .accessibilityLabel(String(localized: "Scroll to latest message"))
+        .padding(.bottom, 8)
+        .opacity(isVisible ? 1 : 0)
+        .scaleEffect(isVisible ? 1 : 0.8)
+        .allowsHitTesting(isVisible)
+        .animation(
+            reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.8),
+            value: isVisible
+        )
     }
 
     /// Scrolls to the message a history search matched and flashes it briefly.
@@ -1176,9 +1216,13 @@ struct ChatView: View {
             onDownloadModel: {
                 showModelDownloadSheet = true
             },
-            onSuggestion: { text in
-                messageText = text
-                sendMessage()
+            onSuggestion: { suggestion in
+                messageText = suggestion.prompt
+                if suggestion.requiresInput {
+                    isInputFocused = true
+                } else {
+                    sendMessage()
+                }
             },
             onVoiceConversation: voiceConversationAction
         )
@@ -1189,14 +1233,7 @@ struct ChatView: View {
     private var voiceConversationAction: (() -> Void)? {
         guard SpeechManager.isVoiceConversationEnabled else { return nil }
         return {
-            guard monetizationManager.canUse(.voiceMode) else {
-                upgradeFeature = .voiceMode
-                return
-            }
-            dismissKeyboard()
-            speechManager.stopListening()
-            speechManager.prewarmSpeechOutputIfNeeded()
-            voiceConversationMode = true
+            requestVoiceConversation()
         }
     }
 
@@ -1249,6 +1286,10 @@ struct ChatView: View {
             }
             
             VStack(spacing: 8) {
+                if shouldShowUsageAllowance {
+                    usageAllowanceBanner
+                }
+
                 if let queuedFirstMessage {
                     queuedMessageBanner(queuedFirstMessage)
                 }
@@ -1307,6 +1348,8 @@ struct ChatView: View {
                             .clipShape(Circle())
                     }
                     .disabled(!canStartAttachment)
+                    .opacity(canStartAttachment ? 1 : 0.45)
+                    .frame(minWidth: 44, minHeight: 44)
                     .accessibilityLabel(String(localized: "Add to chat"))
                     .accessibilityHint(String(localized: "Opens options for adding a photo, screenshot, or document."))
                     
@@ -1331,11 +1374,12 @@ struct ChatView: View {
                         Button(action: stopGeneration) {
                             Image(systemName: "stop.fill")
                                 .font(.body.weight(.bold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(Color.adaptive(white: 1))
                                 .frame(width: 36, height: 36)
-                                .background(Color.black)
+                                .background(Color.adaptive(white: 0))
                                 .clipShape(Circle())
                         }
+                        .frame(minWidth: 44, minHeight: 44)
                         .accessibilityLabel(String(localized: "Stop generating"))
                     } else if speechManager.isListening {
                         // Stop listening button
@@ -1354,11 +1398,14 @@ struct ChatView: View {
                                         .scaleEffect(speechManager.isListening ? 1.4 : 1.0)
                                         .opacity(speechManager.isListening ? 0 : 1)
                                         .animation(
-                                            .easeOut(duration: 1).repeatForever(autoreverses: false),
+                                            reduceMotion
+                                                ? nil
+                                                : .easeOut(duration: 1).repeatForever(autoreverses: false),
                                             value: speechManager.isListening
                                         )
                                 )
                         }
+                        .frame(minWidth: 44, minHeight: 44)
                         .accessibilityLabel(String(localized: "Stop listening"))
                     } else if messageText.isEmpty && currentConversationDocuments.isEmpty {
                         microphoneControls
@@ -1367,15 +1414,19 @@ struct ChatView: View {
                         Button(action: sendMessage) {
                             Image(systemName: "arrow.up")
                                 .font(.body.weight(.bold))
-                                .foregroundStyle(.white)
+                                .foregroundStyle(Color.adaptive(white: 1))
                                 .frame(width: 36, height: 36)
                                 .background(sendButtonGradient)
                                 .clipShape(Circle())
                                 .shadow(color: canSend ? .blue.opacity(0.3) : .clear, radius: 8, y: 4)
                         }
                         .disabled(!canSend)
-                        .scaleEffect(canSend ? 1.0 : 0.9)
-                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: canSend)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .scaleEffect(reduceMotion ? 1.0 : (canSend ? 1.0 : 0.9))
+                        .animation(
+                            reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.7),
+                            value: canSend
+                        )
                         .accessibilityLabel(String(localized: "Send message"))
                     }
                 }
@@ -1390,8 +1441,12 @@ struct ChatView: View {
                 if messageText.count > 100 {
                     HStack {
                         Spacer()
-                        Text("\(messageText.count) characters")
+                        Text(String(
+                            format: String(localized: "%lld characters", defaultValue: "%lld characters"),
+                            Int64(messageText.count)
+                        ))
                             .font(.caption2.weight(.medium))
+                            .monospacedDigit()
                             .foregroundStyle(Color.adaptive(white: 0.5))
                             .padding(.trailing, 20)
                             .padding(.bottom, 8)
@@ -1410,7 +1465,7 @@ struct ChatView: View {
         if !canSend && llmEngine.state != .generating {
             return LinearGradient(colors: [Color.adaptive(white: 0.85)], startPoint: .top, endPoint: .bottom)
         }
-        return LinearGradient(colors: [.black], startPoint: .top, endPoint: .bottom)
+        return LinearGradient(colors: [Color.adaptive(white: 0)], startPoint: .top, endPoint: .bottom)
     }
     
     private var canSend: Bool {
@@ -1418,7 +1473,55 @@ struct ChatView: View {
         // A downloading model counts: sending then queues the message.
         let hasModel = modelManager.selectedModel != nil
             || (activeDownloadingModel != nil && queuedFirstMessage == nil)
-        return hasInput && hasModel && canStartChatRequest && !monetizationManager.hasReachedFreeDailyMessageLimit
+        return hasInput && hasModel && canStartChatRequest
+    }
+
+    private var shouldShowUsageAllowance: Bool {
+        !monetizationManager.hasPro && monetizationManager.freeMessagesRemainingToday <= 3
+    }
+
+    private var usageAllowanceBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: monetizationManager.hasReachedFreeDailyMessageLimit
+                  ? "exclamationmark.circle.fill"
+                  : "message.badge.fill")
+                .foregroundStyle(.orange)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(
+                    monetizationManager.hasReachedFreeDailyMessageLimit
+                        ? String(localized: "Daily free limit reached")
+                        : String(
+                            format: String(localized: "%lld free messages left today", defaultValue: "%lld free messages left today"),
+                            Int64(monetizationManager.freeMessagesRemainingToday)
+                        )
+                )
+                .font(.footnote.weight(.semibold))
+
+                if monetizationManager.hasReachedFreeDailyMessageLimit {
+                    Text(String(localized: "More free messages are available tomorrow."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            Button(String(localized: "Upgrade")) {
+                upgradeFeature = .unlimitedMessages
+            }
+            .font(.footnote.weight(.semibold))
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .frame(minHeight: 44)
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 10)
+        .padding(.vertical, 8)
+        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 16)
+        .accessibilityElement(children: .contain)
     }
 
     private var runtimePerformanceStatus: RuntimePerformanceStatus? {
@@ -1717,6 +1820,7 @@ struct ChatView: View {
                     .background(Color.adaptive(white: 0.94))
                     .clipShape(Circle())
             }
+            .frame(minWidth: 44, minHeight: 44)
             .accessibilityLabel(String(localized: "Dismiss"))
         }
         .padding(.horizontal, 16)
@@ -1766,22 +1870,26 @@ struct ChatView: View {
         message: String,
         onDismiss: @escaping () -> Void
     ) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(tint)
-                .frame(width: 30, height: 30)
-                .background(Circle().fill(tint.opacity(0.12)))
-                .accessibilityHidden(true)
+        Button(action: onDismiss) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(tint)
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(tint.opacity(0.12)))
+                    .accessibilityHidden(true)
 
-            Text(message)
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(Color.adaptive(white: 0.15))
-                .multilineTextAlignment(.leading)
-                .fixedSize(horizontal: false, vertical: true)
+                Text(message)
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Color.adaptive(white: 0.15))
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            Spacer(minLength: 0)
+                Spacer(minLength: 0)
+            }
+            .contentShape(RoundedRectangle(cornerRadius: 16))
         }
+        .buttonStyle(.plain)
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background(
@@ -1793,12 +1901,9 @@ struct ChatView: View {
                 .stroke(Color.adaptiveBorder(opacity: 0.6), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
-        .contentShape(RoundedRectangle(cornerRadius: 16))
-        .onTapGesture(perform: onDismiss)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(message)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityHint(Text(String(localized: "Tap to dismiss")))
+        .accessibilityHint(Text(String(localized: "Dismisses this notification.")))
     }
 
     private func runtimePerformancePill(
@@ -1814,8 +1919,9 @@ struct ChatView: View {
                 .background(.thinMaterial, in: Capsule())
         }
         .buttonStyle(.plain)
+        .frame(minHeight: 44)
         .accessibilityLabel(status.message)
-        .accessibilityHint(Text(String(localized: "Tap to dismiss")))
+        .accessibilityHint(Text(String(localized: "Dismisses this notification.")))
     }
 
     /// Shown while Kokoro weights load (or download) so a tap on Speak never
@@ -1857,6 +1963,7 @@ struct ChatView: View {
             .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
         }
         .buttonStyle(.plain)
+        .frame(minHeight: 44)
         .padding(.top, 4)
         .padding(.bottom, 6)
         .accessibilityHint(String(localized: "Reads the latest assistant reply aloud."))
@@ -1930,14 +2037,15 @@ struct ChatView: View {
             } label: {
                 Image(systemName: "mic.fill")
                     .font(.body.weight(.semibold))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(speechManager.isListening ? .white : Color.adaptive(white: 1))
                     .frame(width: 36, height: 36)
-                    .background(speechManager.isListening ? Color.red : Color.black)
+                    .background(speechManager.isListening ? Color.red : Color.adaptive(white: 0))
                     .clipShape(Circle())
             }
             .accessibilityLabel(speechManager.isListening
                 ? String(localized: "Stop voice input")
                 : String(localized: "Start voice input"))
+            .frame(minWidth: 44, minHeight: 44)
 
             // Hands-free voice conversation (full-screen).
             if SpeechManager.isVoiceConversationEnabled {
@@ -1948,14 +2056,7 @@ struct ChatView: View {
 
     private var voiceConversationButton: some View {
         Button {
-            guard monetizationManager.canUse(.voiceMode) else {
-                upgradeFeature = .voiceMode
-                return
-            }
-            dismissKeyboard()
-            speechManager.stopListening()
-            speechManager.prewarmSpeechOutputIfNeeded()
-            voiceConversationMode = true
+            requestVoiceConversation()
         } label: {
             Image(systemName: "waveform")
                 .font(.body.weight(.semibold))
@@ -1965,6 +2066,20 @@ struct ChatView: View {
                 .clipShape(Circle())
         }
         .accessibilityLabel(String(localized: "Start voice conversation"))
+        .frame(minWidth: 44, minHeight: 44)
+    }
+
+    private func requestVoiceConversation() {
+        guard SpeechManager.isVoiceConversationEnabled else { return }
+        guard monetizationManager.canUse(.voiceMode) else {
+            upgradeFeature = .voiceMode
+            return
+        }
+
+        dismissKeyboard()
+        speechManager.stopListening()
+        speechManager.prewarmSpeechOutputIfNeeded()
+        voiceConversationMode = true
     }
     
     // MARK: - Actions
@@ -2142,6 +2257,10 @@ struct ChatView: View {
         Self.lightHaptic.impactOccurred()
 
         guard let model = modelManager.selectedModel else { return }
+        if model.requiresImageInput, selectedImage == nil {
+            showExtractionNotice(String(localized: "GLM OCR requires an attached image. Choose another model for text chat."))
+            return
+        }
         if !hasConsent(for: model.id) {
             // A sheet cannot present over the voice cover; dismiss it first.
             if voiceConversationMode { voiceConversationMode = false }
@@ -2284,15 +2403,16 @@ struct ChatView: View {
     }
 
     private func showUsageToast(_ message: String) {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85)) {
             usageLimitToastMessage = message
         }
+        UIAccessibility.post(notification: .announcement, argument: message)
 
         Task {
             try? await Task.sleep(for: .seconds(2.5))
             await MainActor.run {
                 if usageLimitToastMessage == message {
-                    withAnimation(.easeOut(duration: 0.2)) {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
                         usageLimitToastMessage = nil
                     }
                 }
@@ -2302,21 +2422,22 @@ struct ChatView: View {
 
     private func dismissUsageToast(_ message: String) {
         guard usageLimitToastMessage == message else { return }
-        withAnimation(.easeOut(duration: 0.2)) {
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
             usageLimitToastMessage = nil
         }
     }
 
     private func showExtractionNotice(_ message: String) {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85)) {
             extractionNoticeMessage = message
         }
+        UIAccessibility.post(notification: .announcement, argument: message)
 
         Task {
             try? await Task.sleep(for: .seconds(3.0))
             await MainActor.run {
                 if extractionNoticeMessage == message {
-                    withAnimation(.easeOut(duration: 0.2)) {
+                    withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
                         extractionNoticeMessage = nil
                     }
                 }
@@ -2326,19 +2447,20 @@ struct ChatView: View {
 
     private func dismissExtractionNotice(_ message: String) {
         guard extractionNoticeMessage == message else { return }
-        withAnimation(.easeOut(duration: 0.2)) {
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
             extractionNoticeMessage = nil
         }
     }
 
     private func showModelRecoveryNotice(_ message: String) {
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85)) {
             modelRecoveryNoticeMessage = message
         }
+        UIAccessibility.post(notification: .announcement, argument: message)
         Task {
             try? await Task.sleep(for: .seconds(4))
             if modelRecoveryNoticeMessage == message {
-                withAnimation(.easeOut(duration: 0.2)) {
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
                     modelRecoveryNoticeMessage = nil
                 }
             }
@@ -2347,7 +2469,7 @@ struct ChatView: View {
 
     private func dismissModelRecoveryNotice(_ message: String) {
         guard modelRecoveryNoticeMessage == message else { return }
-        withAnimation(.easeOut(duration: 0.2)) {
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
             modelRecoveryNoticeMessage = nil
         }
     }
@@ -2358,16 +2480,17 @@ struct ChatView: View {
         runtimePerformanceDismissTask?.cancel()
 
         guard let status else {
-            withAnimation(.easeOut(duration: 0.2)) {
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
                 runtimePerformanceToast = nil
             }
             runtimePerformanceDismissTask = nil
             return
         }
 
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+        withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85)) {
             runtimePerformanceToast = status
         }
+        UIAccessibility.post(notification: .announcement, argument: status.message)
 
         runtimePerformanceDismissTask = Task {
             try? await Task.sleep(for: .seconds(3.5))
@@ -2382,7 +2505,7 @@ struct ChatView: View {
     private func dismissRuntimePerformanceToast() {
         runtimePerformanceDismissTask?.cancel()
         runtimePerformanceDismissTask = nil
-        withAnimation(.easeOut(duration: 0.2)) {
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
             runtimePerformanceToast = nil
         }
     }
@@ -2970,7 +3093,7 @@ struct ChatView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                        .stroke(Color.adaptiveBorder(opacity: 0.3), lineWidth: 1)
                 )
 
             Text(imageAttachmentLabel)
@@ -2991,6 +3114,7 @@ struct ChatView: View {
                     .foregroundStyle(Color.adaptive(white: 0.5))
             }
             .buttonStyle(.plain)
+            .frame(minWidth: 44, minHeight: 44)
             .accessibilityLabel(String(localized: "Remove attached image"))
         }
         .padding(.horizontal, 16)
@@ -3001,7 +3125,7 @@ struct ChatView: View {
                 .fill(Color.adaptiveCard.opacity(0.72))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                        .stroke(Color.adaptiveBorder(opacity: 0.25), lineWidth: 1)
                 )
         )
         .padding(.horizontal, 16)
@@ -3010,28 +3134,36 @@ struct ChatView: View {
 
     private func handlePhotoSelection() {
         guard let item = selectedPhotoItem else { return }
+        selectedPhotoItem = nil
         guard guardCanAddPhoto(action: String(localized: "adding a photo")) else {
-            selectedPhotoItem = nil
             return
         }
 
-        // Pro gate
         guard monetizationManager.canUse(.imageInput) else {
-            selectedPhotoItem = nil
+            photoItemAwaitingUpgrade = item
             upgradeFeature = .imageInput
             return
         }
 
+        processPhotoItem(item)
+    }
+
+    private func processPhotoItem(_ item: PhotosPickerItem) {
         Task {
-            if let data = try? await item.loadTransferable(type: Data.self),
-               let preparedData = await ImageAttachmentManager.shared.prepareImageData(data),
-               let uiImage = UIImage(data: preparedData) {
-                await MainActor.run {
-                    withAnimation(.spring(response: 0.3)) {
-                        selectedImage = uiImage
-                        selectedImageData = preparedData
-                    }
+            do {
+                guard let data = try await item.loadTransferable(type: Data.self),
+                      let preparedData = await ImageAttachmentManager.shared.prepareImageData(data),
+                      let uiImage = UIImage(data: preparedData) else {
+                    throw ChatModelFailure(message: String(localized: "Own AI couldn’t read that image. Try another photo."))
                 }
+
+                photoItemAwaitingUpgrade = nil
+                withAnimation(.spring(response: 0.3)) {
+                    selectedImage = uiImage
+                    selectedImageData = preparedData
+                }
+            } catch {
+                showExtractionNotice(String(localized: "Own AI couldn’t read that image. Try another photo."))
             }
         }
     }
@@ -3263,7 +3395,7 @@ struct ChatView: View {
         .background(Color.adaptiveCard, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                .stroke(Color.adaptiveBorder(opacity: 0.25), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.04), radius: 10, y: 4)
     }
@@ -3308,7 +3440,7 @@ struct ChatView: View {
             .background(Color.adaptive(white: 0.985), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                    .stroke(Color.adaptiveBorder(opacity: 0.3), lineWidth: 1)
             )
 
             HStack(spacing: 10) {
@@ -3330,11 +3462,11 @@ struct ChatView: View {
         .padding(16)
         .background(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .fill(.white)
+                .fill(Color.adaptiveCard)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 22, style: .continuous)
-                .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                .stroke(Color.adaptiveBorder(opacity: 0.25), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.04), radius: 10, y: 4)
     }
@@ -4389,35 +4521,39 @@ private struct AutoSelectionToastView: View {
     @State private var progress: CGFloat = 1
 
     var body: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 12) {
-                Image(systemName: "wand.and.stars")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.purple)
-                    .frame(width: 30, height: 30)
-                    .background(Circle().fill(Color.purple.opacity(0.12)))
-                    .accessibilityHidden(true)
+        Button(action: onDismiss) {
+            VStack(spacing: 10) {
+                HStack(spacing: 12) {
+                    Image(systemName: "wand.and.stars")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.purple)
+                        .frame(width: 30, height: 30)
+                        .background(Circle().fill(Color.purple.opacity(0.12)))
+                        .accessibilityHidden(true)
 
-                Text(message)
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Color.adaptive(white: 0.15))
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Text(message)
+                        .font(.subheadline.weight(.medium))
+                        .foregroundStyle(Color.adaptive(white: 0.15))
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                Spacer(minLength: 0)
-            }
-
-            if !reduceMotion {
-                GeometryReader { geo in
-                    Capsule()
-                        .fill(Color.purple.opacity(0.35))
-                        .frame(width: max(0, geo.size.width * progress))
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Spacer(minLength: 0)
                 }
-                .frame(height: 3)
-                .accessibilityHidden(true)
+
+                if !reduceMotion {
+                    GeometryReader { geo in
+                        Capsule()
+                            .fill(Color.purple.opacity(0.35))
+                            .frame(width: max(0, geo.size.width * progress))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(height: 3)
+                    .accessibilityHidden(true)
+                }
             }
+            .contentShape(RoundedRectangle(cornerRadius: 16))
         }
+        .buttonStyle(.plain)
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .background(
@@ -4429,13 +4565,11 @@ private struct AutoSelectionToastView: View {
                 .stroke(Color.adaptiveBorder(opacity: 0.6), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
-        .contentShape(RoundedRectangle(cornerRadius: 16))
-        .onTapGesture(perform: onDismiss)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(message)
-        .accessibilityAddTraits(.isButton)
-        .accessibilityHint(Text(String(localized: "Tap to dismiss")))
+        .accessibilityHint(Text(String(localized: "Dismisses this notification.")))
         .onAppear {
+            UIAccessibility.post(notification: .announcement, argument: message)
             guard !reduceMotion else { return }
             withAnimation(.linear(duration: autoDismissAfter)) {
                 progress = 0

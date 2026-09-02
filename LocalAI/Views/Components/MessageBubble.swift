@@ -15,7 +15,7 @@ struct AsyncCodeBlockView: View {
     let theme: CodeTheme
     let isStreaming: Bool
     let textScale: Double
-    
+    @ScaledMetric(relativeTo: .body) private var codeFontSize: CGFloat = 13
     @State private var highlightedText: AttributedString?
     
     var body: some View {
@@ -25,7 +25,13 @@ struct AsyncCodeBlockView: View {
                 do {
                     try await Task.sleep(nanoseconds: 150_000_000)
                     
-                    let result = SyntaxHighlighter.highlight(content, language: language, theme: theme, textScale: textScale)
+                    let result = SyntaxHighlighter.highlight(
+                        content,
+                        language: language,
+                        theme: theme,
+                        textScale: textScale,
+                        baseFontSize: codeFontSize
+                    )
                     
                     guard !Task.isCancelled else { return }
                     highlightedText = result
@@ -38,16 +44,23 @@ struct AsyncCodeBlockView: View {
     private var displayText: AttributedString {
         if isStreaming {
             var plainText = AttributedString(content)
-            plainText.font = .monospacedSystemFont(ofSize: CGFloat(13 * textScale), weight: .regular)
+            plainText.font = .monospacedSystemFont(ofSize: codeFontSize * textScale, weight: .regular)
             plainText.foregroundColor = theme.foreground
             return plainText
         }
 
-        return highlightedText ?? SyntaxHighlighter.plainText(content, theme: theme, textScale: textScale)
+        return highlightedText ?? SyntaxHighlighter.plainText(
+            content,
+            theme: theme,
+            textScale: textScale,
+            baseFontSize: codeFontSize
+        )
     }
 
     private var highlightTaskID: String {
-        isStreaming ? "streaming|\(language ?? "")|\(theme.rawValue)" : "\(content.hashValue)|\(language ?? "")|\(theme.rawValue)"
+        isStreaming
+            ? "streaming|\(language ?? "")|\(theme.rawValue)|\(codeFontSize)"
+            : "\(content.hashValue)|\(language ?? "")|\(theme.rawValue)|\(codeFontSize)"
     }
 }
 
@@ -63,6 +76,8 @@ struct AssistantMarkdownView: View, Equatable {
     let isStreaming: Bool
     let theme: CodeTheme
     let textScale: Double
+    let bodyFontSize: CGFloat
+    let tableFontSize: CGFloat
 
     private static let lightHaptic = UIImpactFeedbackGenerator(style: .light)
 
@@ -196,7 +211,7 @@ struct AssistantMarkdownView: View, Equatable {
                 FontWeight(.semibold)
             }
             .markdownTextStyle {
-                FontSize(CGFloat(17 * textScale))
+                FontSize(bodyFontSize * textScale)
             }
             .foregroundStyle(Color.adaptive(white: 0.15))
             // MarkdownUI's basic theme draws tables with no rules or row fills,
@@ -220,7 +235,7 @@ struct AssistantMarkdownView: View, Equatable {
                         if configuration.row == 0 {
                             FontWeight(.semibold)
                         }
-                        FontSize(CGFloat(15 * textScale))
+                        FontSize(tableFontSize * textScale)
                     }
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.vertical, 6)
@@ -255,11 +270,12 @@ struct AssistantMarkdownView: View, Equatable {
                         Button {
                             UIPasteboard.general.string = configuration.content
                             Self.lightHaptic.impactOccurred()
+                            UIAccessibility.post(notification: .announcement, argument: String(localized: "Copied"))
                         } label: {
                             HStack(spacing: 4) {
                                 Image(systemName: "doc.on.doc")
                                     .font(.caption2)
-                                Text("Copy")
+                                Text(String(localized: "Copy"))
                                     .font(.caption.bold())
                             }
                             .foregroundStyle(theme.foreground)
@@ -270,6 +286,7 @@ struct AssistantMarkdownView: View, Equatable {
                             .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
                         }
                         .buttonStyle(.plain)
+                        .frame(minHeight: 44)
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
@@ -321,17 +338,21 @@ struct TypingDots: View {
     let reduceMotion: Bool
 
     var body: some View {
-        if reduceMotion {
-            dots { _ in (1.0, 0.55) }
-        } else {
-            // Phases 0–2 light each dot in turn; phase 3 is a brief rest beat
-            // before the wave restarts.
-            PhaseAnimator([0, 1, 2, 3]) { phase in
-                dots { index in
-                    phase == index ? (1.35, 1.0) : (0.7, 0.4)
-                }
-            } animation: { _ in .easeInOut(duration: 0.28) }
+        Group {
+            if reduceMotion {
+                dots { _ in (1.0, 0.55) }
+            } else {
+                // Phases 0–2 light each dot in turn; phase 3 is a brief rest beat
+                // before the wave restarts.
+                PhaseAnimator([0, 1, 2, 3]) { phase in
+                    dots { index in
+                        phase == index ? (1.35, 1.0) : (0.7, 0.4)
+                    }
+                } animation: { _ in .easeInOut(duration: 0.28) }
+            }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(localized: "Assistant is responding"))
     }
 
     private func dots(
@@ -373,8 +394,13 @@ struct MessageBubble: View {
     /// Only the active row observes this object. Completed rows and ChatView
     /// stay outside the token-by-token invalidation graph.
     let streamingState: ChatStreamingState?
+    /// Removes this message from the conversation. Optional so callers that
+    /// show messages read-only simply omit the menu entry.
+    let onDelete: ((ChatMessage) -> Void)?
     @AppStorage("codeTheme") private var codeThemeRaw = CodeTheme.defaultTheme.rawValue
     @AppStorage("messageTextScale") private var messageTextScale: Double = 1.0
+    @ScaledMetric(relativeTo: .body) private var baseMessageFontSize: CGFloat = 17
+    @ScaledMetric(relativeTo: .callout) private var baseTableFontSize: CGFloat = 15
     @Environment(SpeechManager.self) private var speechManager
     @Environment(ModelManager.self) private var modelManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -382,6 +408,7 @@ struct MessageBubble: View {
     @State private var isThinkingExpanded = false
     @State private var showCopied = false
     @State private var showStats = false
+    @State private var reportErrorMessage: String?
     /// The `[Source n]` citation the reader last tapped, used to briefly pulse the
     /// matching chip so they can connect an inline citation to its document.
     private let userLeadingInset: CGFloat = 60
@@ -407,7 +434,8 @@ struct MessageBubble: View {
         onFollowUp: ((ChatMessage, String) -> Void)? = nil,
         onShowSources: ((ChatMessage) -> Void)? = nil,
         showsQuickActions: Bool = false,
-        streamingState: ChatStreamingState? = nil
+        streamingState: ChatStreamingState? = nil,
+        onDelete: ((ChatMessage) -> Void)? = nil
     ) {
         self.message = message
         self.showsContinue = showsContinue
@@ -427,6 +455,7 @@ struct MessageBubble: View {
         self.onShowSources = onShowSources
         self.showsQuickActions = showsQuickActions
         self.streamingState = streamingState
+        self.onDelete = onDelete
     }
 
     /// The message split into reasoning and answer. While the engine is
@@ -476,6 +505,12 @@ struct MessageBubble: View {
 
                 if message.role == .user || hasAnswerContent || !hasThinking {
                     messageCard
+                        .accessibilityElement(children: .contain)
+                        .accessibilityLabel(
+                            message.role == .user
+                                ? String(localized: "Your message")
+                                : String(localized: "Assistant message")
+                        )
                         // Surface the context-menu actions to VoiceOver users
                         // directly on the message content.
                         .accessibilityActions {
@@ -533,7 +568,7 @@ struct MessageBubble: View {
         .scaleEffect(appeared ? 1 : 0.95)
         .overlay(alignment: message.role == .user ? .bottomTrailing : .bottomLeading) {
             if showCopied {
-                Text("Copied")
+                Text(String(localized: "Copied"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.white)
                     .padding(.horizontal, 12)
@@ -552,6 +587,19 @@ struct MessageBubble: View {
                 Self.lightHaptic.impactOccurred()
             }
         }
+        .alert(
+            String(localized: "Unable to Open Mail"),
+            isPresented: Binding(
+                get: { reportErrorMessage != nil },
+                set: { if !$0 { reportErrorMessage = nil } }
+            )
+        ) {
+            Button(String(localized: "OK"), role: .cancel) {
+                reportErrorMessage = nil
+            }
+        } message: {
+            Text(reportErrorMessage ?? "")
+        }
     }
 
     private func actionButton(
@@ -569,6 +617,7 @@ struct MessageBubble: View {
                 .clipShape(Capsule())
         }
         .buttonStyle(.plain)
+        .frame(minHeight: 44)
         .padding(.leading, 4)
     }
 
@@ -619,11 +668,12 @@ struct MessageBubble: View {
             .lineLimit(1)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
+            .frame(minHeight: 44)
             .background(Color.adaptiveCard.opacity(0.9))
             .clipShape(Capsule())
             .overlay(
                 Capsule()
-                    .stroke(Color.black.opacity(0.06), lineWidth: 1)
+                    .stroke(Color.adaptiveBorder(opacity: 0.3), lineWidth: 1)
             )
     }
 
@@ -640,7 +690,7 @@ struct MessageBubble: View {
                 if isSpeakingThisMessage && speechManager.isPreparingSpeechOutput {
                     ProgressView()
                         .controlSize(.small)
-                        .frame(width: 34, height: 30)
+                        .frame(width: 44, height: 44)
                         .accessibilityLabel(String(localized: "Preparing voice"))
                 } else {
                     quickActionButton(
@@ -660,14 +710,7 @@ struct MessageBubble: View {
             }
 
             quickActionButton(icon: "square.and.arrow.up", label: String(localized: "Share")) {
-                let activityVC = UIActivityViewController(
-                    activityItems: [message.content],
-                    applicationActivities: nil
-                )
-                if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                   let rootVC = windowScene.windows.first?.rootViewController {
-                    rootVC.present(activityVC, animated: true)
-                }
+                presentShareSheet(for: message.content)
             }
         }
         .padding(.horizontal, 4)
@@ -682,12 +725,42 @@ struct MessageBubble: View {
         .transition(.opacity.combined(with: .scale(scale: 0.9)))
     }
 
+    /// Hands text to the system share sheet from the frontmost presented
+    /// controller, anchored so iPad's popover presentation has a source.
+    private func presentShareSheet(for text: String) {
+        guard let scene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first(where: { $0.activationState == .foregroundActive }),
+              let rootViewController = scene.keyWindow?.rootViewController else { return }
+
+        var presenter = rootViewController
+        while let presented = presenter.presentedViewController {
+            presenter = presented
+        }
+
+        let activityViewController = UIActivityViewController(
+            activityItems: [text],
+            applicationActivities: nil
+        )
+        if let popover = activityViewController.popoverPresentationController {
+            popover.sourceView = presenter.view
+            popover.sourceRect = CGRect(
+                x: presenter.view.bounds.midX,
+                y: presenter.view.bounds.maxY - 60,
+                width: 0,
+                height: 0
+            )
+            popover.permittedArrowDirections = []
+        }
+        presenter.present(activityViewController, animated: true)
+    }
+
     private func quickActionButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(Color.adaptive(white: 0.35))
-                .frame(width: 34, height: 30)
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -741,11 +814,14 @@ struct MessageBubble: View {
                         }
                 }
             }
-            .alert("Message Info", isPresented: $showStats) {
-                Button("OK", role: .cancel) { }
+            .alert(String(localized: "Message Info"), isPresented: $showStats) {
+                Button(String(localized: "OK"), role: .cancel) { }
             } message: {
                 let stats = messageStats(for: message.content)
-                Text("\(stats.words) words · \(stats.characters) characters\n~\(stats.readingTime) min read")
+                Text(String(
+                    format: String(localized: "%1$lld words · %2$lld characters\n~%3$lld min read"),
+                    Int64(stats.words), Int64(stats.characters), Int64(stats.readingTime)
+                ))
             }
     }
 
@@ -757,7 +833,7 @@ struct MessageBubble: View {
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .accessibilityHidden(true)
-                    Text("Pinned")
+                    Text(String(localized: "Pinned"))
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -807,7 +883,7 @@ struct MessageBubble: View {
     /// lift preview entirely to avoid ghosting over MarkdownUI content.
     private var messageContextMenuPreview: some View {
         Text(displayedContent)
-            .font(.system(size: 17 * messageTextScale))
+            .font(.system(size: baseMessageFontSize * messageTextScale))
             .foregroundStyle(.white)
             .multilineTextAlignment(.trailing)
             .frame(maxWidth: .infinity, alignment: .trailing)
@@ -939,6 +1015,15 @@ struct MessageBubble: View {
                 Label("Report Inappropriate Content", systemImage: "flag")
             }
         }
+
+        if let onDelete {
+            Divider()
+            Button(role: .destructive) {
+                onDelete(message)
+            } label: {
+                Label("Delete Message", systemImage: "trash")
+            }
+        }
     }
 
     private var markdownRepresentation: String {
@@ -971,7 +1056,7 @@ struct MessageBubble: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 Text(message.content)
-                    .font(.system(size: 17 * messageTextScale))
+                    .font(.system(size: baseMessageFontSize * messageTextScale))
                     .foregroundStyle(.white)
             }
         } else if !displayedContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -983,7 +1068,9 @@ struct MessageBubble: View {
                 content: displayedContent,
                 isStreaming: message.isStreaming,
                 theme: theme,
-                textScale: messageTextScale
+                textScale: messageTextScale,
+                bodyFontSize: baseMessageFontSize,
+                tableFontSize: baseTableFontSize
             )
             .equatable()
         }
@@ -1008,20 +1095,25 @@ struct MessageBubble: View {
             Button {
                 debugLogThinking("toggle tapped", thinkingText: thinkingText)
                 Self.lightHaptic.impactOccurred()
-                withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) {
+                withAnimation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82)) {
                     isThinkingExpanded.toggle()
                 }
             } label: {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(message.isStreaming ? "Thinking…" : "Thoughts")
-                            .font(.system(size: 16, weight: .semibold))
+                        Text(message.isStreaming ? String(localized: "Thinking…") : String(localized: "Thoughts"))
+                            .font(.body.weight(.semibold))
                             .foregroundStyle(message.isStreaming ? Color.black.opacity(0.8) : Color.black)
-                            .shimmering(active: message.isStreaming, bandSize: 0.18)
+                            .shimmering(active: message.isStreaming && !reduceMotion, bandSize: 0.18)
 
                         if !message.isStreaming, !thinkingText.isEmpty {
                             let wordCount = thinkingText.split { $0.isWhitespace }.count
-                            Text("\(wordCount) words")
+                            Text(
+                                String(
+                                    format: String(localized: "%lld words", defaultValue: "%lld words"),
+                                    Int64(wordCount)
+                                )
+                            )
                                 .font(.caption2)
                                 .foregroundStyle(Color.adaptive(white: 0.55))
                         }
@@ -1030,7 +1122,7 @@ struct MessageBubble: View {
                     Spacer()
 
                     Image(systemName: isThinkingExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 22, weight: .semibold))
+                        .font(.title3.weight(.semibold))
                         .foregroundStyle(Color.black)
                 }
                 .contentShape(Rectangle())
@@ -1112,7 +1204,7 @@ struct MessageBubble: View {
 
     private func scrollThinkingToBottom(_ proxy: ScrollViewProxy, animated: Bool) {
         Task { @MainActor in
-            if animated {
+            if animated && !reduceMotion {
                 withAnimation(.easeOut(duration: 0.18)) {
                     proxy.scrollTo("thinking-bottom", anchor: .bottom)
                 }
@@ -1152,17 +1244,33 @@ struct MessageBubble: View {
         let mailto = "mailto:alice.turcanu91@gmail.com?subject=\(subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&body=\(body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
 
         if let url = URL(string: mailto) {
-            UIApplication.shared.open(url)
+            openReport(url, fallbackText: body)
         }
     }
 
     private func reportContent(_ content: String) {
         let subject = "Inappropriate AI Content Report"
-        let body = "The following AI response was flagged as inappropriate:\n\n\"\(content)\"\n\nPlease provide details on why this content is inappropriate:"
+        let excerpt = content.count > 800 ? String(content.prefix(800)) + "…" : content
+        let body = "The following AI response was flagged as inappropriate:\n\n\"\(excerpt)\"\n\nPlease provide details on why this content is inappropriate:"
         let mailto = "mailto:alice.turcanu91@gmail.com?subject=\(subject.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")&body=\(body.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
 
         if let url = URL(string: mailto) {
-            UIApplication.shared.open(url)
+            openReport(url, fallbackText: body)
+        }
+    }
+
+    private func openReport(_ url: URL, fallbackText: String) {
+        UIApplication.shared.open(url, options: [:]) { opened in
+            guard !opened else { return }
+            DispatchQueue.main.async {
+                UIPasteboard.general.string = fallbackText
+                reportErrorMessage = String(localized: "No mail app is available. The report details were copied so you can paste them into another app.")
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                UIAccessibility.post(
+                    notification: .announcement,
+                    argument: String(localized: "Report details copied")
+                )
+            }
         }
     }
 
@@ -1203,12 +1311,13 @@ struct MessageBubble: View {
     private func copyAndShowToast(_ text: String) {
         UIPasteboard.general.string = text
         Self.lightHaptic.impactOccurred()
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+        UIAccessibility.post(notification: .announcement, argument: String(localized: "Copied"))
+        withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.8)) {
             showCopied = true
         }
         Task {
             try? await Task.sleep(for: .seconds(1.5))
-            withAnimation(.easeOut(duration: 0.3)) {
+            withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) {
                 showCopied = false
             }
         }

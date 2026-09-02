@@ -154,7 +154,11 @@ enum ModelReleaseGate {
     ]
 
     static func isReleased(_ model: ModelInfo) -> Bool {
-        ModelInfo.releasedModels.contains(where: { $0.id == model.id })
+        // The gate exists to keep evaluation checkpoints out of production.
+        // A model the user imported themselves was never in the catalog to be
+        // promoted, so it is gated by validation and device fit instead.
+        if model.isImported { return ImportedModelStore.shared.contains(model.id) }
+        return ModelInfo.releasedModels.contains(where: { $0.id == model.id })
     }
 
     static func canPromote(_ report: ModelMobileReadinessReport) -> Bool {

@@ -6,16 +6,19 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct SavedPromptsView: View {
     @Environment(MonetizationManager.self) private var monetizationManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @AppStorage("systemPrompt") private var activeSystemPrompt = AIResponseDefaults.defaultSystemPrompt
 
     @State private var promptStore = SavedPromptStore.shared
     @State private var isAddSheetPresented = false
     @State private var editingPrompt: SavedPrompt?
+    @State private var promptPendingDeletion: SavedPrompt?
     @State private var upgradeFeature: PremiumFeature?
-    @State private var activatedPromptID: UUID?
+    private static let selectionHaptic = UISelectionFeedbackGenerator()
 
     var body: some View {
         Group {
@@ -29,7 +32,11 @@ struct SavedPromptsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if monetizationManager.canUse(.savedPrompts) {
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    if !promptStore.prompts.isEmpty {
+                        EditButton()
+                    }
+
                     Button {
                         isAddSheetPresented = true
                     } label: {
@@ -42,17 +49,60 @@ struct SavedPromptsView: View {
         }
         .sheet(isPresented: $isAddSheetPresented) {
             PromptEditorSheet(existingPrompt: nil) { name, prompt in
-                promptStore.add(name: name, prompt: prompt)
+                guard promptStore.add(name: name, prompt: prompt) else { return }
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                UIAccessibility.post(
+                    notification: .announcement,
+                    argument: String(localized: "Prompt saved")
+                )
             }
         }
         .sheet(item: $editingPrompt) { prompt in
             PromptEditorSheet(existingPrompt: prompt) { name, newPrompt in
                 promptStore.update(id: prompt.id, name: name, prompt: newPrompt)
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                UIAccessibility.post(
+                    notification: .announcement,
+                    argument: String(localized: "Prompt updated")
+                )
             }
         }
         .sheet(item: $upgradeFeature) { feature in
-            UpgradeView(feature: feature)
+            UpgradeView(feature: feature) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    isAddSheetPresented = true
+                }
+            }
                 .environment(monetizationManager)
+        }
+        .confirmationDialog(
+            String(localized: "Delete Prompt?"),
+            isPresented: Binding(
+                get: { promptPendingDeletion != nil },
+                set: { if !$0 { promptPendingDeletion = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: promptPendingDeletion
+        ) { prompt in
+            Button(String(localized: "Delete"), role: .destructive) {
+                promptStore.delete(id: prompt.id)
+                promptPendingDeletion = nil
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                UIAccessibility.post(
+                    notification: .announcement,
+                    argument: String(localized: "Prompt deleted")
+                )
+            }
+            Button(String(localized: "Cancel"), role: .cancel) {
+                promptPendingDeletion = nil
+            }
+        } message: { prompt in
+            Text(
+                String(
+                    format: String(localized: "“%@” will be permanently removed.", defaultValue: "“%@” will be permanently removed."),
+                    prompt.name
+                )
+            )
         }
     }
 
@@ -69,67 +119,83 @@ struct SavedPromptsView: View {
                             promptRow(prompt)
                         }
                         .onDelete { offsets in
-                            for index in offsets {
-                                promptStore.delete(id: promptStore.prompts[index].id)
-                            }
+                            guard let index = offsets.first,
+                                  promptStore.prompts.indices.contains(index) else { return }
+                            promptPendingDeletion = promptStore.prompts[index]
                         }
                         .onMove { from, to in
                             promptStore.move(fromOffsets: from, toOffset: to)
                         }
                     } footer: {
                         let count = promptStore.prompts.count
-                        Text("\(count)/\(SavedPromptStore.maxPrompts) prompts")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(count)/\(SavedPromptStore.maxPrompts) prompts")
+                            if count >= SavedPromptStore.maxPrompts {
+                                Text(String(localized: "Delete a prompt to make room for a new one."))
+                            }
+                        }
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                     }
                 }
                 .listStyle(.insetGrouped)
-                .environment(\.editMode, .constant(.active))
             }
         }
     }
 
     private func promptRow(_ prompt: SavedPrompt) -> some View {
         let isActive = activeSystemPrompt == prompt.prompt
-        return HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(isActive ? Color.orange.opacity(0.12) : Color(uiColor: .systemGray5))
-                    .frame(width: 40, height: 40)
-                Image(systemName: isActive ? "checkmark.circle.fill" : "books.vertical.fill")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(isActive ? .orange : .secondary)
-                    .accessibilityHidden(true)
-            }
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(prompt.name)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.primary)
-                Text(prompt.prompt)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-
-            Spacer()
-
-            if isActive {
-                Text(String(localized: "Active"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.orange)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(Color.orange.opacity(0.1), in: Capsule())
-            }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(.spring(response: 0.3)) {
+        return Button {
+            Self.selectionHaptic.selectionChanged()
+            withAnimation(reduceMotion ? nil : .spring(response: 0.3)) {
                 activeSystemPrompt = prompt.prompt
-                activatedPromptID = prompt.id
+            }
+            UIAccessibility.post(
+                notification: .announcement,
+                argument: String(
+                    format: String(localized: "%@ is now active", defaultValue: "%@ is now active"),
+                    prompt.name
+                )
+            )
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(isActive ? Color.orange.opacity(0.12) : Color(uiColor: .systemGray5))
+                        .frame(width: 44, height: 44)
+                    Image(systemName: isActive ? "checkmark.circle.fill" : "books.vertical.fill")
+                        .font(.body.weight(.semibold))
+                        .foregroundStyle(isActive ? .orange : .secondary)
+                        .accessibilityHidden(true)
+                }
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(prompt.name)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Text(prompt.prompt)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+
+                Spacer()
+
+                if isActive {
+                    Text(String(localized: "Active"))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.orange.opacity(0.1), in: Capsule())
+                }
             }
         }
+        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        .accessibilityLabel(prompt.name)
+        .accessibilityValue(isActive ? String(localized: "Active") : String(localized: "Not active"))
+        .accessibilityHint(String(localized: "Activates this prompt."))
         .swipeActions(edge: .leading) {
             Button {
                 editingPrompt = prompt
@@ -246,6 +312,17 @@ struct PromptEditorSheet: View {
                     TextEditor(text: $prompt)
                         .font(.body)
                         .frame(minHeight: 160)
+                        .overlay(alignment: .topLeading) {
+                            if prompt.isEmpty {
+                                Text(String(localized: "e.g. You are a concise coding assistant. Answer with short examples."))
+                                    .font(.body)
+                                    .foregroundStyle(.tertiary)
+                                    .padding(.top, 8)
+                                    .padding(.leading, 5)
+                                    .allowsHitTesting(false)
+                                    .accessibilityHidden(true)
+                            }
+                        }
                 } header: {
                     Text(String(localized: "System Prompt"))
                 } footer: {

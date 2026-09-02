@@ -211,7 +211,7 @@ struct PerformanceDashboardView: View {
 
     @ViewBuilder
     private var recentSection: some View {
-        Section("Recent Measurements") {
+        Section {
             if recentSamples.isEmpty {
                 Text("No measurements stored.")
                     .foregroundStyle(.secondary)
@@ -219,6 +219,12 @@ struct PerformanceDashboardView: View {
                 ForEach(recentSamples) { sample in
                     sampleRow(sample)
                 }
+            }
+        } header: {
+            Text("Recent Measurements")
+        } footer: {
+            if dashboard.samples.count > recentSamples.count {
+                Text("Showing the latest \(recentSamples.count) of \(dashboard.samples.count) measurements. Export the report for the full history.")
             }
         }
     }

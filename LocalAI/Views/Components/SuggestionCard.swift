@@ -5,6 +5,11 @@ struct SuggestionCard: View {
     let title: String
     let subtitle: String
     let action: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var cardWidth: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 280 : 210
+    }
     
     var body: some View {
         Button(action: action) {
@@ -41,13 +46,12 @@ struct SuggestionCard: View {
                         .font(.subheadline)
                         .foregroundStyle(Color.adaptive(white: 0.4))
                         .fixedSize(horizontal: false, vertical: true)
-                        .lineLimit(2)
-                        .minimumScaleFactor(0.85)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                 }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
-            .frame(width: 210, alignment: .topLeading)
+            .frame(width: cardWidth, alignment: .topLeading)
             .frame(minHeight: 110)
             .background(
                 RoundedRectangle(cornerRadius: 20)
@@ -59,7 +63,10 @@ struct SuggestionCard: View {
                     .stroke(Color.adaptiveBorder(opacity: 0.5), lineWidth: 1)
             )
         }
-        .buttonStyle(PlainButtonStyle())
+        .buttonStyle(PressedScaleButtonStyle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityHint(String(localized: "Sends this as your first message."))
     }
 }
 

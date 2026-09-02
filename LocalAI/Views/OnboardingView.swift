@@ -9,15 +9,19 @@ import SwiftUI
 
 struct OnboardingView: View {
     @Binding var isPresented: Bool
+    let onComplete: () -> Void
     @Environment(LLMEngine.self) private var llmEngine
     @Environment(ModelManager.self) private var modelManager
     @Environment(MonetizationManager.self) private var monetizationManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var animate = false
     @State private var currentPage = 0
     @State private var isApplyingRecommendation = false
     @State private var showModelPicker = false
     @State private var pickerInitialModelID: String?
     @State private var customModelID: String?
+    @State private var modelAwaitingConsent: ModelInfo?
+    @AccessibilityFocusState private var focusedPage: Int?
 
     private var hasRecommendationPage: Bool {
         onboardingRecommendationData != nil
@@ -29,6 +33,10 @@ struct OnboardingView: View {
 
     private var recommendationPageIndex: Int {
         2
+    }
+
+    private var pageCount: Int {
+        hasRecommendationPage ? 3 : 2
     }
 
 
@@ -114,20 +122,35 @@ struct OnboardingView: View {
     
     var body: some View {
         ZStack {
-            // Background
             Color.adaptiveCard.ignoresSafeArea()
-            
-            TabView(selection: $currentPage) {
-                welcomePage.tag(0)
-                privacyPage.tag(privacyPageIndex)
-                if hasRecommendationPage {
-                    recommendationPage.tag(recommendationPageIndex)
+
+            Group {
+                switch currentPage {
+                case privacyPageIndex:
+                    privacyPage
+                case recommendationPageIndex where hasRecommendationPage:
+                    recommendationPage
+                default:
+                    welcomePage
                 }
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
+            .id(currentPage)
+            .transition(.opacity)
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            progressHeader
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: currentPage)
         .onAppear {
-            animate = true
+            animate = !reduceMotion
+            DispatchQueue.main.async {
+                focusedPage = currentPage
+            }
+        }
+        .onChange(of: currentPage) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                focusedPage = currentPage
+            }
         }
         .onChange(of: modelManager.selectedModelID) {
             guard showModelPicker else { return }
@@ -144,104 +167,149 @@ struct OnboardingView: View {
             .environment(llmEngine)
             .environment(monetizationManager)
         }
+        .sheet(item: $modelAwaitingConsent) { model in
+            ModelConsentSheet(model: model) {
+                UserDefaults.standard.set(true, forKey: consentKey(for: model))
+                modelAwaitingConsent = nil
+                finishOnboarding(with: model)
+            } onCancel: {
+                modelAwaitingConsent = nil
+                isApplyingRecommendation = false
+            }
+        }
+    }
+
+    private var progressHeader: some View {
+        HStack {
+            Group {
+                if currentPage > 0 {
+                    Button {
+                        withAnimation(reduceMotion ? nil : .default) {
+                            currentPage = max(0, currentPage - 1)
+                        }
+                    } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.body.weight(.semibold))
+                            .frame(width: 44, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel(String(localized: "Previous step"))
+                } else {
+                    Color.clear
+                        .frame(width: 44, height: 44)
+                        .accessibilityHidden(true)
+                }
+            }
+
+            Spacer()
+
+            Text(
+                String(
+                    format: String(localized: "Step %lld of %lld", defaultValue: "Step %lld of %lld"),
+                    Int64(currentPage + 1),
+                    Int64(pageCount)
+                )
+            )
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(.secondary)
+
+            Spacer()
+
+            Color.clear
+                .frame(width: 44, height: 44)
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 12)
+        .background(.ultraThinMaterial)
     }
     
     // MARK: - Page 1: Welcome
     
     private var welcomePage: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            
-            // Icon / Hero
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [.orange.opacity(0.1), .pink.opacity(0.1)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+        ScrollView {
+            VStack(spacing: 28) {
+                ZStack {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [.orange.opacity(0.1), .pink.opacity(0.1)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    )
-                    .frame(width: 200, height: 200)
-                    
-                Image(systemName: "sparkles")
-                    .font(.system(size: 80, weight: .light))
-                    .accessibilityHidden(true)
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.orange, .pink],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+                        .frame(width: 150, height: 150)
+
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 62, weight: .light))
+                        .accessibilityHidden(true)
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [.orange, .pink],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    )
-                    .scaleEffect(animate ? 1.05 : 0.95)
-                    .animation(.easeInOut(duration: 2).repeatForever(autoreverses: true), value: animate)
-            }
-            .padding(.bottom, 48)
-            
-            // Title & Subtitle
-            VStack(spacing: 16) {
-                Text(String(localized: "Welcome to Own Ai"))
-                    .font(.largeTitle.bold())
-                    .foregroundStyle(Color.adaptive(white: 0.1))
-                
-                Text(modelManager.isAppleIntelligenceDeviceSupported ?
-                     LocalizedStringKey("Experience the power of AI,\non-device and with Apple Intelligence.") :
-                     LocalizedStringKey("Experience the power of AI,\nrunning entirely on your device."))
-                    .font(.body)
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(Color.adaptive(white: 0.5))
-                    .padding(.horizontal, 32)
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.bottom, 64)
-            
-            // Features
-            VStack(spacing: 24) {
-                featureRow(
-                    icon: "lock.shield.fill",
-                    color: .green,
-                    title: String(localized: "Hybrid Privacy"),
-                    subtitle: modelManager.isAppleIntelligenceDeviceSupported ?
-                        String(localized: "MLX models run 100% on-device. Apple Intelligence may send data to Apple Inc. for advanced tasks.") :
-                        String(localized: "Your data never leaves your device. Everything runs locally.")
-                )
-                
-                featureRow(
-                    icon: "bolt.fill",
-                    color: .orange,
-                    title: String(localized: "Lightning Fast"),
-                    subtitle: modelManager.isAppleIntelligenceDeviceSupported ?
-                        String(localized: "Powered by Apple Intelligence and on-device models.") :
-                        String(localized: "Powered by highly optimized on-device models.")
-                )
-                
-                if SpeechManager.isVoiceConversationEnabled {
-                    featureRow(
-                        icon: "waveform",
-                        color: .blue,
-                        title: String(localized: "Voice Conversations"),
-                        subtitle: String(localized: "Talk hands-free — it listens, answers out loud, and you can interrupt anytime.")
-                    )
+                        .scaleEffect(animate ? 1.05 : 1)
+                        .animation(
+                            reduceMotion ? nil : .easeInOut(duration: 2).repeatForever(autoreverses: true),
+                            value: animate
+                        )
                 }
-            }
-            .padding(.horizontal, 40)
-            
-            Spacer()
-            
-            // Next button
-            VStack(spacing: 12) {
+
+                VStack(spacing: 12) {
+                    Text(String(localized: "Welcome to Own AI"))
+                        .font(.largeTitle.bold())
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(Color.adaptive(white: 0.1))
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityFocused($focusedPage, equals: 0)
+
+                    Text(modelManager.isAppleIntelligenceDeviceSupported ?
+                         LocalizedStringKey("Private AI on your device, with Apple Intelligence available when you choose it.") :
+                         LocalizedStringKey("Private AI that runs entirely on your device."))
+                        .font(.body)
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                VStack(spacing: 20) {
+                    featureRow(
+                        icon: "lock.shield.fill",
+                        color: .green,
+                        title: String(localized: "Private by Choice"),
+                        subtitle: modelManager.isAppleIntelligenceDeviceSupported ?
+                            String(localized: "Use a fully local model, or explicitly choose Apple Intelligence when you want it.") :
+                            String(localized: "Your prompts and documents stay on this device with local models.")
+                    )
+
+                    featureRow(
+                        icon: "wifi.slash",
+                        color: .orange,
+                        title: String(localized: "Works Offline"),
+                        subtitle: String(localized: "Downloaded local models keep working without an internet connection.")
+                    )
+
+                    if SpeechManager.isVoiceConversationEnabled {
+                        featureRow(
+                            icon: "waveform",
+                            color: .blue,
+                            title: String(localized: "Voice Conversations"),
+                            subtitle: String(localized: "Talk hands-free, hear replies aloud, and interrupt naturally.")
+                        )
+                    }
+                }
+
                 Button {
-                    withAnimation {
+                    withAnimation(reduceMotion ? nil : .default) {
                         currentPage = privacyPageIndex
                     }
                 } label: {
-                    Text(String(localized: "Next"))
+                    Text(String(localized: "Continue"))
                         .font(.headline.weight(.bold))
                         .foregroundStyle(.white)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 56)
+                        .frame(minHeight: 56)
                         .background(
                             LinearGradient(
                                 colors: [.orange, .pink],
@@ -254,6 +322,7 @@ struct OnboardingView: View {
                 }
             }
             .padding(.horizontal, 32)
+            .padding(.top, 24)
             .padding(.bottom, 24)
         }
     }
@@ -278,6 +347,8 @@ struct OnboardingView: View {
                     Text(recommendationPageTitle)
                         .font(.title.bold())
                         .foregroundStyle(Color.adaptive(white: 0.1))
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityFocused($focusedPage, equals: recommendationPageIndex)
 
                     Text(recommendationPageSubtitle)
                         .font(.body)
@@ -340,7 +411,8 @@ struct OnboardingView: View {
                     .opacity(isApplyingRecommendation ? 0.85 : 1)
 
                     Button {
-                        isPresented = false
+                        pickerInitialModelID = modelManager.selectedModelID
+                        showModelPicker = true
                     } label: {
                         Text(LocalizedStringKey(secondaryActionTitle))
                             .font(.subheadline.weight(.semibold))
@@ -384,6 +456,8 @@ struct OnboardingView: View {
                     Text(String(localized: "Data & Privacy"))
                         .font(.title.bold())
                         .foregroundStyle(Color.adaptive(white: 0.1))
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityFocused($focusedPage, equals: privacyPageIndex)
                     
                     Text(String(localized: "Before you begin, here's how the app handles your data."))
                         .font(.body)
@@ -413,6 +487,7 @@ struct OnboardingView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "lock.shield.fill")
                                 .foregroundStyle(.green)
+                                .accessibilityHidden(true)
                             Text(String(localized: "On-Device Models (e.g. Gemma 2 2B)"))
                                 .font(.subheadline.bold())
                                 .foregroundStyle(Color.adaptive(white: 0.2))
@@ -438,6 +513,7 @@ struct OnboardingView: View {
                             HStack(spacing: 8) {
                                 Image(systemName: "apple.intelligence")
                                     .foregroundStyle(.orange)
+                                    .accessibilityHidden(true)
                                 Text(String(localized: "Apple Intelligence"))
                                     .font(.subheadline.bold())
                                     .foregroundStyle(Color.adaptive(white: 0.2))
@@ -462,6 +538,7 @@ struct OnboardingView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "arrow.down.circle.fill")
                                 .foregroundStyle(.blue)
+                                .accessibilityHidden(true)
                             Text("Model Downloads")
                                 .font(.subheadline.bold())
                                 .foregroundStyle(Color.adaptive(white: 0.2))
@@ -481,7 +558,7 @@ struct OnboardingView: View {
                 // Accept button
                 VStack(spacing: 12) {
                     Button {
-                        withAnimation {
+                        withAnimation(reduceMotion ? nil : .default) {
                             if hasRecommendationPage {
                                 currentPage = recommendationPageIndex
                             } else {
@@ -558,11 +635,11 @@ struct OnboardingView: View {
     }
 
     private var secondaryActionTitle: String {
-        String(localized: "Done")
+        String(localized: "Choose Another Model")
     }
 
     private var privacyPrimaryActionTitle: String {
-        hasRecommendationPage ? String(localized: "Continue") : String(localized: "Get Started")
+        hasRecommendationPage ? String(localized: "Agree & Continue") : String(localized: "Agree & Get Started")
     }
 
     private var recommendationPageTitle: String {
@@ -638,6 +715,7 @@ struct OnboardingView: View {
                 .font(.title2)
                 .foregroundStyle(color)
                 .frame(width: 32)
+                .accessibilityHidden(true)
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(LocalizedStringKey(title))
@@ -651,6 +729,7 @@ struct OnboardingView: View {
             
             Spacer()
         }
+        .accessibilityElement(children: .combine)
     }
     
     private func privacyCard(icon: String, iconColor: Color, title: String, items: [String]) -> some View {
@@ -658,6 +737,7 @@ struct OnboardingView: View {
             HStack(spacing: 8) {
                 Image(systemName: icon)
                     .foregroundStyle(iconColor)
+                    .accessibilityHidden(true)
                 Text(LocalizedStringKey(title))
                     .font(.subheadline.bold())
                     .foregroundStyle(Color.adaptive(white: 0.2))
@@ -669,6 +749,7 @@ struct OnboardingView: View {
                         Circle()
                             .fill(iconColor.opacity(0.5))
                             .frame(width: 5, height: 5)
+                            .accessibilityHidden(true)
                         Text(LocalizedStringKey(item))
                             .font(.caption)
                             .foregroundStyle(Color.adaptive(white: 0.5))
@@ -680,6 +761,7 @@ struct OnboardingView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.adaptive(white: 0.96))
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .accessibilityElement(children: .combine)
     }
 
     private func recommendationCard(
@@ -691,6 +773,7 @@ struct OnboardingView: View {
                 Image(systemName: model.engine == .appleFoundation ? "sparkles.rectangle.stack.fill" : "iphone.gen3")
                     .font(.title3)
                     .foregroundStyle(model.engine == .appleFoundation ? .orange : .blue)
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(LocalizedStringKey(recommendation.title))
@@ -725,7 +808,12 @@ struct OnboardingView: View {
                     icon: model.engine == .appleFoundation ? "bolt.fill" : "lock.shield.fill",
                     title: model.engine == .appleFoundation ? String(localized: "Fastest start") : model.privacyLabel
                 )
-                if model.engine != .appleFoundation {
+                if model.engine == .appleFoundation {
+                    recommendationChip(
+                        icon: "hand.raised.fill",
+                        title: String(localized: "May use Apple processing")
+                    )
+                } else {
                     recommendationChip(
                         icon: model.currentDeviceFit.iconName,
                         title: model.currentDeviceFit.title
@@ -739,7 +827,7 @@ struct OnboardingView: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(Color.black.opacity(0.05), lineWidth: 1)
+                .stroke(Color.adaptiveBorder(opacity: 0.25), lineWidth: 1)
         )
     }
 
@@ -747,6 +835,7 @@ struct OnboardingView: View {
         HStack(spacing: 6) {
             Image(systemName: icon)
                 .font(.caption.weight(.semibold))
+                .accessibilityHidden(true)
             Text(LocalizedStringKey(title))
                 .font(.caption.weight(.medium))
         }
@@ -759,13 +848,36 @@ struct OnboardingView: View {
 
     private func applyRecommendedModel() {
         isApplyingRecommendation = true
-        _ = modelManager.applyOnboardingChoice(preferredModelID: customModelID)
+        guard let model = effectiveOnboardingModel else {
+            _ = modelManager.applyOnboardingChoice(preferredModelID: customModelID)
+            completeOnboarding()
+            return
+        }
+
+        if UserDefaults.standard.bool(forKey: consentKey(for: model)) {
+            finishOnboarding(with: model)
+        } else {
+            modelAwaitingConsent = model
+        }
+    }
+
+    private func consentKey(for model: ModelInfo) -> String {
+        "modelConsent.\(model.id)"
+    }
+
+    private func finishOnboarding(with model: ModelInfo) {
+        _ = modelManager.applyOnboardingChoice(preferredModelID: model.id)
+        completeOnboarding()
+    }
+
+    private func completeOnboarding() {
+        onComplete()
         isPresented = false
     }
 }
 
 #Preview {
-    OnboardingView(isPresented: .constant(true))
+    OnboardingView(isPresented: .constant(true), onComplete: {})
         .environment(LLMEngine())
         .environment(ModelManager())
         .environment(MonetizationManager())

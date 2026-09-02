@@ -7,7 +7,7 @@
 
 import Foundation
 
-enum ConversationExporter {
+nonisolated enum ConversationExporter {
 
     enum Format {
         case markdown

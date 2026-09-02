@@ -100,15 +100,26 @@ enum CodeTheme: String, CaseIterable, Identifiable {
 }
 
 struct SyntaxHighlighter {
-    static func plainText(_ code: String, theme: CodeTheme = .defaultTheme, textScale: Double = 1.0) -> AttributedString {
+    static func plainText(
+        _ code: String,
+        theme: CodeTheme = .defaultTheme,
+        textScale: Double = 1.0,
+        baseFontSize: CGFloat = 13
+    ) -> AttributedString {
         var attributed = AttributedString(code)
-        attributed.font = .monospacedSystemFont(ofSize: CGFloat(13 * textScale), weight: .regular)
+        attributed.font = .monospacedSystemFont(ofSize: baseFontSize * textScale, weight: .regular)
         attributed.foregroundColor = theme.foreground
         return attributed
     }
     
-    static func highlight(_ code: String, language: String?, theme: CodeTheme = .defaultTheme, textScale: Double = 1.0) -> AttributedString {
-        var attributed = plainText(code, theme: theme, textScale: textScale)
+    static func highlight(
+        _ code: String,
+        language: String?,
+        theme: CodeTheme = .defaultTheme,
+        textScale: Double = 1.0,
+        baseFontSize: CGFloat = 13
+    ) -> AttributedString {
+        var attributed = plainText(code, theme: theme, textScale: textScale, baseFontSize: baseFontSize)
         
         guard let language = language?.lowercased() else { return attributed }
         

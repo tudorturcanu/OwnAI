@@ -110,6 +110,7 @@ struct DocumentSourceDrawerView: View {
                     } label: {
                         Label(String(localized: "Copy All"), systemImage: "doc.on.doc")
                     }
+                    .disabled(document.content.isEmpty)
                 }
             }
         }
@@ -350,6 +351,8 @@ struct DocumentSourceDrawerView: View {
 
     private func copyToClipboard(_ string: String) {
         UIPasteboard.general.string = string
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        UIAccessibility.post(notification: .announcement, argument: String(localized: "Copied"))
     }
 }
 
@@ -391,11 +394,16 @@ private struct DocumentSourceTextView: View {
 
         let paragraphs = cleanedText.components(separatedBy: "\n\n")
 
+        let hyphenatedRegex = try? NSRegularExpression(
+            pattern: "(\\p{L})-\\s*\\n\\s*(\\p{L})",
+            options: []
+        )
+        let newlineRegex = try? NSRegularExpression(
+            pattern: "\\s*\\n\\s*",
+            options: []
+        )
+
         let processedParagraphs = paragraphs.map { paragraph -> String in
-            let hyphenatedRegex = try? NSRegularExpression(
-                pattern: "(\\p{L})-\\s*\\n\\s*(\\p{L})",
-                options: []
-            )
             let paragraphWithNoHyphens = hyphenatedRegex?.stringByReplacingMatches(
                 in: paragraph,
                 options: [],
@@ -403,10 +411,6 @@ private struct DocumentSourceTextView: View {
                 withTemplate: "$1$2"
             ) ?? paragraph
 
-            let newlineRegex = try? NSRegularExpression(
-                pattern: "\\s*\\n\\s*",
-                options: []
-            )
             let reflowedParagraph = newlineRegex?.stringByReplacingMatches(
                 in: paragraphWithNoHyphens,
                 options: [],
@@ -471,6 +475,11 @@ private struct DocumentSourceTextView: View {
 
                     Button {
                         UIPasteboard.general.string = displayText
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        UIAccessibility.post(
+                            notification: .announcement,
+                            argument: String(localized: "Copied")
+                        )
                     } label: {
                         Label(String(localized: "Copy All"), systemImage: "doc.on.doc")
                     }

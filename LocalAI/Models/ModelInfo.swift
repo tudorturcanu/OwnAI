@@ -22,8 +22,10 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
     case muse
     case nemotron
     case miniCPM
+    case mistral
     case phi
     case smol
+    case imported
 
     var id: String { rawValue }
 
@@ -55,10 +57,14 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return String(localized: "Nemotron")
         case .miniCPM:
             return String(localized: "MiniCPM")
+        case .mistral:
+            return String(localized: "Mistral")
         case .phi:
             return String(localized: "Phi")
         case .smol:
             return String(localized: "Smol")
+        case .imported:
+            return String(localized: "Your Models")
         }
     }
 
@@ -90,10 +96,14 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return String(localized: "NVIDIA's efficient hybrid models")
         case .miniCPM:
             return String(localized: "OpenBMB's compact on-device models")
+        case .mistral:
+            return String(localized: "Mistral AI's coding and multimodal models")
         case .phi:
             return String(localized: "Microsoft's efficient reasoning models")
         case .smol:
             return String(localized: "Hugging Face's compact models")
+        case .imported:
+            return String(localized: "Models you imported from Files")
         }
     }
 
@@ -125,10 +135,14 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "square.stack.3d.up.fill"
         case .miniCPM:
             return "cpu"
+        case .mistral:
+            return "terminal.fill"
         case .phi:
             return "function"
         case .smol:
             return "smallcircle.filled.circle"
+        case .imported:
+            return "square.and.arrow.down.on.square"
         }
     }
 
@@ -160,10 +174,14 @@ enum ModelFamily: String, CaseIterable, Identifiable, Equatable {
             return "ModelLogoNvidia"
         case .miniCPM:
             return nil
+        case .mistral:
+            return nil
         case .phi:
             return "ModelLogoMicrosoft"
         case .smol:
             return "ModelLogoHuggingFace"
+        case .imported:
+            return nil
         }
     }
 }
@@ -220,6 +238,7 @@ enum ModelBadge: Equatable, Hashable {
     case higherQuality
     case newerDevices
     case vision
+    case ocr
 
     var title: String {
         switch self {
@@ -253,6 +272,8 @@ enum ModelBadge: Equatable, Hashable {
             return String(localized: "Newer Devices")
         case .vision:
             return String(localized: "Vision")
+        case .ocr:
+            return String(localized: "OCR")
         }
     }
 
@@ -288,6 +309,8 @@ enum ModelBadge: Equatable, Hashable {
             return "iphone.gen3"
         case .vision:
             return "eye"
+        case .ocr:
+            return "doc.text.viewfinder"
         }
     }
 
@@ -463,6 +486,9 @@ struct ModelInfo: Identifiable, Equatable {
         if lowercasedID.contains("minicpm") {
             return "OpenBMB (MiniCPM)"
         }
+        if lowercasedID.contains("devstral") || lowercasedID.contains("mistral") {
+            return "Mistral AI"
+        }
         if lowercasedID.contains("tinyllama") {
             return "TinyLlama Project"
         }
@@ -484,7 +510,14 @@ struct ModelInfo: Identifiable, Equatable {
     static func supportsThinkingToggle(modelID: String) -> Bool {
         if optionalReasoningPrefixMLXModelIDs.contains(modelID) { return true }
         let lowercasedID = modelID.lowercased()
-        return lowercasedID.contains("qwen3") || lowercasedID.contains("gemma-4") || lowercasedID.contains("bonsai")
+        if lowercasedID.contains("qwen3") || lowercasedID.contains("gemma-4") || lowercasedID.contains("bonsai") {
+            return true
+        }
+        // An imported ID is `imported/<UUID>` — hex, so the name matching above
+        // can never fire for one. Without this an imported reasoning model gets
+        // no toggle at all, and the user can never turn thinking back on.
+        guard modelID.hasPrefix(ImportedModelRecord.idPrefix) else { return false }
+        return ImportedModelStore.shared.supportsThinking(modelID)
     }
 
     var supportsThinkingToggle: Bool {
@@ -522,12 +555,28 @@ struct ModelInfo: Identifiable, Equatable {
         isAppleFoundation ? "May use Apple processing" : "Fully on-device"
     }
 
-    /// Set of MLX model IDs that support vision (VLM models).
-    static let vlmMLXModelIDs: Set<String> = [
+    /// True when this model must load through `VLMModelFactory` rather than the
+    /// text path. Imported models are consulted at runtime: which factory loads
+    /// a checkpoint has to follow the checkpoint, not the shipping catalog.
+    ///
+    /// Ordered so the overwhelmingly common case is one hash lookup against a
+    /// static set. This is called once per file during artifact validation and
+    /// once per row while rendering model lists, and reaching the imported-model
+    /// store means taking a lock — so only an `imported/` ID pays for it.
+    static func isVisionModel(_ modelID: String) -> Bool {
+        if curatedVLMMLXModelIDs.contains(modelID) { return true }
+        guard modelID.hasPrefix(ImportedModelRecord.idPrefix) else { return false }
+        return ImportedModelStore.shared.isVisionModel(modelID)
+    }
+
+    private static let curatedVLMMLXModelIDs: Set<String> = [
         "mlx-community/Qwen2-VL-2B-Instruct-4bit",
         "mlx-community/Qwen2.5-VL-3B-Instruct-3bit",
         "mlx-community/Qwen2.5-VL-7B-Instruct-4bit",
+        "mlx-community/Qwen3-VL-2B-Instruct-4bit",
+        "mlx-community/Qwen3-VL-4B-Instruct-4bit",
         "LiquidAI/LFM2.5-VL-450M-MLX-6bit",
+        "LiquidAI/LFM2.5-VL-3B-MLX-4bit",
         "mlx-community/gemma-4-e2b-it-4bit",
         "mlx-community/gemma-4-e4b-it-4bit",
         "mlx-community/gemma-4-26b-a4b-it-4bit",
@@ -537,11 +586,14 @@ struct ModelInfo: Identifiable, Equatable {
         "mlx-community/SmolVLM2-2.2B-Instruct-mlx",
         "Hcompany/Holo-3.1-0.8B",
         "Hcompany/Holo-3.1-4B",
-        "mlx-community/Muse-Glimmer-30B-4bit"
+        "mlx-community/Muse-Glimmer-30B-4bit",
+        "mlx-community/GLM-OCR-4bit",
+        "mlx-community/Qwen3.8-27B-4bit",
+        "mlx-community/mistralai_Devstral-Small-2-24B-Instruct-2512-MLX-4Bit"
     ]
 
     var supportsVision: Bool {
-        engine == .appleFoundation || ModelInfo.vlmMLXModelIDs.contains(id)
+        engine == .appleFoundation || ModelInfo.isVisionModel(id)
     }
 
     /// MLX models whose chat template pre-fills an opening `<think>` into the
@@ -558,6 +610,8 @@ struct ModelInfo: Identifiable, Equatable {
         "mlx-community/Qwen3.5-2B-OptiQ-4bit",
         "mlx-community/Qwen3.5-4B-OptiQ-4bit",
         "mlx-community/Qwen3.5-9B-OptiQ-4bit",
+        "mlx-community/Qwen3.8-27B-4bit",
+        "mlx-community/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-4bit",
         "catalystsec/GLM-5.1-4bit",
         "Hcompany/Holo-3.1-0.8B",
         "Hcompany/Holo-3.1-4B"
@@ -589,9 +643,61 @@ struct ModelInfo: Identifiable, Equatable {
         ModelInfo.bundledMLXModelIDs.contains(id)
     }
 
-    /// Whether this model is experimental and should only be shown on macOS.
-    var isMacExperimental: Bool {
-        id == "catalystsec/GLM-5.1-4bit"
+    /// A model the user brought in from Files. It has no publisher terms, no
+    /// health history and no measured memory profile, so the paths that assume
+    /// a curated checkpoint (auto routing, recovery, the release gate) treat it
+    /// differently.
+    var isImported: Bool {
+        id.hasPrefix(ImportedModelRecord.idPrefix)
+    }
+
+    /// Catalog entry for an imported checkpoint. Starts `.notDownloaded` like
+    /// every other MLX entry; `ModelManager.checkAvailability` promotes it once
+    /// the artifacts on disk have actually been validated.
+    static func imported(_ record: ImportedModelRecord) -> ModelInfo {
+        var badges: [ModelBadge] = [.fullyOnDevice]
+        if record.supportsVision {
+            badges.append(.vision)
+            badges.append(.images)
+        }
+        if record.supportsThinking {
+            badges.append(.reasoning)
+        }
+        return ModelInfo(
+            id: record.id,
+            name: record.displayName,
+            description: String(localized: "A model you imported from Files. It runs fully on-device like any other local model, but Own AI has not tested it."),
+            family: .imported,
+            sizeGB: record.sizeGB,
+            engine: .mlx,
+            termsURL: nil,
+            privacyURL: nil,
+            shortDescription: String(localized: "Imported by you."),
+            recommendedFor: String(localized: "Available whenever you pick it by hand."),
+            badges: badges,
+            downloadState: .notDownloaded
+        )
+    }
+
+    /// Models whose weight footprint or workload is intended for Apple-silicon
+    /// Macs rather than iPhone/iPad. Memory compatibility is still evaluated
+    /// separately; being Mac-only must never bypass the RAM safety gate.
+    var isMacOnly: Bool {
+        Self.macOnlyMLXModelIDs.contains(id)
+    }
+
+    private static let macOnlyMLXModelIDs: Set<String> = [
+        "catalystsec/GLM-5.1-4bit",
+        "mlx-community/Qwen3-Coder-Next-4bit",
+        "mlx-community/Qwen3.8-27B-4bit",
+        "mlx-community/mistralai_Devstral-Small-2-24B-Instruct-2512-MLX-4Bit",
+        "mlx-community/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-4bit",
+        "mlx-community/Muse-Glimmer-30B-4bit"
+    ]
+
+    /// OCR-only checkpoints are not general chat models and require pixels.
+    var requiresImageInput: Bool {
+        id == "mlx-community/GLM-OCR-4bit"
     }
 
     var isTranslateGemma: Bool {
@@ -605,7 +711,19 @@ struct ModelInfo: Identifiable, Equatable {
         if isBundled {
             return String(localized: "Included")
         }
+        // Catalog models are all comfortably above a gigabyte, but an imported
+        // one can be any size — and "0.0 GB" is not a size.
+        if isImported {
+            return ByteCountFormatter.string(fromByteCount: Int64(sizeGB * 1_073_741_824), countStyle: .file)
+        }
         return String(format: "%.1f GB", sizeGB)
+    }
+
+    /// Where the model came from, for the "<source> • <size>" subtitle. An
+    /// imported model's family is the catch-all "Your Models", which just
+    /// repeats the section it is listed under.
+    var sourceLabel: String {
+        isImported ? String(localized: "Imported") : family.title
     }
 }
 
@@ -867,6 +985,22 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// LFM2.5 VL 3B MLX (4-bit)
+    static let lfm25_vl_3b_4bit = ModelInfo(
+        id: "LiquidAI/LFM2.5-VL-3B-MLX-4bit",
+        name: "LFM 2.5 VL 3B",
+        description: "Liquid AI's strongest compact LFM 2.5 vision model, tuned for screenshots, visual grounding, multi-image understanding, OCR, and tool-aware image tasks on newer Apple devices.",
+        family: .lfm,
+        sizeGB: 2.38,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/LiquidAI/LFM2.5-VL-3B"),
+        privacyURL: nil,
+        shortDescription: "Strong compact vision model for screenshots and documents.",
+        recommendedFor: "Best when screen understanding and visual grounding matter on a newer iPhone or iPad.",
+        badges: [.images, .vision, .ocr, .higherQuality, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// Holo 3.1 0.8B VLM
     static let holo31_0_8b = ModelInfo(
         id: "Hcompany/Holo-3.1-0.8B",
@@ -937,7 +1071,7 @@ extension ModelInfo {
         name: "Qwen3.5 0.8B OptiQ",
         description: "A compact Qwen3.5 model using OptiQ mixed-precision MLX quantization for stronger quality than tiny models while staying iPhone-friendly.",
         family: .qwen,
-        sizeGB: 0.83,
+        sizeGB: 0.89,
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/mlx-community/Qwen3.5-0.8B-OptiQ-4bit"),
         privacyURL: nil,
@@ -953,7 +1087,7 @@ extension ModelInfo {
         name: "Qwen3.5 2B OptiQ",
         description: "A newer Qwen3.5 model using OptiQ mixed-precision MLX quantization, giving stronger instruction following and multilingual output while staying practical for modern iPhones.",
         family: .qwen,
-        sizeGB: 1.43,
+        sizeGB: 2.26,
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/mlx-community/Qwen3.5-2B-OptiQ-4bit"),
         privacyURL: nil,
@@ -969,7 +1103,7 @@ extension ModelInfo {
         name: "Qwen3.5 4B OptiQ",
         description: "A stronger Qwen3.5 text model with OptiQ mixed-precision MLX quantization, tuned for high-quality multilingual chat, coding, and reasoning on newer Apple devices.",
         family: .qwen,
-        sizeGB: 3.27,
+        sizeGB: 4.04,
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/mlx-community/Qwen3.5-4B-OptiQ-4bit"),
         privacyURL: nil,
@@ -1385,7 +1519,7 @@ extension ModelInfo {
         name: "Qwen3.5 9B OptiQ",
         description: "A high-end Qwen3.5 text model with OptiQ mixed-precision MLX quantization for stronger reasoning, coding, and multilingual responses on iPad Pro and Mac-class devices.",
         family: .qwen,
-        sizeGB: 6.04,
+        sizeGB: 8.22,
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/mlx-community/Qwen3.5-9B-OptiQ-4bit"),
         privacyURL: nil,
@@ -1507,6 +1641,22 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// GLM-OCR (4-bit MLX)
+    static let glmOCR_4bit = ModelInfo(
+        id: "mlx-community/GLM-OCR-4bit",
+        name: "GLM OCR",
+        description: "Z.ai's compact document-recognition model for extracting text, formulas, and tables from images. It is specialized for OCR and requires an image input.",
+        family: .glm,
+        sizeGB: 1.25,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/zai-org/GLM-OCR"),
+        privacyURL: nil,
+        shortDescription: "Dedicated local OCR for complex document images.",
+        recommendedFor: "Best as the Enhanced OCR backend for scans, tables, formulas, and difficult layouts.",
+        badges: [.images, .vision, .ocr, .smallDownload, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// Qwen2-VL 2B Instruct — multimodal vision-language model (4-bit MLX)
     static let qwen2VL_2b_4bit = ModelInfo(
         id: "mlx-community/Qwen2-VL-2B-Instruct-4bit",
@@ -1555,13 +1705,45 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Qwen3-VL 2B Instruct (4-bit MLX)
+    static let qwen3VL_2b_4bit = ModelInfo(
+        id: "mlx-community/Qwen3-VL-2B-Instruct-4bit",
+        name: "Qwen3 VL 2B",
+        description: "Alibaba's current compact vision-language model with upgraded image understanding, multilingual OCR, spatial reasoning, and document parsing in an iPhone-friendly footprint.",
+        family: .qwen,
+        sizeGB: 1.79,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct"),
+        privacyURL: nil,
+        shortDescription: "Current compact Qwen vision model for images and OCR.",
+        recommendedFor: "Best general-purpose local vision model when size and speed both matter.",
+        badges: [.recommended, .images, .vision, .ocr, .multilingual, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Qwen3-VL 4B Instruct (4-bit MLX)
+    static let qwen3VL_4b_4bit = ModelInfo(
+        id: "mlx-community/Qwen3-VL-4B-Instruct-4bit",
+        name: "Qwen3 VL 4B",
+        description: "Alibaba's higher-quality compact Qwen3 vision-language model for detailed images, screenshots, charts, multilingual OCR, document structure, spatial reasoning, and visual coding.",
+        family: .qwen,
+        sizeGB: 3.11,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct"),
+        privacyURL: nil,
+        shortDescription: "Premium compact Qwen vision and document model.",
+        recommendedFor: "Best for higher-quality image and document understanding on newer devices.",
+        badges: [.images, .vision, .ocr, .higherQuality, .multilingual, .reasoning, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// Qwen3-Coder-Next (4-bit MLX)
     static let qwen3_coder_next_4bit = ModelInfo(
         id: "mlx-community/Qwen3-Coder-Next-4bit",
         name: "Qwen3 Coder Next",
         description: "Alibaba's specialized Mixture-of-Experts coding model. Runs fast while delivering high-quality programming assistance and technical logic.",
         family: .qwen,
-        sizeGB: 2.30,
+        sizeGB: 44.86,
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/Qwen/Qwen3-Coder-Next"),
         privacyURL: nil,
@@ -1577,13 +1759,61 @@ extension ModelInfo {
         name: "Muse Glimmer 30B",
         description: "Meta's multimodal agentic model for long-horizon reasoning, coding, tool use, and image understanding on high-memory Apple Silicon Macs.",
         family: .muse,
-        sizeGB: 21.38,
+        sizeGB: 19.44,
         engine: .mlx,
         termsURL: URL(string: "https://huggingface.co/meta-models/Muse-Glimmer-30B"),
         privacyURL: nil,
         shortDescription: "High-end multimodal agent for demanding local workflows.",
         recommendedFor: "Best for coding, complex reasoning, and image-aware agentic work on Macs with at least 32 GB of unified memory.",
         badges: [.images, .vision, .bestForCoding, .reasoning, .multilingual, .higherQuality, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Qwen3.8 27B (4-bit MLX)
+    static let qwen38_27b_4bit = ModelInfo(
+        id: "mlx-community/Qwen3.8-27B-4bit",
+        name: "Qwen3.8 27B",
+        description: "Alibaba's high-end dense multimodal model for coding, professional work, long-horizon agentic tasks, configurable reasoning, and native image and video understanding on high-memory Macs.",
+        family: .qwen,
+        sizeGB: 16.08,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen3.8-27B"),
+        privacyURL: nil,
+        shortDescription: "High-end multimodal reasoning and coding model for Mac.",
+        recommendedFor: "Best for demanding coding, research, and image-aware work on Macs with at least 64 GB of unified memory.",
+        badges: [.images, .vision, .bestForCoding, .reasoning, .multilingual, .higherQuality, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Devstral Small 2 24B Instruct (4-bit MLX)
+    static let devstralSmall2_24b_4bit = ModelInfo(
+        id: "mlx-community/mistralai_Devstral-Small-2-24B-Instruct-2512-MLX-4Bit",
+        name: "Devstral Small 2 24B",
+        description: "Mistral AI's agentic software-engineering model for exploring repositories, editing multiple files, following technical instructions, and understanding image inputs on high-memory Macs.",
+        family: .mistral,
+        sizeGB: 15.14,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mistralai/Devstral-Small-2-24B-Instruct-2512"),
+        privacyURL: nil,
+        shortDescription: "Repository-scale coding specialist for high-memory Macs.",
+        recommendedFor: "Best for software-engineering conversations and codebase work on Macs with at least 64 GB of unified memory.",
+        badges: [.images, .vision, .bestForCoding, .higherQuality, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// NVIDIA Nemotron 3.5 Lightning 30B-A3B (4-bit MLX)
+    static let nemotron35_lightning_30b_a3b_4bit = ModelInfo(
+        id: "mlx-community/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-4bit",
+        name: "Nemotron 3.5 Lightning 30B",
+        description: "NVIDIA's efficient hybrid Mamba-2 mixture-of-experts model with 3B active parameters, configurable reasoning, multilingual support, and long-context capabilities for high-memory Macs.",
+        family: .nemotron,
+        sizeGB: 17.79,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16"),
+        privacyURL: nil,
+        shortDescription: "Fast high-end hybrid reasoning model for Mac.",
+        recommendedFor: "Best for efficient long-context reasoning on Macs with at least 64 GB of unified memory.",
+        badges: [.bestForCoding, .reasoning, .multilingual, .higherQuality, .fullyOnDevice],
         downloadState: .notDownloaded
     )
 
@@ -1610,10 +1840,14 @@ extension ModelInfo {
         .smolVLM2_256m_4bit,
         .smolVLM2_500m_4bit,
         .holo31_0_8b,
+        .glmOCR_4bit,
         .smolVLM2_2_2b_4bit,
         .qwen2VL_2b_4bit,
+        .qwen3VL_2b_4bit,
         .lfm25_vl_1_6b_4bit,
+        .lfm25_vl_3b_4bit,
         .qwen25VL_3b_3bit,
+        .qwen3VL_4b_4bit,
         .qwen25VL_7b_4bit,
         // Mid-range (1.7–4 GB)
         .gemma3n_e2b_it_lm_4bit,
@@ -1630,7 +1864,6 @@ extension ModelInfo {
         .qwen35_4b_optiq_4bit,
         .qwen25_3b_instruct_4bit,
         .qwen25_coder_7b_4bit,
-        .qwen3_coder_next_4bit,
         .llama32_3b_4bit,
         .nemotron3_nano_4b_optiq_4bit,
         .phi3_mini_128k_4bit,
@@ -1646,13 +1879,17 @@ extension ModelInfo {
         .deepseek_r1_distill_qwen_14b_4bit,
         .lfm25_8b_a1b_4bit,
         .glm51_4bit,
+        .qwen3_coder_next_4bit,
         .qwen25_7b_instruct_4bit,
         .llama31_8b_4bit,
         .qwen3_8b_4bit,
         .qwen35_9b_optiq_4bit,
         .gemma4_e4b_it_4bit,
         .holo31_4b,
-        .muse_glimmer_30b_4bit
+        .muse_glimmer_30b_4bit,
+        .qwen38_27b_4bit,
+        .devstralSmall2_24b_4bit,
+        .nemotron35_lightning_30b_a3b_4bit
     ]
 
     /// Definitions retained for compatibility and real-device readiness work.

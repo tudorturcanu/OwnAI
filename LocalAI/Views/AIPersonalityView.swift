@@ -48,6 +48,7 @@ struct AIPersonalityView: View {
     @State private var promptSaveErrorMessage: String?
     @State private var savedPromptsUpgradeFeature: PremiumFeature?
     @State private var hasLoadedDrafts = false
+    @State private var presetPendingDeletion: UserPersonalityPreset?
 
     private var promptStore: SavedPromptStore { SavedPromptStore.shared }
 
@@ -102,7 +103,9 @@ struct AIPersonalityView: View {
         abs(draftTemperature - storedTemperature) > 0.0001 ||
         abs(draftTopP - storedTopP) > 0.0001 ||
         draftMaxTokens != storedMaxTokens ||
-        draftResponseCharacterLimit != storedResponseCharacterLimit
+        draftResponseCharacterLimit != storedResponseCharacterLimit ||
+        draftVoice != speechManager.speechOutputBackend.rawValue ||
+        abs(draftSpeechRate - speechManager.speechRate) > 0.0001
     }
 
     private var draftPromptIsEmpty: Bool {
@@ -132,7 +135,11 @@ struct AIPersonalityView: View {
                 .environment(monetizationManager)
         }
         .sheet(item: $savedPromptsUpgradeFeature) { feature in
-            UpgradeView(feature: feature)
+            UpgradeView(feature: feature) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    savePromptToLibrary()
+                }
+            }
                 .environment(monetizationManager)
         }
         .alert(String(localized: "Save to Prompt Library"), isPresented: $isSavePromptAlertPresented) {
@@ -220,6 +227,29 @@ struct AIPersonalityView: View {
         }
         .sheet(isPresented: shareSheetPresentedBinding, onDismiss: { sharePayload = nil }) {
             ShareSheet(items: [sharePayload ?? ""])
+        }
+        .confirmationDialog(
+            String(localized: "Delete Preset?"),
+            isPresented: Binding(
+                get: { presetPendingDeletion != nil },
+                set: { if !$0 { presetPendingDeletion = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: presetPendingDeletion
+        ) { preset in
+            Button(String(localized: "Delete"), role: .destructive) {
+                deleteUserPreset(id: preset.id)
+                presetPendingDeletion = nil
+            }
+            Button(String(localized: "Cancel"), role: .cancel) { presetPendingDeletion = nil }
+        } message: { preset in
+            Text(String(
+                format: String(
+                    localized: "“%@” will be removed. Settings already applied to chats stay as they are.",
+                    defaultValue: "“%@” will be removed. Settings already applied to chats stay as they are."
+                ),
+                preset.name
+            ))
         }
         .onAppear(perform: syncInitialDraftsFromStorage)
         .onChange(of: storedSystemPrompt) { syncDraftsFromStorage() }
@@ -454,7 +484,7 @@ struct AIPersonalityView: View {
             }
 
             Button(role: .destructive) {
-                deleteUserPreset(id: preset.id)
+                presetPendingDeletion = preset
             } label: {
                 Text(String(localized: "Delete"))
             }
@@ -484,10 +514,21 @@ struct AIPersonalityView: View {
                 TextEditor(text: $draftSystemPrompt)
                     .font(.body)
                     .foregroundStyle(.primary)
-                    .frame(minHeight: 170)
+                    .frame(minHeight: 170, maxHeight: 260)
                     .padding(12)
                     .scrollContentBackground(.hidden)
                     .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+                    .overlay(alignment: .topLeading) {
+                        if draftPromptIsEmpty {
+                            Text(String(localized: "Describe how the assistant should behave. Changes can't be applied while this is empty."))
+                                .font(.body)
+                                .foregroundStyle(.tertiary)
+                                .padding(.horizontal, 17)
+                                .padding(.top, 20)
+                                .allowsHitTesting(false)
+                                .accessibilityHidden(true)
+                        }
+                    }
                     .overlay {
                         RoundedRectangle(cornerRadius: 14)
                             .stroke(Color.primary.opacity(0.08), lineWidth: 1)
@@ -1057,7 +1098,7 @@ struct AIPersonalityView: View {
     private var lockedOverlay: some View {
         RoundedRectangle(cornerRadius: cardCornerRadius)
             .fill(.ultraThinMaterial)
-            .overlay {
+            .overlay(alignment: .top) {
                 VStack(spacing: 10) {
                     Image(systemName: "crown.fill")
                         .font(.title3)

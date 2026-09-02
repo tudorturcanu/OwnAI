@@ -2,6 +2,8 @@ import SwiftUI
 
 struct ThinkingBubble: View {
     @State private var animationStep = 0
+    @State private var timer: Timer?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     
     var body: some View {
         HStack(alignment: .bottom, spacing: 8) {
@@ -39,20 +41,26 @@ struct ThinkingBubble: View {
         }
         .padding(.trailing, 60)
         .transition(.opacity.combined(with: .move(edge: .bottom)))
-        .onAppear {
-            withAnimation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true)) {
-                // We'll use a timer instead for discrete steps
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(localized: "Thinking"))
+        .onAppear { startTimer() }
+        .onDisappear { stopTimer() }
+    }
+
+    private func startTimer() {
+        guard timer == nil, !reduceMotion else { return }
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+            Task { @MainActor in
+                withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
+                    animationStep = (animationStep + 1) % 3
+                }
             }
-            startTimer()
         }
     }
-    
-    private func startTimer() {
-        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
-            withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-                animationStep = (animationStep + 1) % 3
-            }
-        }
+
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
     }
 }
 

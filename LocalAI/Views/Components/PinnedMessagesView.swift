@@ -97,12 +97,14 @@ struct PinnedMessagesView: View {
                     UIPasteboard.general.string = message.content
                     let generator = UIImpactFeedbackGenerator(style: .light)
                     generator.impactOccurred()
+                    UIAccessibility.post(notification: .announcement, argument: String(localized: "Copied"))
                 } label: {
                     Label(String(localized: "Copy"), systemImage: "doc.on.doc")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(Color.adaptive(white: 0.45))
                 }
                 .buttonStyle(.plain)
+                .frame(minHeight: 44)
 
                 Button {
                     historyManager.selectConversation(conversation.id)
@@ -113,6 +115,7 @@ struct PinnedMessagesView: View {
                         .foregroundStyle(.blue)
                 }
                 .buttonStyle(.plain)
+                .frame(minHeight: 44)
 
                 Spacer()
 
@@ -126,6 +129,7 @@ struct PinnedMessagesView: View {
                         .foregroundStyle(.red)
                 }
                 .buttonStyle(.plain)
+                .frame(minHeight: 44)
             }
             .padding(.top, 4)
         }

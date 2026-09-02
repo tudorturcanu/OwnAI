@@ -6,6 +6,9 @@ struct ChatSuggestion: Identifiable {
     let title: String
     let subtitle: String
     let prompt: String
+    /// Templates that need the user's own content should populate the composer
+    /// instead of spending a message on an incomplete request.
+    var requiresInput = false
 }
 
 enum ChatSuggestions {
@@ -19,7 +22,7 @@ enum ChatSuggestions {
         ChatSuggestion(icon: "book.fill", title: String(localized: "Discover"), subtitle: String(localized: "my next book"), prompt: String(localized: "Help me discover my next book")),
         ChatSuggestion(icon: "map.fill", title: String(localized: "Plan"), subtitle: String(localized: "my weekend trip"), prompt: String(localized: "Help me plan a relaxing weekend trip")),
         ChatSuggestion(icon: "bolt.fill", title: String(localized: "Boost"), subtitle: String(localized: "my productivity"), prompt: String(localized: "How can I boost my productivity?")),
-        ChatSuggestion(icon: "ladybug.fill", title: String(localized: "Debug"), subtitle: String(localized: "my code snippet"), prompt: String(localized: "Help me debug this Swift code snippet:\n")),
+        ChatSuggestion(icon: "ladybug.fill", title: String(localized: "Debug"), subtitle: String(localized: "my code snippet"), prompt: String(localized: "Help me debug this Swift code snippet:\n"), requiresInput: true),
         ChatSuggestion(icon: "brain.head.profile", title: String(localized: "Quiz"), subtitle: String(localized: "me on trivia"), prompt: String(localized: "Quiz me on random trivia, one question at a time")),
         ChatSuggestion(icon: "fork.knife", title: String(localized: "Suggest"), subtitle: String(localized: "a recipe idea"), prompt: String(localized: "Suggest a quick and healthy dinner recipe")),
         ChatSuggestion(icon: "figure.strengthtraining.traditional", title: String(localized: "Build"), subtitle: String(localized: "a workout plan"), prompt: String(localized: "Build me a simple weekly workout plan")),
@@ -49,7 +52,7 @@ enum ChatSuggestions {
         ChatSuggestion(icon: "house.fill", title: String(localized: "Suggest"), subtitle: String(localized: "home organization tips"), prompt: String(localized: "Suggest ways to organize a small living space")),
         ChatSuggestion(icon: "cloud.sun.fill", title: String(localized: "Explain"), subtitle: String(localized: "a science phenomenon"), prompt: String(localized: "Explain why the sky is blue")),
         ChatSuggestion(icon: "hands.sparkles.fill", title: String(localized: "Guide"), subtitle: String(localized: "a short meditation"), prompt: String(localized: "Guide me through a short breathing meditation")),
-        ChatSuggestion(icon: "text.badge.checkmark", title: String(localized: "Proofread"), subtitle: String(localized: "my writing"), prompt: String(localized: "Proofread and improve this paragraph:\n")),
-        ChatSuggestion(icon: "curlybraces", title: String(localized: "Convert"), subtitle: String(localized: "code between languages"), prompt: String(localized: "Convert this code snippet to Python:\n")),
+        ChatSuggestion(icon: "text.badge.checkmark", title: String(localized: "Proofread"), subtitle: String(localized: "my writing"), prompt: String(localized: "Proofread and improve this paragraph:\n"), requiresInput: true),
+        ChatSuggestion(icon: "curlybraces", title: String(localized: "Convert"), subtitle: String(localized: "code between languages"), prompt: String(localized: "Convert this code snippet to Python:\n"), requiresInput: true),
     ]
 }

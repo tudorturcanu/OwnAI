@@ -13,7 +13,7 @@ import Foundation
 /// Matching is case- and diacritic-insensitive and requires every query token to
 /// appear in the same message (or in the conversation title), so a multi-word
 /// query such as "tax invoice" filters instead of demanding an exact substring.
-enum ConversationSearchEngine {
+nonisolated enum ConversationSearchEngine {
 
     struct Hit: Identifiable, Sendable, Equatable {
         let conversationID: UUID
@@ -81,7 +81,7 @@ enum ConversationSearchEngine {
         var firstMatch: ChatMessage?
         for message in conversation.messages where containsAllTokens(message.content, tokens: tokens) {
             matchCount += 1
-            if firstMatch == nil { firstMatch = message }
+            if case .none = firstMatch { firstMatch = message }
         }
 
         guard titleMatched || matchCount > 0 else { return nil }
@@ -89,9 +89,16 @@ enum ConversationSearchEngine {
         // A title-only match still deserves a preview, so fall back to the last
         // message the way an unfiltered row would show it.
         let previewMessage = firstMatch ?? conversation.messages.last
+        let snippetTokens: [String]
+        switch firstMatch {
+        case .some:
+            snippetTokens = tokens
+        case .none:
+            snippetTokens = []
+        }
         let excerpt = snippet(
             for: previewMessage?.content ?? "",
-            tokens: firstMatch == nil ? [] : tokens
+            tokens: snippetTokens
         )
 
         return Hit(

@@ -10,6 +10,7 @@ import StoreKit
 import SwiftUI
 
 enum PremiumFeature: String, CaseIterable, Identifiable {
+    case unlimitedMessages
     case allModels
     case advancedPersonality
     case unlimitedDocuments
@@ -18,11 +19,14 @@ enum PremiumFeature: String, CaseIterable, Identifiable {
     case savedPrompts
     case conversationExport
     case chatFolders
+    case importedModels
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
+        case .unlimitedMessages:
+            return String(localized: "Unlimited Messages")
         case .allModels:
             return String(localized: "All Models")
         case .advancedPersonality:
@@ -39,11 +43,15 @@ enum PremiumFeature: String, CaseIterable, Identifiable {
             return String(localized: "Conversation Export")
         case .chatFolders:
             return String(localized: "Chat Folders")
+        case .importedModels:
+            return String(localized: "Import Your Own Models")
         }
     }
 
     var subtitle: String {
         switch self {
+        case .unlimitedMessages:
+            return String(localized: "Keep chatting without the daily free-message limit.")
         case .allModels:
             return String(localized: "Unlock the full local model catalog, including higher-quality and specialty models.")
         case .advancedPersonality:
@@ -60,11 +68,15 @@ enum PremiumFeature: String, CaseIterable, Identifiable {
             return String(localized: "Export any chat as Markdown or plain text and share it anywhere.")
         case .chatFolders:
             return String(localized: "Organize conversations into named folders to keep your chats tidy.")
+        case .importedModels:
+            return String(localized: "Bring your own MLX model from Files and run it on-device alongside the built-in catalog.")
         }
     }
 
     var iconName: String {
         switch self {
+        case .unlimitedMessages:
+            return "message.badge.fill"
         case .allModels:
             return "square.stack.3d.up.fill"
         case .advancedPersonality:
@@ -81,6 +93,8 @@ enum PremiumFeature: String, CaseIterable, Identifiable {
             return "square.and.arrow.up.fill"
         case .chatFolders:
             return "folder.fill"
+        case .importedModels:
+            return "square.and.arrow.down.on.square.fill"
         }
     }
 }
@@ -237,13 +251,17 @@ final class MonetizationManager {
     }
 
     func isPremiumModel(_ model: ModelInfo) -> Bool {
-        !Self.freeModelIDs.contains(model.id)
+        // Stated rather than left to the freeModelIDs fallback: importing your
+        // own model is a Pro capability, and that should be a decision in the
+        // code rather than a side effect of an ID not being on a list.
+        if model.isImported { return true }
+        return !Self.freeModelIDs.contains(model.id)
     }
 
     func canUse(_ feature: PremiumFeature) -> Bool {
         switch feature {
-        case .allModels, .advancedPersonality, .unlimitedDocuments, .voiceMode, .imageInput,
-             .savedPrompts, .conversationExport, .chatFolders:
+        case .unlimitedMessages, .allModels, .advancedPersonality, .unlimitedDocuments, .voiceMode, .imageInput,
+             .savedPrompts, .conversationExport, .chatFolders, .importedModels:
             return hasPro
         }
     }

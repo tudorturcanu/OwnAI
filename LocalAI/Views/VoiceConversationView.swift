@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 /// Full-screen hands-free voice conversation UI.
 ///
@@ -20,6 +21,7 @@ struct VoiceConversationView: View {
     @Environment(LLMEngine.self) private var llmEngine
     @Environment(ModelManager.self) private var modelManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     /// Bound to ChatView's `voiceConversationMode`; setting it false ends the
     /// session (ChatView stops the mic and speech) and dismisses this cover.
@@ -94,9 +96,10 @@ struct VoiceConversationView: View {
             Text(statusText)
                 .font(.title3.weight(.medium))
                 .foregroundStyle(Color.adaptive(white: 0.25))
+                .accessibilityAddTraits(.updatesFrequently)
                 .contentTransition(.opacity)
-                .animation(.smooth(duration: 0.25), value: statusText)
-                .padding(.top, 44)
+                .animation(reduceMotion ? nil : .smooth(duration: 0.25), value: statusText)
+                .padding(.top, dynamicTypeSize.isAccessibilitySize ? 20 : 44)
 
             transcriptArea
                 .padding(.top, 12)
@@ -104,11 +107,12 @@ struct VoiceConversationView: View {
             Spacer()
 
             endButton
-                .padding(.bottom, 40)
+                .padding(.bottom, dynamicTypeSize.isAccessibilitySize ? 20 : 40)
         }
         .padding(.horizontal, 24)
         .background(backgroundGradient.ignoresSafeArea())
         .onAppear {
+            IdleTimerCoordinator.shared.setReason("voiceConversation", enabled: true)
             // Covers the resume path (e.g. the session was interrupted by a
             // phone call): if nothing is running, re-arm the mic. The normal
             // entry path already started listening via ChatView's onChange.
@@ -116,32 +120,69 @@ struct VoiceConversationView: View {
                 onStartListening()
             }
         }
+        .onDisappear {
+            IdleTimerCoordinator.shared.setReason("voiceConversation", enabled: false)
+        }
+        .onChange(of: phase) {
+            UIAccessibility.post(notification: .announcement, argument: statusText)
+        }
     }
 
     // MARK: - Header
 
     private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(String(localized: "Voice Conversation"))
-                    .font(.headline)
-                    .foregroundStyle(Color.adaptive(white: 0.15))
-                Text(modelManager.selectedModel?.name ?? String(localized: "No model selected"))
-                    .font(.footnote)
-                    .foregroundStyle(Color.adaptive(white: 0.5))
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    voiceTitle
+                    processingBadge
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack {
+                    voiceTitle
+                    Spacer()
+                    processingBadge
+                }
             }
-
-            Spacer()
-
-            Label(String(localized: "On-device"), systemImage: "lock.shield.fill")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(Color.adaptive(white: 0.45))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color.adaptiveCard.opacity(0.8))
-                .clipShape(Capsule())
         }
         .padding(.top, 20)
+    }
+
+    private var voiceTitle: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(String(localized: "Voice Conversation"))
+                .font(.headline)
+                .foregroundStyle(Color.adaptive(white: 0.15))
+                .accessibilityAddTraits(.isHeader)
+            Text(modelManager.selectedModel?.name ?? String(localized: "No model selected"))
+                .font(.footnote)
+                .foregroundStyle(Color.adaptive(white: 0.5))
+        }
+    }
+
+    private var processingBadge: some View {
+        Label(
+            modelManager.selectedModel?.isAppleFoundation == true
+                ? String(localized: "Apple processing")
+                : String(localized: "On-device"),
+            systemImage: modelManager.selectedModel?.isAppleFoundation == true
+                ? "apple.intelligence"
+                : "lock.shield.fill"
+        )
+        .labelStyle(.titleAndIcon)
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(Color.adaptive(white: 0.45))
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color.adaptiveCard.opacity(0.8))
+        .clipShape(Capsule())
+        .accessibilityHint(
+            modelManager.selectedModel?.isAppleFoundation == true
+                ? String(localized: "Prompts may be processed by Apple, including Private Cloud Compute.")
+                : String(localized: "Prompts are processed by the selected local model on this device.")
+        )
     }
 
     // MARK: - Orb
@@ -153,25 +194,38 @@ struct VoiceConversationView: View {
                 // listening, and breathes on a slow cycle while speaking.
                 Circle()
                     .fill(orbAccentColor.opacity(0.16))
-                    .frame(width: 220, height: 220)
+                    .frame(width: outerOrbSize, height: outerOrbSize)
                     .scaleEffect(haloScale)
-                    .animation(.smooth(duration: 0.16), value: haloScale)
+                .animation(reduceMotion ? nil : .smooth(duration: 0.16), value: haloScale)
 
                 Circle()
                     .fill(orbAccentColor.opacity(0.22))
-                    .frame(width: 176, height: 176)
+                    .frame(width: middleOrbSize, height: middleOrbSize)
                     .scaleEffect(midScale)
-                    .animation(.smooth(duration: 0.16), value: midScale)
+                .animation(reduceMotion ? nil : .smooth(duration: 0.16), value: midScale)
 
                 coreCircle
-                    .frame(width: 140, height: 140)
+                    .frame(width: coreOrbSize, height: coreOrbSize)
 
                 orbGlyph
             }
         }
         .buttonStyle(.plain)
+        .disabled(phase == .thinking)
         .accessibilityLabel(orbAccessibilityLabel)
-        .animation(.smooth(duration: 0.35), value: phase)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.35), value: phase)
+    }
+
+    private var outerOrbSize: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 170 : 220
+    }
+
+    private var middleOrbSize: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 136 : 176
+    }
+
+    private var coreOrbSize: CGFloat {
+        dynamicTypeSize.isAccessibilitySize ? 108 : 140
     }
 
     /// The solid center. While thinking it carries a slowly sweeping angular
@@ -294,9 +348,15 @@ struct VoiceConversationView: View {
                     .font(.body)
                     .foregroundStyle(Color.adaptive(white: 0.4))
                     .multilineTextAlignment(.center)
-                    .lineLimit(4)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 4)
                     .truncationMode(.head)
                     .transition(.opacity)
+                    .accessibilityLabel(
+                        String(
+                            format: String(localized: "Transcript: %@", defaultValue: "Transcript: %@"),
+                            text
+                        )
+                    )
             } else {
                 // Keep the layout stable so the orb doesn't shift as text
                 // appears and disappears between turns.
@@ -304,8 +364,8 @@ struct VoiceConversationView: View {
                     .font(.body)
             }
         }
-        .frame(minHeight: 88, alignment: .top)
-        .animation(.smooth(duration: 0.2), value: transcriptText)
+        .frame(minHeight: dynamicTypeSize.isAccessibilitySize ? 64 : 88, alignment: .top)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.2), value: transcriptText)
     }
 
     /// While the user talks, show their words; while the model answers, show
@@ -350,6 +410,6 @@ struct VoiceConversationView: View {
             startPoint: .top,
             endPoint: .bottom
         )
-        .animation(.smooth(duration: 0.6), value: phase)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.6), value: phase)
     }
 }

@@ -12,15 +12,17 @@ struct AdvancedSettingsView: View {
     @Environment(ModelManager.self) private var modelManager
     @Environment(SpeechManager.self) private var speechManager
     @AppStorage(PDFOCRMode.storageKey) private var pdfOCRModeRaw = PDFOCRMode.preferNativeText.rawValue
+    @AppStorage(DocumentOCRBackend.storageKey) private var documentOCRBackendRaw = DocumentOCRBackend.appleVision.rawValue
     @AppStorage(DocumentProcessingMode.storageKey) private var documentProcessingModeRaw = DocumentProcessingMode.fast.rawValue
     @AppStorage(ImageProcessingMode.storageKey) private var imageProcessingModeRaw = ImageProcessingMode.fast.rawValue
     @AppStorage("lowPowerMode") private var lowPowerMode = false
-    @AppStorage("inChatSearchEnabled") private var inChatSearchEnabled = false
+    @AppStorage("inChatSearchEnabled") private var inChatSearchEnabled = true
     @AppStorage("smartReplyStylesEnabled") private var smartReplyStylesEnabled = false
     @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
     @AppStorage("messageTextScale") private var messageTextScale: Double = 1.0
     @AppStorage("autoRead") private var autoRead = false
     @AppStorage(RAGEngine.neuralEmbeddingsDefaultsKey) private var neuralEmbeddingsEnabled = false
+    @ScaledMetric(relativeTo: .body) private var messagePreviewBaseSize: CGFloat = 17
     @State private var whisperModelPresent = false
     @State private var kokoroModelPresent = false
     @State private var showKokoroDownloadAlert = false
@@ -28,6 +30,15 @@ struct AdvancedSettingsView: View {
 
     private var pdfOCRMode: PDFOCRMode {
         PDFOCRMode(rawValue: pdfOCRModeRaw) ?? .preferNativeText
+    }
+
+    private var documentOCRBackend: DocumentOCRBackend {
+        DocumentOCRBackend(rawValue: documentOCRBackendRaw) ?? .appleVision
+    }
+
+    private var isGLMOCRDownloaded: Bool {
+        modelManager.models.first(where: { $0.id == ModelInfo.glmOCR_4bit.id })?
+            .downloadState.isDownloaded == true
     }
 
     private var documentProcessingMode: DocumentProcessingMode {
@@ -61,6 +72,9 @@ struct AdvancedSettingsView: View {
             }
             whisperModelPresent = speechManager.isWhisperModelDownloaded
             kokoroModelPresent = speechManager.isKokoroModelDownloaded
+            if documentOCRBackend == .glmOCR && !isGLMOCRDownloaded {
+                documentOCRBackendRaw = DocumentOCRBackend.appleVision.rawValue
+            }
         }
         .alert(
             kokoroDownloadAlertTitle,
@@ -489,6 +503,66 @@ struct AdvancedSettingsView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
+
+            sectionDivider
+
+            HStack(spacing: 14) {
+                rowIcon(systemImage: "text.viewfinder", tint: .orange)
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("OCR Engine")
+                        .font(.body)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.primary)
+
+                    Menu {
+                        ForEach(DocumentOCRBackend.allCases) { backend in
+                            Button {
+                                documentOCRBackendRaw = backend.rawValue
+                            } label: {
+                                if backend == documentOCRBackend {
+                                    Label(backend.title, systemImage: "checkmark")
+                                } else {
+                                    Text(backend.title)
+                                }
+                            }
+                            .disabled(backend == .glmOCR && !isGLMOCRDownloaded)
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(documentOCRBackend.title)
+                                .font(.subheadline)
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.caption2)
+                                .fontWeight(.semibold)
+                                .accessibilityHidden(true)
+                        }
+                        .foregroundStyle(.primary)
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    .accessibilityLabel("OCR Engine")
+                    .accessibilityValue(documentOCRBackend.title)
+
+                    Text(documentOCRBackend.subtitle)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    if !isGLMOCRDownloaded {
+                        NavigationLink {
+                            ModelDownloadView()
+                        } label: {
+                            Label("Download GLM OCR in Models", systemImage: "arrow.down.circle")
+                                .font(.footnote.weight(.semibold))
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 14)
         }
     }
 
@@ -581,6 +655,7 @@ struct AdvancedSettingsView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(messageTextScale == 1.0)
+                    .frame(minHeight: 44)
                 }
 
                 HStack(spacing: 12) {
@@ -598,7 +673,7 @@ struct AdvancedSettingsView: View {
 
                 // Preview bubble
                 Text("This is how messages will look.")
-                    .font(.system(size: 17 * messageTextScale))
+                    .font(.system(size: messagePreviewBaseSize * messageTextScale))
                     .foregroundStyle(Color.adaptive(white: 0.3))
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
@@ -656,12 +731,14 @@ struct AdvancedSettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            .accessibilityHidden(true)
 
             Spacer(minLength: 8)
 
             Toggle(title, isOn: isOn)
                 .labelsHidden()
                 .tint(tint)
+                .accessibilityHint(Text(subtitle))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
@@ -673,6 +750,7 @@ struct AdvancedSettingsView: View {
             .foregroundStyle(tint)
             .frame(width: 34, height: 34)
             .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
+            .accessibilityHidden(true)
     }
 
 }

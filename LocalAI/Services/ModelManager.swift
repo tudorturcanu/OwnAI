@@ -282,31 +282,8 @@ enum ModelUseCase: String, CaseIterable, Identifiable {
 /// Manages model downloads and lifecycle
 @MainActor
 @Observable
-final class ModelManager: ObservableObject {
-    nonisolated let objectWillChange = ObservableObjectPublisher()
-    private static let requiredMLXDownloadGlobs = [
-        "config.json",
-        "params.json",
-        "tokenizer.json",
-        "tokenizer_config.json",
-        "added_tokens.json",
-        "tokenizer.model",
-        "tekken.json",
-        "sentencepiece.bpe.model",
-        "vocab.json",
-        "merges.txt",
-        "special_tokens_map.json",
-        "generation_config.json",
-        "chat_template.json",
-        "chat_template.jinja",
-        "processor_config.json",
-        "preprocessor_config.json",
-        "image_processor_config.json",
-        "optiq_metadata.json",
-        "*.safetensors",
-        "*.safetensors.index.json",
-        "*.bin"
-    ]
+final class ModelManager {
+    private static let requiredMLXDownloadGlobs = MLXStorage.modelArtifactGlobs
 
     struct OnboardingRecommendation: Equatable {
         let modelID: String
@@ -357,7 +334,15 @@ final class ModelManager: ObservableObject {
     
     // MARK: - Properties
     
-    var models: [ModelInfo] = ModelInfo.allModels
+    var models: [ModelInfo] = ModelInfo.allModels + ImportedModelStore.shared.all.map(ModelInfo.imported)
+    /// Non-nil while a file import is copying. Drives the progress row in the
+    /// model views; imports are foreground work, not background downloads.
+    private(set) var importProgress: Double?
+    private(set) var lastImportErrorMessage: String?
+    /// Identifies the running import so a progress callback that lands after the
+    /// import finished cannot leave `importProgress` stuck non-nil — which would
+    /// then block every later import.
+    private var activeImportID: UUID?
     @ObservationIgnored @AppStorage("selectedModelID") private var persistedSelectedModelID: String?
     /// The last model the user picked by hand. `selectedModelID` tracks whatever
     /// is currently in use, including models the automatic router chooses, so it
@@ -472,6 +457,14 @@ final class ModelManager: ObservableObject {
     init() {
         selectedModelID = persistedSelectedModelID
         ensureSelection()
+        // Reclaim bytes from an import that was killed mid-copy and never
+        // registered. Detached because the recovery case deletes a whole model
+        // directory, and doing that on the main actor at launch is how you earn
+        // a watchdog termination. Safe to race with a fresh import: the store
+        // reserves an in-flight folder before any bytes are written.
+        Task.detached(priority: .utility) {
+            ModelImportService.pruneOrphanedImports()
+        }
         Task {
             await checkAvailability()
         }
@@ -825,6 +818,9 @@ final class ModelManager: ObservableObject {
         case .images:
             candidateIDs = [
                 ModelInfo.lfm25_vl_450m_6bit.id,
+                ModelInfo.qwen3VL_2b_4bit.id,
+                ModelInfo.lfm25_vl_3b_4bit.id,
+                ModelInfo.qwen3VL_4b_4bit.id,
                 ModelInfo.qwen2VL_2b_4bit.id,
                 ModelInfo.qwen25VL_3b_3bit.id,
                 ModelInfo.smolVLM2_500m_4bit.id,
@@ -837,6 +833,8 @@ final class ModelManager: ObservableObject {
 
         case .coding:
             candidateIDs = [
+                ModelInfo.qwen38_27b_4bit.id,
+                ModelInfo.devstralSmall2_24b_4bit.id,
                 ModelInfo.qwen3_coder_next_4bit.id,
                 ModelInfo.qwen25_7b_instruct_4bit.id,
                 ModelInfo.qwen25_3b_instruct_4bit.id,
@@ -892,6 +890,9 @@ final class ModelManager: ObservableObject {
     func repairModel(_ modelID: String, selectWhenFinished: Bool = false) {
         guard let index = models.firstIndex(where: { $0.id == modelID }) else { return }
         guard models[index].engine == .mlx else { return }
+        // An imported model has no remote source to re-fetch from; repairing it
+        // would delete the only copy. The user re-imports instead.
+        guard !models[index].isImported else { return }
 
         cancelDownload(modelID)
         #if targetEnvironment(simulator)
@@ -914,6 +915,7 @@ final class ModelManager: ObservableObject {
         guard let index = models.firstIndex(where: { $0.id == modelID }) else { return }
         let model = models[index]
         guard model.engine == .mlx else { return }
+        guard !model.isImported else { return }
         // A bundled model is never fetched from the network: adding it back just
         // clears the removal flag.
         guard !model.isBundled else {
@@ -1039,8 +1041,15 @@ final class ModelManager: ObservableObject {
         #if !targetEnvironment(simulator)
         MLXStorage.removeModelArtifacts(for: modelID)
         #endif
-        
-        if let index = models.firstIndex(where: { $0.id == modelID }) {
+
+        if model.isImported {
+            // Nothing survives a delete here: unlike a catalog model there is
+            // no entry to fall back to, so the row goes away with the files.
+            ImportedModelStore.shared.remove(modelID)
+            models.removeAll { $0.id == modelID }
+            UserDefaults.standard.removeObject(forKey: "modelConsent.\(modelID)")
+            UserDefaults.standard.removeObject(forKey: "model.lastUsed.\(modelID)")
+        } else if let index = models.firstIndex(where: { $0.id == modelID }) {
             models[index].downloadState = .notDownloaded
         }
         downloadFailures.removeValue(forKey: modelID)
@@ -1053,6 +1062,74 @@ final class ModelManager: ObservableObject {
         }
 
         ensureSelection()
+    }
+
+    // MARK: - Imported Models
+
+    /// Copies a user-supplied MLX checkpoint into model storage and adds it to
+    /// the catalog. Returns the new model, or nil when the import failed —
+    /// `lastImportErrorMessage` then carries the reason.
+    @discardableResult
+    func importModel(from urls: [URL], selectWhenFinished: Bool = true) async -> ModelInfo? {
+        guard importProgress == nil else { return nil }
+        let importID = UUID()
+        activeImportID = importID
+        lastImportErrorMessage = nil
+        importProgress = 0
+        defer {
+            if activeImportID == importID {
+                activeImportID = nil
+                importProgress = nil
+            }
+        }
+
+        do {
+            let record = try await ModelImportService.importModel(from: urls) { [weak self] progress in
+                Task { @MainActor in
+                    guard let self, self.activeImportID == importID else { return }
+                    self.importProgress = progress
+                }
+            }
+            var model = ModelInfo.imported(record)
+            model.downloadState = .downloaded
+            models.append(model)
+            // The consent sheet exists to surface a model publisher's terms.
+            // There is no publisher here — the user supplied the file — so
+            // there is nothing to consent to.
+            UserDefaults.standard.set(true, forKey: "modelConsent.\(record.id)")
+            ensureModelPreferences(for: model)
+            if selectWhenFinished {
+                selectModel(record.id)
+            }
+            ensureSelection()
+            return model
+        } catch {
+            lastImportErrorMessage = error.localizedDescription
+            return nil
+        }
+    }
+
+    func clearImportError() {
+        lastImportErrorMessage = nil
+    }
+
+    /// Imported folders are often named `snapshot` or `models--org--name`, so
+    /// the user gets to fix the label without re-importing gigabytes.
+    func renameImportedModel(_ modelID: String, to name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let index = models.firstIndex(where: { $0.id == modelID }),
+              models[index].isImported else { return }
+        ImportedModelStore.shared.rename(modelID, to: trimmed)
+        guard let record = ImportedModelStore.shared.record(for: modelID) else { return }
+        let state = models[index].downloadState
+        var renamed = ModelInfo.imported(record)
+        renamed.downloadState = state
+        models[index] = renamed
+    }
+
+    var importedModels: [ModelInfo] {
+        models.filter(\.isImported)
     }
 
     // MARK: - Bundled Models
@@ -1581,6 +1658,20 @@ final class ModelManager: ObservableObject {
                     downloadFailures.removeValue(forKey: model.id)
                     continue
                 }
+                if model.isImported {
+                    let validation = MLXStorage.validationReport(for: model.id)
+                    if validation.isValid {
+                        models[index].downloadState = .downloaded
+                        downloadFailures.removeValue(forKey: model.id)
+                    } else {
+                        // There is no re-download for this one, so say what the
+                        // user actually has to do instead of "incomplete".
+                        models[index].downloadState = .error(
+                            message: "The files for this imported model are missing. Import it again from Files."
+                        )
+                    }
+                    continue
+                }
                 let migrated = migrateLegacyModelIfNeeded(modelID: model.id)
                 if migrated || MLXStorage.hasValidModelArtifacts(for: model.id) {
                     let validation = MLXStorage.validationReport(for: model.id)
@@ -1729,6 +1820,10 @@ final class ModelManager: ObservableObject {
         return models
             .filter { $0.engine == .mlx && isModelUsable($0) && canSelect($0) }
             .sorted {
+                // Imported models sort last: automatic picks should land on a
+                // checkpoint Own AI has actually validated. They stay in the
+                // list so a user whose only model is imported still gets one.
+                if $0.isImported != $1.isImported { return !$0.isImported }
                 if fitRank($0) != fitRank($1) { return fitRank($0) < fitRank($1) }
                 return $0.sizeGB > $1.sizeGB
             }
@@ -1738,6 +1833,7 @@ final class ModelManager: ObservableObject {
     func recoveryModel(excluding failedModelID: String, requiresVision: Bool) -> ModelInfo? {
         models
             .filter { $0.id != failedModelID }
+            .filter { !$0.isImported }
             .filter { isModelUsable($0) && canSelect($0) }
             .filter { !requiresVision || $0.supportsVision }
             .filter { UserDefaults.standard.bool(forKey: "modelConsent.\($0.id)") }
@@ -1838,7 +1934,11 @@ final class ModelManager: ObservableObject {
             thermallyConstrained = false
         }
 
+        // Imported models are deliberately absent from routing: they have no
+        // badges, no health record and no measured memory profile, so Auto Mode
+        // has nothing to route on. The user picks them by hand.
         var candidates = models.filter {
+            !$0.isImported &&
             isModelUsable($0) &&
             canSelect($0) &&
             $0.currentDeviceFit != .unsupported &&
@@ -2101,12 +2201,11 @@ final class ModelManager: ObservableObject {
         if model.engine == .appleFoundation {
             return isAppleIntelligenceDeviceSupported
         }
-        // Mac-experimental models (e.g. GLM 5.1) are only shown on macOS
-        if model.isMacExperimental {
-            #if targetEnvironment(macCatalyst)
-            return true
-            #else
-            return UIDevice.current.userInterfaceIdiom == .mac
+        // Large workstation checkpoints are never offered on iPhone/iPad.
+        // They still pass through the normal memory gate on Mac below.
+        if model.isMacOnly {
+            #if !targetEnvironment(macCatalyst)
+            guard UIDevice.current.userInterfaceIdiom == .mac else { return false }
             #endif
         }
         return compatibilityMessage(for: model) == nil

@@ -92,7 +92,6 @@ struct LocalAIApp: App {
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
                     llmEngine.handleMemoryWarning()
                 }
-                .preferredColorScheme(.light)
         }
     }
 }

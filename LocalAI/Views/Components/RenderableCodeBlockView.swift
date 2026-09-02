@@ -71,10 +71,12 @@ struct RenderableCodeBlockView: View {
                         .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
                     }
                     .buttonStyle(.plain)
+                    .frame(minHeight: 44)
                 }
                 Button {
                     UIPasteboard.general.string = content
                     Self.lightHaptic.impactOccurred()
+                    UIAccessibility.post(notification: .announcement, argument: String(localized: "Copied"))
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "doc.on.doc")
@@ -90,6 +92,7 @@ struct RenderableCodeBlockView: View {
                     .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
                 }
                 .buttonStyle(.plain)
+                .frame(minHeight: 44)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
@@ -183,14 +186,26 @@ private struct HTMLPreviewWebView: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
-    final class Coordinator {
+    final class Coordinator: NSObject, WKNavigationDelegate {
         var loadedHTML: String?
+
+        func webView(
+            _ webView: WKWebView,
+            decidePolicyFor navigationAction: WKNavigationAction,
+            decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+        ) {
+            // `.other` is the loadHTMLString of the document itself. Anything
+            // else — a tapped link, a redirect — would take the preview off the
+            // device, so it is refused.
+            decisionHandler(navigationAction.navigationType == .other ? .allow : .cancel)
+        }
     }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
         configuration.defaultWebpagePreferences.allowsContentJavaScript = false
         let webView = WKWebView(frame: .zero, configuration: configuration)
+        webView.navigationDelegate = context.coordinator
         webView.isOpaque = false
         webView.backgroundColor = .white
         webView.scrollView.isScrollEnabled = false

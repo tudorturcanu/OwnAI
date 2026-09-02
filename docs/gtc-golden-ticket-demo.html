@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>gtc-golden-ticket-demo</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --rule: #d2d2d7;
+  --surface: #f5f5f7;
+  --accent: #0066cc;
+  --page: #ffffff;
+  --tok-keyword: #9b2393;
+  --tok-string: #c41a16;
+  --tok-number: #1c00cf;
+  --tok-comment: #707f8c;
+  --tok-type: #0b4f79;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #f5f5f7;
+    --muted: #98989d;
+    --rule: #38383c;
+    --surface: #1c1c1e;
+    --accent: #4aa3ff;
+    --page: #131315;
+    --tok-keyword: #ff7ab2;
+    --tok-string: #ff8170;
+    --tok-number: #d9c97c;
+    --tok-comment: #7f8c98;
+    --tok-type: #6bdfff;
+  }
+}
+body {
+  margin: 0;
+  padding: 3rem 1.5rem 6rem;
+  background: var(--page);
+  color: var(--text);
+  font: 16px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+.markdown-body { max-width: 45rem; margin: 0 auto; }
+h1, h2, h3, h4, h5, h6 {
+  margin: 2em 0 0.6em;
+  line-height: 1.25;
+  font-weight: 600;
+}
+h1 { font-size: 2em; margin-top: 0; }
+h2 { font-size: 1.5em; padding-bottom: 0.3em; border-bottom: 1px solid var(--rule); }
+h3 { font-size: 1.25em; }
+h4 { font-size: 1.05em; }
+h5, h6 { font-size: 1em; color: var(--muted); }
+p { margin: 0 0 1em; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code {
+  font: 0.9em/1.5 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  background: var(--surface);
+  padding: 0.15em 0.35em;
+  border-radius: 4px;
+}
+pre {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 1em;
+  overflow-x: auto;
+  /* A code block that wraps is a code block that lies about its lines. */
+  white-space: pre;
+}
+pre code { background: none; padding: 0; font-size: 0.875em; }
+.tok-keyword { color: var(--tok-keyword); }
+.tok-string { color: var(--tok-string); }
+.tok-number { color: var(--tok-number); }
+.tok-comment { color: var(--tok-comment); font-style: italic; }
+.tok-type { color: var(--tok-type); }
+blockquote {
+  margin: 0 0 1em;
+  padding: 0.1em 0 0.1em 1em;
+  border-left: 3px solid var(--rule);
+  color: var(--muted);
+}
+ul, ol { margin: 0 0 1em; padding-left: 1.6em; }
+li { margin: 0.25em 0; }
+li > p { margin: 0; }
+li > p + p { margin-top: 0.5em; }
+.task-list { list-style: none; padding-left: 0.2em; }
+.task-list-item input { margin-right: 0.5em; }
+table {
+  border-collapse: collapse;
+  margin: 0 0 1.25em;
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+th, td { border: 1px solid var(--rule); padding: 0.45em 0.75em; text-align: left; }
+th { background: var(--surface); font-weight: 600; }
+hr { border: 0; border-top: 1px solid var(--rule); margin: 2em 0; }
+img { max-width: 100%; height: auto; border-radius: 6px; }
+.image { margin: 1.5em 0; }
+@media print {
+  body { padding: 0; background: #fff; color: #000; }
+  pre, blockquote, table, .image { break-inside: avoid; }
+  h1, h2, h3 { break-after: avoid; }
+  a { color: inherit; }
+}
+</style>
+</head>
+<body>
+<article class="markdown-body">
+<h1 id="gtc-golden-ticket-contest-demo-script">GTC Golden Ticket Contest — Demo Script</h1>
+<p>Contest: <a href="https://developer.nvidia.com/gtc-golden-ticket-contest" target="_blank" rel="noopener noreferrer">https://developer.nvidia.com/gtc-golden-ticket-contest</a> Window: <strong>Aug 18 – Sep 10, 2026</strong>. Post a short video on social media, tag the judge you heard about it from, include <strong>#NVIDIAGTC</strong>. Winners announced ~Sep 14. Prize: GTC Berlin pass + VIP seating at the keynote (travel not included).</p>
+<p>Best-fit judges to tag: <strong>Johnny Nunez</strong> (AI Developer Advocate, NVIDIA) or <strong>Merve Noyan</strong> (ML Engineer, Hugging Face).</p>
+<h2 id="setup-before-filming">Setup before filming</h2>
+<ul>
+<li><p>Model: <strong>Nemotron 3 Nano 4B</strong> (downloaded, selected).</p></li>
+<li><p>Thinking toggle: <strong>off</strong> for the table/SVG prompts (snappier), optionally <strong>on</strong> for one shot to show the reasoning bubble.</p></li>
+<li><p>Personality: default system prompt. Code theme: Default (light) or Midnight.</p></li>
+<li><p>Charge the phone, enable Do Not Disturb, max screen brightness.</p></li>
+</ul>
+<h2 id="video-flow-30-45-s-one-take">Video flow (30–45 s, one take)</h2>
+<ol>
+<li><p><strong>Airplane mode on</strong> in Control Center — hold the shot for a beat.</p></li>
+<li><p>Open the app, show the Nemotron model card (NVIDIA logo, "runs fully on-device").</p></li>
+<li><p>Prompt 1 — identity beat:</p>
+<blockquote>
+<p>What model are you, in one sentence?</p>
+</blockquote></li>
+<li><p>Prompt 2 — the table (renders as a real formatted table):</p>
+<blockquote>
+<p>Plan my 3 days at GTC in Berlin. Reply with only a markdown table with columns Day, Morning, Afternoon, Evening — one row per day, each cell under 8 words. After the table add exactly one sentence of advice.</p>
+</blockquote></li>
+<li><p>Prompt 3 — the SVG (code block flips into a rendered picture when it finishes). Name every element and its color — 4B models compose badly on their own but follow an element list well:</p>
+<blockquote>
+<p>Draw an SVG of a rocket launching at night. viewBox="0 0 200 300". Include: a full-background dark navy sky rect, a few small white circle stars, a light gray rocket body rectangle in the center, a red triangle nose cone on top, and an orange flame triangle below the rocket. Flat colors only. Reply with only one svg code block.</p>
+</blockquote></li>
+<li><p>End card / caption for the post:</p>
+<blockquote>
+<p>NVIDIA Nemotron 3 Nano 4B running 100% on-device on an iPhone — airplane mode on, zero cloud. It plans, makes tables, and even draws SVGs locally. Built with MLX. @&lt;judge&gt; #NVIDIAGTC</p>
+</blockquote></li>
+</ol>
+<h2 id="backup-svg-prompts-retake-material-small-models-vary-run-to-run">Backup SVG prompts (retake material — small models vary run to run)</h2>
+<ul>
+<li><blockquote>
+<p>Draw an SVG of the Berlin TV tower at dusk. viewBox="0 0 200 300". Include: a full-background dusk-orange sky rect, a tall thin gray rectangle tower in the center, a silver circle sphere near its top, and a dark ground rect at the bottom. Flat colors only. Reply with only one svg code block.</p>
+</blockquote></li>
+<li><blockquote>
+<p>Draw an SVG robot face. viewBox="0 0 200 200". Include: a light gray rounded rect head filling most of the canvas, two blue circle eyes, a dark rect smiling mouth, and a line antenna with a red circle tip on top. Flat colors only. Reply with only one svg code block.</p>
+</blockquote></li>
+</ul>
+<p>Renderer notes: unfenced <code>&lt;svg&gt;</code> replies are detected and previewed anyway, and slightly broken markup (unclosed quotes, <code>/</code> instead of <code>/&gt;</code>) is auto-repaired before rendering — so a take is only ruined if the drawing itself is ugly.</p>
+<h2 id="prompting-notes-for-nemotron-3-nano-4b-on-device">Prompting notes for Nemotron 3 Nano 4B on-device</h2>
+<ul>
+<li><p>Keep instructions short, literal, and single-purpose ("Reply with only …").</p></li>
+<li><p>Constrain the SVG: fixed viewBox, whitelist of shapes, flat colors — this is what keeps a 4B model's output valid and pretty.</p></li>
+<li><p>One task per message; the context budget in-app is ~3,800 tokens.</p></li>
+</ul>
+</article>
+</body>
+</html>

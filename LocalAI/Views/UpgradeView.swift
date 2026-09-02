@@ -7,6 +7,7 @@
 
 import StoreKit
 import SwiftUI
+import UIKit
 
 struct UpgradeView: View {
     @Environment(\.dismiss) private var dismiss
@@ -16,14 +17,20 @@ struct UpgradeView: View {
     private let termsOfUseURL = URL(string: "https://sudoswisshub.github.io/MetalMind-AI/terms.html") ?? URL(string: "about:blank")!
 
     let feature: PremiumFeature
+    let onPurchased: (() -> Void)?
+
+    init(feature: PremiumFeature, onPurchased: (() -> Void)? = nil) {
+        self.feature = feature
+        self.onPurchased = onPurchased
+    }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     heroCard
-                    featureList
                     productsSection
+                    featureList
                     subscriptionDisclosureSection
                     restoreSection
                 }
@@ -105,8 +112,8 @@ struct UpgradeView: View {
     /// the paywall never sells a feature the build doesn't ship.
     private var proSummary: String {
         SpeechManager.isVoiceConversationEnabled
-            ? String(localized: "Everything runs on your device — no account, no cloud, works offline. Pro unlocks the full local toolkit: every model, richer document chat, and hands-free voice.")
-            : String(localized: "Everything runs on your device — no account, no cloud, works offline. Pro unlocks the full local toolkit: every model and richer document chat.")
+            ? String(localized: "Local models run entirely on your device and work offline. Apple Intelligence may use Apple processing when you select it. Pro unlocks unlimited messages, every model, richer document chat, and hands-free voice.")
+            : String(localized: "Local models run entirely on your device and work offline. Apple Intelligence may use Apple processing when you select it. Pro unlocks unlimited messages, every model, and richer document chat.")
     }
 
     private var featureList: some View {
@@ -116,6 +123,12 @@ struct UpgradeView: View {
                 .foregroundStyle(Color.adaptive(white: 0.2))
 
             VStack(spacing: 0) {
+                upgradeRow(
+                    icon: "message.badge.fill",
+                    title: String(localized: "Unlimited messages"),
+                    subtitle: String(localized: "Keep chatting without the daily free-message limit.")
+                )
+                Divider().padding(.leading, 52)
                 upgradeRow(
                     icon: "square.stack.3d.up.fill",
                     title: String(localized: "All local model families"),
@@ -242,6 +255,11 @@ struct UpgradeView: View {
             Button(String(localized: "Restore Purchases")) {
                 Task {
                     await monetizationManager.restorePurchases()
+                    if monetizationManager.hasPro {
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                        onPurchased?()
+                        dismiss()
+                    }
                 }
             }
             .font(.subheadline.weight(.semibold))
@@ -374,20 +392,26 @@ struct UpgradeView: View {
                 Task {
                     let purchased = await monetizationManager.purchase(product)
                     if purchased {
+                        UINotificationFeedbackGenerator().notificationOccurred(.success)
+                        onPurchased?()
                         dismiss()
                     }
                 }
             } label: {
                 HStack {
                     Spacer()
-                    Text(String(localized: "Unlock Pro"))
+                    Text(monetizationManager.hasPro
+                         ? String(localized: "Already Unlocked")
+                         : String(localized: "Unlock Pro"))
                         .font(.headline.weight(.semibold))
                     Spacer()
                 }
                 .padding(.vertical, 14)
                 .background(
                     LinearGradient(
-                        colors: isRecommended ? [.orange, .pink] : [.blue, .blue.opacity(0.86)],
+                        colors: monetizationManager.hasPro
+                            ? [Color.adaptive(white: 0.7), Color.adaptive(white: 0.62)]
+                            : (isRecommended ? [.orange, .pink] : [.blue, .blue.opacity(0.86)]),
                         startPoint: .leading,
                         endPoint: .trailing
                     )
@@ -395,7 +419,7 @@ struct UpgradeView: View {
                 .foregroundStyle(.white)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
             }
-            .disabled(monetizationManager.isProcessingPurchase)
+            .disabled(monetizationManager.isProcessingPurchase || monetizationManager.hasPro)
         }
         .padding(18)
         .background(Color.adaptiveCard)

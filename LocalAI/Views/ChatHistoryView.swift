@@ -26,6 +26,9 @@ struct ChatHistoryView: View {
     @State private var isNewFolderPresented = false
     @State private var newFolderName = ""
     @State private var newFolderEmoji = "📁"
+    /// Set when "New Folder…" is reached from Move to Folder: the conversation
+    /// that should land in the folder as soon as it exists.
+    @State private var conversationAwaitingNewFolder: UUID?
     @State private var folderToEdit: ChatFolder?
     @State private var isEditFolderPresented = false
     @State private var editFolderName = ""
@@ -37,6 +40,13 @@ struct ChatHistoryView: View {
     @State private var renameText = ""
     @State private var conversationForMemory: ChatConversation?
     @State private var showPinnedMessages = false
+    @State private var pendingUpgradeAction: PendingUpgradeAction?
+
+    private enum PendingUpgradeAction {
+        case export(UUID)
+        case moveToFolder(UUID)
+        case createFolder
+    }
 
     /// Matches for `resolvedSearchQuery`, keyed by conversation ID. Scanning the
     /// whole history is done off the main actor so typing stays responsive.
@@ -165,7 +175,13 @@ struct ChatHistoryView: View {
         }
         // Upgrade gate
         .sheet(item: $upgradeFeature) { feature in
-            UpgradeView(feature: feature)
+            UpgradeView(feature: feature) {
+                let action = pendingUpgradeAction
+                pendingUpgradeAction = nil
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    resumeAfterUpgrade(action)
+                }
+            }
                 .environment(monetizationManager)
         }
         // Per-chat memory (rolling continuity summary)
@@ -179,12 +195,18 @@ struct ChatHistoryView: View {
             TextField(String(localized: "Emoji"), text: $newFolderEmoji)
             Button(String(localized: "Create")) {
                 let name = newFolderName.trimmingCharacters(in: .whitespacesAndNewlines)
-                folderStore.createFolder(
+                let folder = folderStore.createFolder(
                     name: name.isEmpty ? String(localized: "New Folder") : name,
                     emoji: Self.sanitizedEmoji(newFolderEmoji)
                 )
+                if let conversationID = conversationAwaitingNewFolder {
+                    folderStore.assignConversation(conversationID, to: folder.id)
+                }
+                conversationAwaitingNewFolder = nil
             }
-            Button(String(localized: "Cancel"), role: .cancel) { }
+            Button(String(localized: "Cancel"), role: .cancel) {
+                conversationAwaitingNewFolder = nil
+            }
         } message: {
             Text(String(localized: "Give this folder a name and an icon."))
         }
@@ -229,6 +251,7 @@ struct ChatHistoryView: View {
                 }
 
                 Button(String(localized: "New Folder…")) {
+                    conversationAwaitingNewFolder = c.id
                     newFolderName = ""
                     newFolderEmoji = "📁"
                     isNewFolderPresented = true
@@ -260,208 +283,204 @@ struct ChatHistoryView: View {
     }
 
     private var listContent: some View {
-            ScrollView {
-                LazyVStack(spacing: 8, pinnedViews: [.sectionHeaders]) {
-                    // Conversation Statistics
-                    if !historyManager.conversations.isEmpty && searchText.isEmpty && selectedFolderID == nil {
-                        conversationStatsCard
-                    }
+        List {
+            // Conversation Statistics
+            if !historyManager.conversations.isEmpty && searchText.isEmpty && selectedFolderID == nil {
+                conversationStatsCard
+                    .listRowInsets(EdgeInsets(top: 12, leading: 16, bottom: 4, trailing: 16))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
 
-                    // Folder Chips (Pro)
-                    if monetizationManager.canUse(.chatFolders) && !folderStore.folders.isEmpty {
-                        folderChipsRow
-                    }
+            // Folder Chips (Pro)
+            if monetizationManager.canUse(.chatFolders) && !folderStore.folders.isEmpty {
+                folderChipsRow
+                    .listRowInsets(EdgeInsets())
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
 
-                    if isSearching && !filteredConversations.isEmpty {
-                        searchSummaryRow
-                    }
+            if isSearching && !filteredConversations.isEmpty {
+                searchSummaryRow
+                    .listRowInsets(EdgeInsets(top: 6, leading: 20, bottom: 2, trailing: 20))
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(Color.clear)
+            }
 
-                    if filteredConversations.isEmpty {
-                        if !isSearching {
-                            emptyState
-                        } else if isSearchPending {
-                            searchInProgressState
-                        } else {
-                            ContentUnavailableView.search(text: searchText)
-                        }
+            if filteredConversations.isEmpty {
+                Group {
+                    if !isSearching {
+                        emptyState
+                    } else if isSearchPending {
+                        searchInProgressState
                     } else {
-                        ForEach(groupedConversations, id: \.title) { section in
-                            Section {
-                                ForEach(section.conversations) { conversation in
-                                    ConversationRow(
-                                        conversation: conversation,
-                                        isSelected: conversation.id == historyManager.currentConversationID,
-                                        folderLabel: folderStore.folder(for: conversation.id).map { "\($0.emoji) \($0.name)" },
-                                        searchHit: searchHits[conversation.id]
-                                    ) {
-                                        historyManager.selectConversation(conversation.id)
-                                        requestJumpToMatch(in: conversation.id)
-                                        if !isEmbedded {
-                                            dismiss()
-                                        }
-                                    } onDelete: {
-                                        withAnimation(.spring(response: 0.3)) {
-                                            historyManager.deleteConversation(conversation.id)
-                                        }
-                                    }
-                                    .swipeActions(edge: .leading) {
-                                        // Export (Pro)
-                                        Button {
-                                            handleExport(conversation)
-                                        } label: {
-                                            Label(String(localized: "Export"), systemImage: "square.and.arrow.up")
-                                        }
-                                        .tint(.blue)
-
-                                        // Move to Folder (Pro)
-                                        Button {
-                                            handleMoveToFolder(conversation)
-                                        } label: {
-                                            Label(String(localized: "Folder"), systemImage: "folder")
-                                        }
-                                        .tint(.orange)
-                                    }
-                                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                        Button(role: .destructive) {
-                                            withAnimation(.spring(response: 0.3)) {
-                                                historyManager.deleteConversation(conversation.id)
-                                            }
-                                        } label: {
-                                            Label(String(localized: "Delete"), systemImage: "trash")
-                                        }
-                                    }
-                                    .contextMenu {
-                                        Button {
-                                            renameText = conversation.title
-                                            conversationToRename = conversation
-                                            isRenamePresented = true
-                                        } label: {
-                                            Label(
-                                                String(localized: "Rename"),
-                                                systemImage: "pencil"
-                                            )
-                                        }
-
-                                        Button {
-                                            handleExport(conversation)
-                                        } label: {
-                                            Label(
-                                                String(localized: "Export as Markdown"),
-                                                systemImage: "square.and.arrow.up"
-                                            )
-                                        }
-
-                                        Button {
-                                            handleMoveToFolder(conversation)
-                                        } label: {
-                                            Label(
-                                                String(localized: "Move to Folder"),
-                                                systemImage: "folder"
-                                            )
-                                        }
-
-                                        Button {
-                                            conversationForMemory = conversation
-                                        } label: {
-                                            Label(
-                                                String(localized: "Chat Memory"),
-                                                systemImage: "brain"
-                                            )
-                                        }
-
-                                        Divider()
-
-                                        Button(role: .destructive) {
-                                            withAnimation(.spring(response: 0.3)) {
-                                                historyManager.deleteConversation(conversation.id)
-                                            }
-                                        } label: {
-                                            Label(String(localized: "Delete"), systemImage: "trash")
-                                        }
-                                    }
-                                }
-                            } header: {
-                                Text(section.title)
-                                    .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(Color.adaptive(white: 0.4))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal, 4)
-                                    .background(Color.adaptive(white: 0.96))
-                            }
-                        }
+                        ContentUnavailableView.search(text: searchText)
                     }
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+            } else {
+                ForEach(groupedConversations, id: \.title) { section in
+                    Section {
+                        ForEach(section.conversations) { conversation in
+                            ConversationRow(
+                                conversation: conversation,
+                                isSelected: conversation.id == historyManager.currentConversationID,
+                                folderLabel: folderStore.folder(for: conversation.id).map { "\($0.emoji) \($0.name)" },
+                                searchHit: searchHits[conversation.id]
+                            ) {
+                                historyManager.selectConversation(conversation.id)
+                                requestJumpToMatch(in: conversation.id)
+                                if !isEmbedded {
+                                    dismiss()
+                                }
+                            } onDelete: {
+                                withAnimation(.spring(response: 0.3)) {
+                                    historyManager.deleteConversation(conversation.id)
+                                }
+                            }
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    handleExport(conversation)
+                                } label: {
+                                    Label(String(localized: "Export"), systemImage: "square.and.arrow.up")
+                                }
+                                .tint(.blue)
+
+                                Button {
+                                    handleMoveToFolder(conversation)
+                                } label: {
+                                    Label(String(localized: "Folder"), systemImage: "folder")
+                                }
+                                .tint(.orange)
+                            }
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    withAnimation(.spring(response: 0.3)) {
+                                        historyManager.deleteConversation(conversation.id)
+                                    }
+                                } label: {
+                                    Label(String(localized: "Delete"), systemImage: "trash")
+                                }
+                            }
+                            .contextMenu {
+                                Button {
+                                    renameText = conversation.title
+                                    conversationToRename = conversation
+                                    isRenamePresented = true
+                                } label: {
+                                    Label(String(localized: "Rename"), systemImage: "pencil")
+                                }
+
+                                Button {
+                                    handleExport(conversation)
+                                } label: {
+                                    Label(String(localized: "Export as Markdown"), systemImage: "square.and.arrow.up")
+                                }
+
+                                Button {
+                                    handleMoveToFolder(conversation)
+                                } label: {
+                                    Label(String(localized: "Move to Folder"), systemImage: "folder")
+                                }
+
+                                Button {
+                                    conversationForMemory = conversation
+                                } label: {
+                                    Label(String(localized: "Chat Memory"), systemImage: "brain")
+                                }
+
+                                Divider()
+
+                                Button(role: .destructive) {
+                                    withAnimation(.spring(response: 0.3)) {
+                                        historyManager.deleteConversation(conversation.id)
+                                    }
+                                } label: {
+                                    Label(String(localized: "Delete"), systemImage: "trash")
+                                }
+                            }
+                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                        }
+                    } header: {
+                        Text(section.title)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Color.adaptive(white: 0.4))
+                            .textCase(nil)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 6)
+                    }
+                }
             }
-            .background(Color.adaptive(white: 0.96))
-            .navigationTitle(String(localized: "History"))
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                if !isEmbedded {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button(String(localized: "Done")) {
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Color.adaptive(white: 0.96))
+        .navigationTitle(String(localized: "History"))
+        .navigationBarTitleDisplayMode(.large)
+        .toolbar {
+            if !isEmbedded {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(String(localized: "Done")) {
+                        dismiss()
+                    }
+                    .fontWeight(.medium)
+                }
+            }
+
+            ToolbarItem(placement: .primaryAction) {
+                HStack(spacing: 12) {
+                    if totalPinnedCount > 0 {
+                        Button {
+                            showPinnedMessages = true
+                        } label: {
+                            Image(systemName: "pin.fill")
+                                .accessibilityLabel(String(localized: "Pinned Messages"))
+                                .font(.body)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+
+                    Button {
+                        if monetizationManager.canUse(.chatFolders) {
+                            presentNewFolderAlert()
+                        } else {
+                            pendingUpgradeAction = .createFolder
+                            upgradeFeature = .chatFolders
+                        }
+                    } label: {
+                        Image(systemName: "folder.badge.plus")
+                            .accessibilityLabel(String(localized: "New Folder"))
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Button {
+                        historyManager.newConversation()
+                        if !isEmbedded {
                             dismiss()
                         }
-                        .fontWeight(.medium)
-                    }
-                }
-
-                ToolbarItem(placement: .primaryAction) {
-                    HStack(spacing: 12) {
-                        // Pinned messages button
-                        if totalPinnedCount > 0 {
-                            Button {
-                                showPinnedMessages = true
-                            } label: {
-                                Image(systemName: "pin.fill")
-                                    .accessibilityLabel(String(localized: "Pinned Messages"))
-                                    .font(.body)
-                                    .foregroundStyle(.orange)
-                            }
-                        }
-
-                        // Folders button (Pro)
-                        Button {
-                            if monetizationManager.canUse(.chatFolders) {
-                                newFolderName = ""
-                                newFolderEmoji = "📁"
-                                isNewFolderPresented = true
-                            } else {
-                                upgradeFeature = .chatFolders
-                            }
-                        } label: {
-                            Image(systemName: "folder.badge.plus")
-                                .accessibilityLabel(String(localized: "New Folder"))
-                                .font(.body)
-                                .foregroundStyle(.secondary)
-                        }
-
-                        Button {
-                            historyManager.newConversation()
-                            if !isEmbedded {
-                                dismiss()
-                            }
-                        } label: {
-                            Image(systemName: "plus.circle.fill")
-                                .accessibilityLabel(String(localized: "New Chat"))
-                                .font(.title3)
-                                .foregroundStyle(
-                                    LinearGradient(
-                                        colors: [.orange, .pink],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
+                    } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .accessibilityLabel(String(localized: "New Chat"))
+                            .font(.title3)
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.orange, .pink],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
                                 )
-                        }
+                            )
                     }
                 }
             }
-            .searchable(text: $searchText, placement: .automatic, prompt: String(localized: "Search history"))
-            .task(id: searchTaskID) {
-                await runSearch()
-            }
+        }
+        .searchable(text: $searchText, placement: .automatic, prompt: String(localized: "Search history"))
+        .task(id: searchTaskID) {
+            await runSearch()
+        }
     }
 
     // MARK: - Undo Delete
@@ -493,6 +512,7 @@ struct ChatHistoryView: View {
             .font(.subheadline.weight(.bold))
             .foregroundStyle(.orange)
             .buttonStyle(.plain)
+            .frame(minHeight: 44)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -690,13 +710,14 @@ struct ChatHistoryView: View {
                     .font(.subheadline.weight(.medium))
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 8)
+            .frame(minHeight: 44)
             .background(isSelected ? Color.orange : Color.adaptiveCard)
             .foregroundStyle(isSelected ? .white : .primary)
             .clipShape(Capsule())
             .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
         }
         .buttonStyle(.plain)
+        .accessibilityValue(isSelected ? String(localized: "Selected") : "")
     }
 
     // MARK: - Actions
@@ -721,6 +742,7 @@ struct ChatHistoryView: View {
 
     private func handleExport(_ conversation: ChatConversation) {
         guard monetizationManager.canUse(.conversationExport) else {
+            pendingUpgradeAction = .export(conversation.id)
             upgradeFeature = .conversationExport
             return
         }
@@ -755,11 +777,33 @@ struct ChatHistoryView: View {
 
     private func handleMoveToFolder(_ conversation: ChatConversation) {
         guard monetizationManager.canUse(.chatFolders) else {
+            pendingUpgradeAction = .moveToFolder(conversation.id)
             upgradeFeature = .chatFolders
             return
         }
         conversationToMove = conversation
         isMoveToFolderPresented = true
+    }
+
+    private func presentNewFolderAlert() {
+        conversationAwaitingNewFolder = nil
+        newFolderName = ""
+        newFolderEmoji = "📁"
+        isNewFolderPresented = true
+    }
+
+    private func resumeAfterUpgrade(_ action: PendingUpgradeAction?) {
+        guard monetizationManager.hasPro, let action else { return }
+        switch action {
+        case .export(let conversationID):
+            guard let conversation = historyManager.conversations.first(where: { $0.id == conversationID }) else { return }
+            handleExport(conversation)
+        case .moveToFolder(let conversationID):
+            guard let conversation = historyManager.conversations.first(where: { $0.id == conversationID }) else { return }
+            handleMoveToFolder(conversation)
+        case .createFolder:
+            presentNewFolderAlert()
+        }
     }
 
     // MARK: - Empty State

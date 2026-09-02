@@ -27,7 +27,7 @@ enum LLMEngineState: Equatable {
 }
 
 #if !targetEnvironment(simulator)
-private struct LocalAITokenizerLoader: MLXLMCommon.TokenizerLoader {
+struct LocalAITokenizerLoader: MLXLMCommon.TokenizerLoader {
     func load(from directory: URL) async throws -> any MLXLMCommon.Tokenizer {
         let upstream = try await AutoTokenizer.from(modelFolder: directory)
         return LocalAITokenizer(upstream: upstream)
@@ -1939,7 +1939,7 @@ private extension LLMEngine {
         }
 
         if let modelPath {
-            if ModelInfo.vlmMLXModelIDs.contains(modelID) {
+            if ModelInfo.isVisionModel(modelID) {
                 return try await VLMModelFactory.shared.loadContainer(
                     from: modelPath,
                     using: LocalAITokenizerLoader()
@@ -1960,11 +1960,14 @@ private extension LLMEngine {
         maxTokens: Int,
         modelID: String
     ) -> GenerateParameters {
-        let isVisionModel = ModelInfo.vlmMLXModelIDs.contains(modelID)
+        let isVisionModel = ModelInfo.isVisionModel(modelID)
+        let isDocumentOCRModel = modelID == GLMOCRService.modelID
         let lowMemoryPhone = DeviceResourcePolicy.current.isLowMemoryPhone
         return GenerateParameters(
-            maxTokens: isVisionModel && UIDevice.current.userInterfaceIdiom == .phone ? min(maxTokens, 192) : maxTokens,
-            maxKVSize: isVisionModel ? 512 : (lowMemoryPhone ? 2_048 : nil),
+            maxTokens: isDocumentOCRModel
+                ? min(maxTokens, 4_096)
+                : (isVisionModel && UIDevice.current.userInterfaceIdiom == .phone ? min(maxTokens, 192) : maxTokens),
+            maxKVSize: isDocumentOCRModel ? 4_096 : (isVisionModel ? 512 : (lowMemoryPhone ? 2_048 : nil)),
             kvBits: isVisionModel ? 4 : nil,
             temperature: Float(temperature),
             topP: Float(topP),
