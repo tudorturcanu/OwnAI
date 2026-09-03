@@ -89,6 +89,13 @@ struct ChatView: View {
     // bottom) from a keyboard-dismiss swipe (finger moves down but the
     // content stays at the bottom, so this stays true).
     @State private var isScrollNearBottom = true
+    // Whether the message list is taller than its viewport. The bottom
+    // anchor for size changes is only applied while this is true: with
+    // shorter content it would also react to the *container* growing
+    // (keyboard dismissing right after the first send) and glue the
+    // content's bottom edge to the new bottom, leaving the first message
+    // floating below a gap instead of at the top.
+    @State private var isContentScrollable = false
     @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
     @AppStorage("responseCharacterLimit") private var responseCharacterLimit = AIResponseDefaults.responseCharacterLimit
     @AppStorage("smartReplyStylesEnabled") private var smartReplyStylesEnabled = false
@@ -641,28 +648,19 @@ struct ChatView: View {
                 .zIndex(100)
             }
         }
+        // Matches how ContentView contributes its own toolbar groups: without
+        // the hidden shared background this item is the only one left carrying
+        // the system's glass capsule, which is what made it read as a heavy
+        // circle bolted onto the end of the bar.
         .toolbar {
-            ToolbarItemGroup(placement: .navigationBarTrailing) {
-                if inChatSearchEnabled && !historyManager.currentMessages.isEmpty {
-                    Button {
-                        withAnimation(.spring(response: 0.3)) {
-                            isInChatSearchActive.toggle()
-                            if !isInChatSearchActive {
-                                inChatSearchText = ""
-                                isSearchFieldFocused = false
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "magnifyingglass")
-                            .font(.body.weight(.medium))
-                            .foregroundStyle(isInChatSearchActive ? Color.blue : Color.adaptive(white: 0.3))
-                            .frame(width: 44, height: 44)
-                            .background(Color.adaptive(white: 0.95))
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .keyboardShortcut("f", modifiers: [.command])
-                    .accessibilityLabel(String(localized: "Search in conversation"))
+            if #available(iOS 26.0, *) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    inChatSearchToolbarButton
+                }
+                .sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    inChatSearchToolbarButton
                 }
             }
         }
@@ -736,6 +734,38 @@ struct ChatView: View {
     }
 
     // MARK: - In-Chat Search
+
+    /// Sized and filled like ContentView's New Chat button (32pt circle inside a
+    /// 44pt tap target) so the two trailing controls read as one cluster. The
+    /// active state fills the circle rather than only tinting the glyph, which
+    /// makes "search is on" legible at a glance.
+    @ViewBuilder
+    private var inChatSearchToolbarButton: some View {
+        if inChatSearchEnabled && !historyManager.currentMessages.isEmpty {
+            Button {
+                withAnimation(.spring(response: 0.3)) {
+                    isInChatSearchActive.toggle()
+                    if !isInChatSearchActive {
+                        inChatSearchText = ""
+                        isSearchFieldFocused = false
+                    }
+                }
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(isInChatSearchActive ? Color.white : Color.adaptive(white: 0.3))
+                    .frame(width: 32, height: 32)
+                    .background(isInChatSearchActive ? Color.blue : Color.adaptive(white: 0.95))
+                    .clipShape(Circle())
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut("f", modifiers: [.command])
+            .accessibilityLabel(String(localized: "Search in conversation"))
+            .accessibilityAddTraits(isInChatSearchActive ? .isSelected : [])
+        }
+    }
 
     private var inChatSearchBar: some View {
         HStack(spacing: 10) {
@@ -941,11 +971,7 @@ struct ChatView: View {
                 historyManager.togglePinned(messageID: message.id, in: historyManager.currentConversationID)
             },
             onSpeak: { message in
-                if speechManager.isSpeaking && speechManager.currentlySpeakingMessageID == message.id {
-                    speechManager.stopSpeaking()
-                } else {
-                    speechManager.speak(message.content, messageID: message.id)
-                }
+                toggleSpeechPlayback(for: message)
             },
             onSearchWeb: { message in
                 if let url = URL(string: "https://www.google.com/search?q=\(message.content.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
@@ -959,7 +985,12 @@ struct ChatView: View {
             onShowSources: { message in
                 showSources(for: message)
             },
-            showsQuickActions: message.role == .assistant
+            // Shares smartReplyStylesEnabled with the reply-style chips above
+            // it: both are the "quick options under replies" that one Advanced
+            // setting describes, so they appear and disappear together instead
+            // of the bar outliving the row it sits under.
+            showsQuickActions: smartReplyStylesEnabled
+                && message.role == .assistant
                 && historyManager.currentMessages.last?.id == message.id
                 && !message.isStreaming
                 && canStartChatRequest,
@@ -1007,10 +1038,6 @@ struct ChatView: View {
                         ForEach(historyManager.currentMessages) { message in
                             messageRow(for: message)
                         }
-
-                        if let speakableMessage = latestSpeakableAssistantMessage {
-                            speakReplyButton(for: speakableMessage)
-                        }
                     }
                     
                     // Persistent bottom anchor for scrolling
@@ -1028,7 +1055,13 @@ struct ChatView: View {
             // lag the reflow and flicker. Scoped to .sizeChanges only —
             // no .alignment role — so the list still lays out naturally
             // from the top and short conversations aren't bottom-hugging.
-            .defaultScrollAnchor(isFollowingBottom ? .bottom : nil, for: .sizeChanges)
+            // Only while the content overflows the viewport: a short
+            // conversation must stay top-aligned even as the container
+            // resizes (keyboard show/hide), see isContentScrollable.
+            .defaultScrollAnchor(
+                isFollowingBottom && isContentScrollable ? .bottom : nil,
+                for: .sizeChanges
+            )
             // Resume following when the user scrolls (or is auto-scrolled)
             // back near the bottom. This direction only sets
             // isFollowingBottom = true — never false. Driving "false" from
@@ -1036,14 +1069,17 @@ struct ChatView: View {
             // wraps and grows contentSize before contentOffset catches up,
             // so distanceFromBottom spikes for a frame even though the user
             // did nothing.
-            .onScrollGeometryChange(for: Bool.self) { geometry in
-                let distanceFromBottom = geometry.contentSize.height
-                    - geometry.containerSize.height
-                    - geometry.contentOffset.y
-                return distanceFromBottom < 48
-            } action: { _, isNearBottom in
-                isScrollNearBottom = isNearBottom
-                guard isNearBottom, !isFollowingBottom else { return }
+            .onScrollGeometryChange(for: ScrollFollowGeometry.self) { geometry in
+                let overflow = geometry.contentSize.height - geometry.containerSize.height
+                let distanceFromBottom = overflow - geometry.contentOffset.y
+                return ScrollFollowGeometry(
+                    isNearBottom: distanceFromBottom < 48,
+                    isScrollable: overflow > 0
+                )
+            } action: { _, state in
+                isScrollNearBottom = state.isNearBottom
+                isContentScrollable = state.isScrollable
+                guard state.isNearBottom, !isFollowingBottom else { return }
                 chatDiagnostic("scroll followingBottom false -> true (reached bottom)")
                 isFollowingBottom = true
             }
@@ -1201,8 +1237,14 @@ struct ChatView: View {
         }
     }
 
+    /// Snapshot of the scroll geometry that drives follow-the-tail behavior.
+    private struct ScrollFollowGeometry: Equatable {
+        var isNearBottom: Bool
+        var isScrollable: Bool
+    }
+
     // MARK: - Empty State
-    
+
     private var emptyStateView: some View {
         ChatEmptyStateView(
             isInputFocused: isInputFocused,
@@ -1603,15 +1645,6 @@ struct ChatView: View {
             : String(localized: "Photo attached")
     }
 
-    private var latestSpeakableAssistantMessage: ChatMessage? {
-        guard autoRead else { return nil }
-        guard let lastMessage = historyManager.currentMessages.last else { return nil }
-        guard lastMessage.role == .assistant, !lastMessage.isStreaming else { return nil }
-        let trimmedContent = lastMessage.content.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedContent.isEmpty else { return nil }
-        return lastMessage
-    }
-
     private var currentPersonalityLabel: (name: String, icon: String)? {
         guard systemPrompt != AIResponseDefaults.defaultSystemPrompt else { return nil }
         if let matched = PersonalityPreset.presets.first(where: { $0.systemPrompt == systemPrompt }) {
@@ -1937,36 +1970,6 @@ struct ChatView: View {
         .padding(.vertical, 8)
         .background(.thinMaterial, in: Capsule())
         .accessibilityElement(children: .combine)
-    }
-
-    private func speakReplyButton(for message: ChatMessage) -> some View {
-        Button {
-            toggleSpeechPlayback(for: message)
-        } label: {
-            HStack(spacing: 6) {
-                if speechManager.isPreparingSpeechOutput {
-                    ProgressView().controlSize(.mini)
-                    Text(String(localized: "Preparing voice…"))
-                } else {
-                    Label(
-                        speechManager.isSpeaking ? String(localized: "Stop Speaking") : String(localized: "Speak Reply"),
-                        systemImage: speechManager.isSpeaking ? "speaker.slash.fill" : "speaker.wave.2.fill"
-                    )
-                }
-            }
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(.blue)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .background(Color.adaptiveCard.opacity(0.9))
-            .clipShape(Capsule())
-            .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
-        }
-        .buttonStyle(.plain)
-        .frame(minHeight: 44)
-        .padding(.top, 4)
-        .padding(.bottom, 6)
-        .accessibilityHint(String(localized: "Reads the latest assistant reply aloud."))
     }
 
     private func followUpSuggestions(for message: ChatMessage) -> [String] {

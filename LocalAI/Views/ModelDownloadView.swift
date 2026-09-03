@@ -632,9 +632,8 @@ struct CurrentModelSummaryCard: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "checkmark.circle.fill")
-                .font(.headline)
-                .foregroundStyle(.green)
+            AppLottieView(animation: .successCheck, loops: false, tint: .green)
+                .frame(width: 26, height: 26)
                 .frame(width: 38, height: 38)
                 .background(Color.green.opacity(0.09))
                 .clipShape(RoundedRectangle(cornerRadius: 11))

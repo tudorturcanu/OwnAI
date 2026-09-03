@@ -32,8 +32,7 @@ struct ChatEmptyStateView: View {
 
             VStack(spacing: isInputFocused ? 12 : 24) {
                 if !isInputFocused {
-                    SparkleView()
-                        .accessibilityHidden(true)
+                    SparkleView(size: 140)
                 }
 
                 VStack(spacing: 4) {
@@ -106,9 +105,9 @@ struct ChatEmptyStateView: View {
 
                     if selectedModelName != nil, let onVoiceConversation {
                         Button(action: onVoiceConversation) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "waveform")
-                                    .accessibilityHidden(true)
+                            HStack(spacing: 8) {
+                                AppLottieView(animation: .voiceWave, tint: .blue)
+                                    .frame(width: 21, height: 14)
                                 Text(String(localized: "Try a Voice Conversation"))
                             }
                             .font(.subheadline.bold())

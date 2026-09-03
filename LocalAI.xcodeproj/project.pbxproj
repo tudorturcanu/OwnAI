@@ -23,6 +23,7 @@
 		8B8A3E1B2F2D00010010461E /* MLXLLM in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E1E2F2D00010010461E /* MLXLLM */; };
 		8B8A3E1F2F2D00010010461E /* MLXVLM in Frameworks */ = {isa = PBXBuildFile; productRef = 8B8A3E202F2D00010010461E /* MLXVLM */; };
 		8B8A3F012F2B9C000010461E /* MetalPerformanceShadersGraph.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B8A3F002F2B9C000010461E /* MetalPerformanceShadersGraph.framework */; };
+		8BD276053049438F0093B2C1 /* Lottie in Frameworks */ = {isa = PBXBuildFile; productRef = 8BD276043049438F0093B2C1 /* Lottie */; };
 		8EFFB0F2133ABDDAC075499D /* WatchAppView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91B85A67CC4B2D94DE6FCB4D /* WatchAppView.swift */; };
 		A3092C03ADE84812355F315F /* LocalAIWatchApp.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = EAB0C704B6924ED8F744E8E9 /* LocalAIWatchApp.app */; };
 		ABE93FCF2F94C100008DCDBD /* Hub in Frameworks */ = {isa = PBXBuildFile; productRef = ABE93FCE2F94C100008DCDBD /* Hub */; };
@@ -141,6 +142,7 @@
 				8B8A3DFE2F2B9BF70010461E /* Metal.framework in Frameworks */,
 				8B8A3E0C2F2CCBE90010461E /* MarkdownUI in Frameworks */,
 				ABE93FDE2F94C202008DCDBD /* MLXLinalg in Frameworks */,
+				8BD276053049438F0093B2C1 /* Lottie in Frameworks */,
 				8B8A3E1A2F2D00010010461E /* MLXLMCommon in Frameworks */,
 				8B0F13D52FDEA1670053FFDA /* Embeddings in Frameworks */,
 				8B8A3E1B2F2D00010010461E /* MLXLLM in Frameworks */,
@@ -258,6 +260,7 @@
 				3E53D0029821E74467DF2F34 /* MisakiSwift */,
 				8B0F13D12FDEA1240053FFDA /* WhisperKit */,
 				8B0F13D42FDEA1670053FFDA /* Embeddings */,
+				8BD276043049438F0093B2C1 /* Lottie */,
 			);
 			productName = LocalAI;
 			productReference = 8B8A3DBC2F2B75380010461E /* LocalAI.app */;
@@ -323,6 +326,7 @@
 				F3DDD970CAC6BFD83388E17F /* XCLocalSwiftPackageReference "Packages/MisakiSwiftLocal" */,
 				8B0F13D02FDEA1240053FFDA /* XCRemoteSwiftPackageReference "WhisperKit" */,
 				8B0F13D32FDEA1670053FFDA /* XCRemoteSwiftPackageReference "swift-embeddings" */,
+				8BD276033049438F0093B2C1 /* XCRemoteSwiftPackageReference "lottie-ios" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8B8A3DBD2F2B75380010461E /* Products */;
@@ -735,6 +739,14 @@
 				minimumVersion = 3.31.3;
 			};
 		};
+		8BD276033049438F0093B2C1 /* XCRemoteSwiftPackageReference "lottie-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/airbnb/lottie-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 4.6.1;
+			};
+		};
 		ABE93FCD2F94C100008DCDBD /* XCRemoteSwiftPackageReference "swift-transformers" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/huggingface/swift-transformers.git";
@@ -814,6 +826,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8B8A3E1C2F2D00010010461E /* XCRemoteSwiftPackageReference "mlx-swift-lm" */;
 			productName = MLXVLM;
+		};
+		8BD276043049438F0093B2C1 /* Lottie */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8BD276033049438F0093B2C1 /* XCRemoteSwiftPackageReference "lottie-ios" */;
+			productName = Lottie;
 		};
 		ABE93FCE2F94C100008DCDBD /* Hub */ = {
 			isa = XCSwiftPackageProductDependency;

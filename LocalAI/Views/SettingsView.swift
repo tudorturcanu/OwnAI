@@ -60,6 +60,10 @@ struct SettingsView: View {
         guard count > 0 else {
             return String(localized: "Nothing to export yet")
         }
+        // A single chat read as "Save 1 conversations as a Markdown backup".
+        guard count > 1 else {
+            return String(localized: "Save 1 conversation as a Markdown backup")
+        }
         return String(
             format: String(
                 localized: "Save %lld conversations as a Markdown backup",
@@ -317,18 +321,38 @@ struct SettingsView: View {
 
             sectionDivider
 
-            NavigationLink {
-                AIPersonalityView()
-                    .environment(monetizationManager)
-            } label: {
-                settingsRow(
-                    icon: "brain.head.profile",
-                    tint: .purple,
-                    title: "AI Personality",
-                    subtitle: "Tone, style, and response tuning"
-                )
+            // Guarded at the entrance rather than inside: nearly every section
+            // of AIPersonalityView is Pro, so a free user who walked in met the
+            // same "Own AI Pro" card stacked three times down one screen.
+            if monetizationManager.canUse(.advancedPersonality) {
+                NavigationLink {
+                    AIPersonalityView()
+                        .environment(monetizationManager)
+                } label: {
+                    settingsRow(
+                        icon: "brain.head.profile",
+                        tint: .purple,
+                        title: "AI Personality",
+                        subtitle: "Tone, style, and response tuning"
+                    )
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button {
+                    upgradeFeature = .advancedPersonality
+                } label: {
+                    settingsRow(
+                        icon: "brain.head.profile",
+                        tint: .purple,
+                        title: "AI Personality",
+                        subtitle: "Tone, style, and response tuning",
+                        trailingIcon: "crown.fill",
+                        trailingTint: .orange
+                    )
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint(String(localized: "Own AI Pro feature. Opens upgrade options."))
             }
-            .buttonStyle(.plain)
         }
     }
 
@@ -631,7 +655,10 @@ struct SettingsView: View {
         tint: Color,
         title: LocalizedStringKey,
         subtitle: String,
-        trailingIcon: String = "chevron.right"
+        trailingIcon: String = "chevron.right",
+        /// nil keeps the default tertiary disclosure grey; a Pro crown needs
+        /// the same orange it carries everywhere else.
+        trailingTint: Color? = nil
     ) -> some View {
         HStack(spacing: 14) {
             rowIcon(systemImage: icon, tint: tint)
@@ -654,7 +681,7 @@ struct SettingsView: View {
             Image(systemName: trailingIcon)
                 .font(.caption)
                 .fontWeight(.semibold)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(trailingTint ?? Color(uiColor: .tertiaryLabel))
                 .accessibilityHidden(true)
         }
         .padding(.horizontal, 16)

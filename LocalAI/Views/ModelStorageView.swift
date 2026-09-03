@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ModelStorageView: View {
     @Environment(ModelManager.self) private var modelManager
+    @Environment(MonetizationManager.self) private var monetizationManager
     @State private var entries: [Entry] = []
     @State private var pendingDeletion: ModelInfo?
     /// Only imported models can be renamed — a catalog model's name is its
@@ -31,12 +32,28 @@ struct ModelStorageView: View {
                 ModelImportControl { start, progress in
                     VStack(alignment: .leading, spacing: 10) {
                         Button(action: start) {
-                            Label(
-                                String(localized: "Import Model from Files"),
-                                systemImage: "square.and.arrow.down.on.square"
-                            )
+                            HStack(spacing: 8) {
+                                Label(
+                                    String(localized: "Import Model from Files"),
+                                    systemImage: "square.and.arrow.down.on.square"
+                                )
+
+                                if !monetizationManager.canUse(.importedModels) {
+                                    Spacer(minLength: 8)
+                                    Image(systemName: "crown.fill")
+                                        .foregroundStyle(.orange)
+                                        .accessibilityLabel(String(localized: "Pro"))
+                                }
+                            }
                         }
                         .disabled(progress != nil)
+
+                        if !monetizationManager.canUse(.importedModels) {
+                            Text(ModelImportCopy.lockedHint)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
 
                         if let progress {
                             VStack(alignment: .leading, spacing: 4) {

@@ -17,6 +17,9 @@ struct ChatHistoryView: View {
     var isEmbedded: Bool = false
 
     @State private var asyncWordCount: String = "0"
+    /// Kept alongside the abbreviated string so the tile's label can agree with
+    /// the count; "1.2K" can't tell us whether the real total is exactly one.
+    @State private var exactWordCount = 0
     @State private var searchText = ""
     @State private var selectedFolderID: UUID? = nil    // nil = "All"
     @State private var exportConversation: ChatConversation?
@@ -553,12 +556,16 @@ struct ChatHistoryView: View {
     private var searchSummaryText: String {
         let conversationCount = filteredConversations.count
         let matchCount = totalSearchMatchCount
-        let chatsPart = String(
-            format: String(localized: "%lld chats", defaultValue: "%lld chats"),
-            Int64(conversationCount)
-        )
+        let chatsPart = conversationCount == 1
+            ? String(localized: "1 chat")
+            : String(
+                format: String(localized: "%lld chats", defaultValue: "%lld chats"),
+                Int64(conversationCount)
+            )
         guard matchCount > 0 else { return chatsPart }
-        let messagesPart = String(
+        let messagesPart = matchCount == 1
+            ? String(localized: "1 matching message")
+            : String(
             format: String(localized: "%lld matching messages", defaultValue: "%lld matching messages"),
             Int64(matchCount)
         )
@@ -584,11 +591,28 @@ struct ChatHistoryView: View {
         let totalMessages = conversations.reduce(0) { $0 + $1.messages.count }
 
         return HStack(spacing: 0) {
-            statItem(value: "\(totalConversations)", label: String(localized: "Chats"), icon: "bubble.left.and.bubble.right.fill", tint: .blue)
+            statItem(
+                value: "\(totalConversations)",
+                label: totalConversations == 1 ? String(localized: "Chat") : String(localized: "Chats"),
+                icon: "bubble.left.and.bubble.right.fill",
+                tint: .blue
+            )
             statDivider
-            statItem(value: "\(totalMessages)", label: String(localized: "Messages"), icon: "text.bubble.fill", tint: .purple)
+            statItem(
+                value: "\(totalMessages)",
+                label: totalMessages == 1 ? String(localized: "Message") : String(localized: "Messages"),
+                icon: "text.bubble.fill",
+                tint: .purple
+            )
             statDivider
-            statItem(value: asyncWordCount, label: String(localized: "Words"), icon: "textformat.abc", tint: .orange)
+            statItem(
+                value: asyncWordCount,
+                // The value is abbreviated ("1.2K"), so only an exact count of
+                // one can render a singular label here.
+                label: exactWordCount == 1 ? String(localized: "Word") : String(localized: "Words"),
+                icon: "textformat.abc",
+                tint: .orange
+            )
         }
         .padding(.vertical, 16)
         .background(Color.adaptiveCard, in: RoundedRectangle(cornerRadius: 16))
@@ -608,6 +632,7 @@ struct ChatHistoryView: View {
             }
         }.value
         self.asyncWordCount = abbreviatedNumber(totalWords)
+        self.exactWordCount = totalWords
     }
 
     private var statDivider: some View {
@@ -1004,15 +1029,19 @@ struct ConversationRow: View {
             parts.append(folderLabel)
         }
         if let searchHit, searchHit.matchCount > 0 {
-            parts.append(String(
-                format: String(localized: "%lld matching messages", defaultValue: "%lld matching messages"),
-                Int64(searchHit.matchCount)
-            ))
+            parts.append(searchHit.matchCount == 1
+                ? String(localized: "1 matching message")
+                : String(
+                    format: String(localized: "%lld matching messages", defaultValue: "%lld matching messages"),
+                    Int64(searchHit.matchCount)
+                ))
         }
-        parts.append(String(
-            format: String(localized: "%lld messages", defaultValue: "%lld messages"),
-            Int64(conversation.messages.count)
-        ))
+        parts.append(conversation.messages.count == 1
+            ? String(localized: "1 message")
+            : String(
+                format: String(localized: "%lld messages", defaultValue: "%lld messages"),
+                Int64(conversation.messages.count)
+            ))
         parts.append(formattedDate)
         return parts.joined(separator: ", ")
     }

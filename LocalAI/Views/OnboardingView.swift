@@ -14,7 +14,6 @@ struct OnboardingView: View {
     @Environment(ModelManager.self) private var modelManager
     @Environment(MonetizationManager.self) private var monetizationManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var animate = false
     @State private var currentPage = 0
     @State private var isApplyingRecommendation = false
     @State private var showModelPicker = false
@@ -142,7 +141,6 @@ struct OnboardingView: View {
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: currentPage)
         .onAppear {
-            animate = !reduceMotion
             DispatchQueue.main.async {
                 focusedPage = currentPage
             }
@@ -239,21 +237,7 @@ struct OnboardingView: View {
                         )
                         .frame(width: 150, height: 150)
 
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 62, weight: .light))
-                        .accessibilityHidden(true)
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [.orange, .pink],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .scaleEffect(animate ? 1.05 : 1)
-                        .animation(
-                            reduceMotion ? nil : .easeInOut(duration: 2).repeatForever(autoreverses: true),
-                            value: animate
-                        )
+                    SparkleView(size: 130)
                 }
 
                 VStack(spacing: 12) {

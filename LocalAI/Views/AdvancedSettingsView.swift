@@ -27,6 +27,7 @@ struct AdvancedSettingsView: View {
     @State private var kokoroModelPresent = false
     @State private var showKokoroDownloadAlert = false
     @State private var pendingKokoroBackend: SpeechOutputBackend?
+    @State private var showGLMOCRConsentSheet = false
 
     private var pdfOCRMode: PDFOCRMode {
         PDFOCRMode(rawValue: pdfOCRModeRaw) ?? .preferNativeText
@@ -37,8 +38,103 @@ struct AdvancedSettingsView: View {
     }
 
     private var isGLMOCRDownloaded: Bool {
-        modelManager.models.first(where: { $0.id == ModelInfo.glmOCR_4bit.id })?
-            .downloadState.isDownloaded == true
+        glmOCRModel?.downloadState.isDownloaded == true
+    }
+
+    /// The live catalog entry, so the control below tracks real download
+    /// progress rather than the static `ModelInfo.glmOCR_4bit` template.
+    private var glmOCRModel: ModelInfo? {
+        modelManager.models.first(where: { $0.id == ModelInfo.glmOCR_4bit.id })
+    }
+
+    private var glmOCRConsentKey: String {
+        "modelConsent.\(ModelInfo.glmOCR_4bit.id)"
+    }
+
+    /// Downloads GLM OCR in place. This used to be a NavigationLink into the
+    /// full Models screen, which dropped the user somewhere they then had to
+    /// find the model themselves and navigate back from.
+    @ViewBuilder
+    private var glmOCRDownloadControl: some View {
+        let model = glmOCRModel ?? ModelInfo.glmOCR_4bit
+
+        switch model.downloadState {
+        case .downloading(let progress, _), .validating(let progress):
+            VStack(alignment: .leading, spacing: 6) {
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                    .tint(.orange)
+
+                HStack(spacing: 8) {
+                    Text(String(
+                        format: String(localized: "Downloading GLM OCR — %lld%%"),
+                        Int64((progress * 100).rounded())
+                    ))
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .contentTransition(.numericText())
+
+                    Spacer(minLength: 8)
+
+                    Button(String(localized: "Cancel")) {
+                        modelManager.cancelDownload(model.id)
+                    }
+                    .font(.footnote.weight(.semibold))
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.orange)
+                }
+            }
+            .accessibilityElement(children: .combine)
+
+        case .error(let message):
+            VStack(alignment: .leading, spacing: 6) {
+                Text(message)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button {
+                    startGLMOCRDownload()
+                } label: {
+                    Label(String(localized: "Try Again"), systemImage: "arrow.clockwise")
+                        .font(.footnote.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.orange)
+                .frame(minHeight: 44)
+            }
+
+        default:
+            Button {
+                startGLMOCRDownload()
+            } label: {
+                Label(
+                    String(
+                        format: String(localized: "Download GLM OCR · %@"),
+                        glmOCRSizeText
+                    ),
+                    systemImage: "arrow.down.circle"
+                )
+                .font(.footnote.weight(.semibold))
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.orange)
+            .frame(minHeight: 44)
+        }
+    }
+
+    private var glmOCRSizeText: String {
+        let bytes = Int64(ModelInfo.glmOCR_4bit.sizeGB * 1_000_000_000)
+        return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    private func startGLMOCRDownload() {
+        guard UserDefaults.standard.bool(forKey: glmOCRConsentKey) else {
+            showGLMOCRConsentSheet = true
+            return
+        }
+        modelManager.downloadModel(ModelInfo.glmOCR_4bit.id)
     }
 
     private var documentProcessingMode: DocumentProcessingMode {
@@ -87,6 +183,17 @@ struct AdvancedSettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: { backend in
             Text(kokoroDownloadAlertMessage(for: backend))
+        }
+        // GLM OCR ships with model terms, so the in-place download clears the
+        // same consent gate the Models screen uses before it starts.
+        .sheet(isPresented: $showGLMOCRConsentSheet) {
+            ModelConsentSheet(model: glmOCRModel ?? ModelInfo.glmOCR_4bit) {
+                UserDefaults.standard.set(true, forKey: glmOCRConsentKey)
+                showGLMOCRConsentSheet = false
+                modelManager.downloadModel(ModelInfo.glmOCR_4bit.id)
+            } onCancel: {
+                showGLMOCRConsentSheet = false
+            }
         }
     }
 
@@ -552,12 +659,7 @@ struct AdvancedSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
 
                     if !isGLMOCRDownloaded {
-                        NavigationLink {
-                            ModelDownloadView()
-                        } label: {
-                            Label("Download GLM OCR in Models", systemImage: "arrow.down.circle")
-                                .font(.footnote.weight(.semibold))
-                        }
+                        glmOCRDownloadControl
                     }
                 }
             }

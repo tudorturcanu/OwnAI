@@ -371,6 +371,29 @@ struct TypingDots: View {
     }
 }
 
+/// One source of truth for the two action rows that sit under a reply: the
+/// reply-style chips and the quick-actions bar. They were styled by hand in two
+/// places and had drifted — opaque card vs `.ultraThinMaterial`, a 1pt vs 0.5pt
+/// border, and two different greys — so the pair read as two unrelated
+/// components stacked on top of each other.
+enum AssistantActionStyle {
+    /// A material rather than a flat colour: `adaptiveCard` resolves to pure
+    /// black on dark, so an opaque fill left both rows sitting invisibly on the
+    /// dark chat background. A material lifts off the backdrop in either scheme.
+    static var fill: Material { .regularMaterial }
+    static var border: Color { Color.adaptiveBorder(opacity: 0.5) }
+    static let borderWidth: CGFloat = 1
+    /// Both rows stand exactly this tall. The quick-actions bar used to be
+    /// 44pt cells plus 4pt of its own padding, so it sat 52pt against the
+    /// chips' 44 and read as a heavier, separate slab.
+    static let controlHeight: CGFloat = 44
+    /// Narrower than it is tall: four glyphs in square 44pt cells made the pill
+    /// far wider than its content needed.
+    static let iconCellWidth: CGFloat = 38
+    static var foreground: Color { Color.adaptive(white: 0.22) }
+    static let iconFont: Font = .system(size: 13, weight: .semibold)
+}
+
 struct MessageBubble: View {
     let message: ChatMessage
     let showsContinue: Bool
@@ -657,23 +680,23 @@ struct MessageBubble: View {
             .padding(.leading, 4)
             .padding(.trailing, 12)
         }
-        .frame(maxWidth: 320, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 2)
     }
 
     private func actionChipLabel(title: String, systemImage: String) -> some View {
         Label(title, systemImage: systemImage)
             .font(.caption.weight(.semibold))
-            .foregroundStyle(Color.adaptive(white: 0.22))
+            .foregroundStyle(AssistantActionStyle.foreground)
             .lineLimit(1)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
-            .frame(minHeight: 44)
-            .background(Color.adaptiveCard.opacity(0.9))
+            .frame(minHeight: AssistantActionStyle.controlHeight)
+            .background(AssistantActionStyle.fill)
             .clipShape(Capsule())
             .overlay(
                 Capsule()
-                    .stroke(Color.adaptiveBorder(opacity: 0.3), lineWidth: 1)
+                    .stroke(AssistantActionStyle.border, lineWidth: AssistantActionStyle.borderWidth)
             )
     }
 
@@ -690,7 +713,10 @@ struct MessageBubble: View {
                 if isSpeakingThisMessage && speechManager.isPreparingSpeechOutput {
                     ProgressView()
                         .controlSize(.small)
-                        .frame(width: 44, height: 44)
+                        .frame(
+                            width: AssistantActionStyle.iconCellWidth,
+                            height: AssistantActionStyle.controlHeight
+                        )
                         .accessibilityLabel(String(localized: "Preparing voice"))
                 } else {
                     quickActionButton(
@@ -714,14 +740,12 @@ struct MessageBubble: View {
             }
         }
         .padding(.horizontal, 4)
-        .padding(.vertical, 4)
-        .background(.ultraThinMaterial)
+        .background(AssistantActionStyle.fill)
         .clipShape(Capsule())
         .overlay(
             Capsule()
-                .stroke(Color.adaptiveBorder(opacity: 0.45), lineWidth: 0.5)
+                .stroke(AssistantActionStyle.border, lineWidth: AssistantActionStyle.borderWidth)
         )
-        .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
         .transition(.opacity.combined(with: .scale(scale: 0.9)))
     }
 
@@ -758,9 +782,12 @@ struct MessageBubble: View {
     private func quickActionButton(icon: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: icon)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color.adaptive(white: 0.35))
-                .frame(width: 44, height: 44)
+                .font(AssistantActionStyle.iconFont)
+                .foregroundStyle(AssistantActionStyle.foreground)
+                .frame(
+                    width: AssistantActionStyle.iconCellWidth,
+                    height: AssistantActionStyle.controlHeight
+                )
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -1123,7 +1150,7 @@ struct MessageBubble: View {
 
                     Image(systemName: isThinkingExpanded ? "chevron.down" : "chevron.right")
                         .font(.title3.weight(.semibold))
-                        .foregroundStyle(Color.black)
+                        .foregroundStyle(Color.adaptive(white: 0))
                 }
                 .contentShape(Rectangle())
             }
