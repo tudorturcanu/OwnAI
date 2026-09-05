@@ -16,17 +16,29 @@ struct ChatView: View {
     @Environment(AssistantMemoryStore.self) private var memoryStore
     @Environment(MonetizationManager.self) private var monetizationManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// Composer circles (attach, send, stop, mic) grow with the text size so
+    /// they stay proportionate to the field beside them at accessibility sizes.
+    @ScaledMetric(relativeTo: .body) private var composerControlSize = 36.0
     @State private var documentManager = DocumentManager.shared
 
     /// Binding populated by Siri via ContentView. When non-nil, the query is
     /// auto-filled in the text field and sent. Reset to nil after handling.
     @Binding var siriPendingQuery: String?
+    @Binding var pendingImportFileURL: URL?
 
-    init(siriPendingQuery: Binding<String?> = .constant(nil)) {
+    init(
+        siriPendingQuery: Binding<String?> = .constant(nil),
+        pendingImportFileURL: Binding<URL?> = .constant(nil)
+    ) {
         _siriPendingQuery = siriPendingQuery
+        _pendingImportFileURL = pendingImportFileURL
     }
 
     @State private var messageText = ""
+    /// Unsent composer text per conversation. Switching chats used to carry a
+    /// half-typed prompt into the wrong chat and lose it on the way back.
+    @State private var composerDrafts: [UUID: String] = [:]
     @State private var isFileImporterPresented = false
     @State private var isPhotoPickerPresented = false
     @State private var documentImportState: DocumentImportState = .idle
@@ -39,6 +51,10 @@ struct ChatView: View {
     @State private var showExportSheet = false
     @FocusState private var isInputFocused: Bool
     @State private var showModelDownloadSheet = false
+    // Assistant rows whose failure can only be fixed by picking a different
+    // model (not downloaded, too big for this device, nothing loaded). They
+    // get a "Choose a model" button instead of a bare error sentence.
+    @State private var modelUnavailableMessageIDs: Set<UUID> = []
     @State private var showModelConsentSheet = false
     @State private var showAttachmentOptions = false
     @State private var shouldSendAfterConsent = false
@@ -48,11 +64,17 @@ struct ChatView: View {
     @State private var usageLimitToastMessage: String?
     @State private var extractionNoticeMessage: String?
     @State private var modelRecoveryNoticeMessage: String?
+    /// The underlying error text for the current recovery notice, if any —
+    /// nil for notices that aren't failures (e.g. the slow-model swap).
+    @State private var modelRecoveryNoticeDetail: String?
+    /// Set when the user taps the notice's info button. Kept separate from
+    /// `modelRecoveryNoticeDetail` so the alert's text survives the toast's
+    /// own auto-dismiss timer clearing that value out from under it.
+    @State private var recoveryDetailAlertText: String?
     @State private var runtimePerformanceToast: RuntimePerformanceStatus?
     @State private var runtimePerformanceDismissTask: Task<Void, Never>?
     @State private var performanceStatusRevision = 0
     @State private var recentMemoryPressure = false
-    @State private var contextLimitWarningDismissed = false
     @State private var streamingPrefix = ""
     @State private var speechStreamingSpokenCharCount: Int = 0
     @State private var selectedImage: UIImage?
@@ -99,7 +121,7 @@ struct ChatView: View {
     @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
     @AppStorage("responseCharacterLimit") private var responseCharacterLimit = AIResponseDefaults.responseCharacterLimit
     @AppStorage("smartReplyStylesEnabled") private var smartReplyStylesEnabled = false
-    @AppStorage("inChatSearchEnabled") private var inChatSearchEnabled = true
+    @AppStorage(WebSearchEngine.storageKey) private var webSearchEngineRaw = WebSearchEngine.google.rawValue
 
     @State private var editingMessage: ChatMessage?
     @State private var editedMessageText: String = ""
@@ -110,6 +132,10 @@ struct ChatView: View {
     @State private var isEditSheetPresented = false
     @State private var inChatSearchText: String = ""
     @State private var isInChatSearchActive = false
+    /// Feature flag for the Search button in the trailing toolbar capsule.
+    /// Off for now: the button is hidden and ⌘F goes with it, but a jump from
+    /// History search can still open the in-chat search bar for its match.
+    static let showsInChatSearchButton = false
     @FocusState private var isSearchFieldFocused: Bool
     /// Cached in-chat search matches in conversation order, rebuilt by
     /// `recomputeInChatSearchMatches()` when `inChatSearchCacheKey` changes.
@@ -199,6 +225,11 @@ struct ChatView: View {
             } message: {
                 Text(voiceError ?? String(localized: "Voice input is unavailable."))
             }
+            .alert(String(localized: "Why did this happen?"), isPresented: recoveryDetailAlertBinding) {
+                Button("OK", role: .cancel) { recoveryDetailAlertText = nil }
+            } message: {
+                Text(recoveryDetailAlertText ?? "")
+            }
             .onChange(of: voiceConversationMode) {
                 if voiceConversationMode {
                     guard SpeechManager.isVoiceConversationEnabled else {
@@ -247,6 +278,21 @@ struct ChatView: View {
                 siriPendingQuery = nil
                 messageText = query
                 sendMessage()
+            }
+            // "Copy to Own AI" from the share sheet or Files: attach the file to
+            // the current chat exactly as if it had been picked from the + menu.
+            .onChange(of: pendingImportFileURL) {
+                guard let url = pendingImportFileURL else { return }
+                pendingImportFileURL = nil
+                if historyManager.currentConversationID == nil {
+                    historyManager.newConversation()
+                }
+                handleFileImport(result: .success([url]))
+            }
+            .onChange(of: documentManager.lastEvictionNotice) {
+                guard let notice = documentManager.lastEvictionNotice else { return }
+                documentManager.lastEvictionNotice = nil
+                showUsageToast(notice)
             }
             // First message queued while the model was still downloading:
             // send it the moment a usable model appears. Also retries when
@@ -401,6 +447,11 @@ struct ChatView: View {
             }
             .overlay(alignment: .bottom) {
                 VStack(spacing: 10) {
+                    if let pendingMessageDeletion = historyManager.pendingMessageDeletion {
+                        undoMessageDeleteBar(for: pendingMessageDeletion)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
+
                     if let usageLimitToastMessage {
                         usageLimitToast(message: usageLimitToastMessage)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -412,7 +463,7 @@ struct ChatView: View {
                     }
 
                     if let modelRecoveryNoticeMessage {
-                        modelRecoveryToast(message: modelRecoveryNoticeMessage)
+                        modelRecoveryToast(message: modelRecoveryNoticeMessage, detail: modelRecoveryNoticeDetail)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
 
@@ -472,7 +523,6 @@ struct ChatView: View {
             }
             .onChange(of: modelManager.selectedModelID) {
                 invalidateGenerationSessionScope()
-                contextLimitWarningDismissed = false
                 if llmEngine.state == .generating {
                     pendingSessionReset = true
                 } else {
@@ -503,10 +553,11 @@ struct ChatView: View {
                     performanceStatusRevision += 1
                 }
             }
-            .onChange(of: historyManager.currentConversationID) {
+            .onChange(of: historyManager.currentConversationID) { previousID, newID in
+                stashComposerDraft(for: previousID)
+                restoreComposerDraft(for: newID)
                 speechManager.stopSpeaking()
                 invalidateGenerationSessionScope()
-                contextLimitWarningDismissed = false
                 if llmEngine.state == .generating {
                     pendingSessionReset = true
                 } else {
@@ -655,19 +706,14 @@ struct ChatView: View {
         .toolbar {
             if #available(iOS 26.0, *) {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    inChatSearchToolbarButton
+                    trailingToolbarCluster
                 }
                 .sharedBackgroundVisibility(.hidden)
             } else {
                 ToolbarItemGroup(placement: .navigationBarTrailing) {
-                    inChatSearchToolbarButton
+                    trailingToolbarCluster
                 }
             }
-        }
-        .onChange(of: inChatSearchEnabled) {
-            guard !inChatSearchEnabled else { return }
-            inChatSearchText = ""
-            isInChatSearchActive = false
         }
         // A new query, chat, or message restarts stepping from the first hit.
         .onChange(of: inChatSearchCacheKey, initial: true) {
@@ -690,6 +736,12 @@ struct ChatView: View {
             )
         }
     }
+
+    // A model fetching in the background is reported by the navigation bar's
+    // download ring (`DownloadActivityToolbarButton`), which is always on
+    // screen and opens the downloads screen. This overlay used to carry a
+    // second capsule saying the same thing, only gated on the chat already
+    // having messages.
 
     private var warmingUpIndicator: some View {
         HStack(spacing: 8) {
@@ -733,38 +785,71 @@ struct ChatView: View {
         .accessibilityLabel(status)
     }
 
-    // MARK: - In-Chat Search
+    // MARK: - Trailing Toolbar Cluster
 
-    /// Sized and filled like ContentView's New Chat button (32pt circle inside a
-    /// 44pt tap target) so the two trailing controls read as one cluster. The
-    /// active state fills the circle rather than only tinting the glyph, which
-    /// makes "search is on" legible at a glance.
-    @ViewBuilder
-    private var inChatSearchToolbarButton: some View {
-        if inChatSearchEnabled && !historyManager.currentMessages.isEmpty {
+    /// New Chat and Search in one capsule, built exactly like the Settings /
+    /// History pill on the leading edge (44pt cells, 16pt divider, same fill)
+    /// so the two ends of the bar are mirror images. Search only appears when
+    /// `showsInChatSearchButton` is on and there is something to search, and
+    /// the divider goes with it.
+    private var trailingToolbarCluster: some View {
+        HStack(spacing: 0) {
             Button {
-                withAnimation(.spring(response: 0.3)) {
-                    isInChatSearchActive.toggle()
-                    if !isInChatSearchActive {
-                        inChatSearchText = ""
-                        isSearchFieldFocused = false
-                    }
+                speechManager.stopSpeaking()
+                withAnimation {
+                    historyManager.newConversation()
                 }
             } label: {
-                Image(systemName: "magnifyingglass")
+                Image(systemName: "square.and.pencil")
+                    .accessibilityLabel(String(localized: "New Chat"))
                     .font(.body.weight(.medium))
-                    .foregroundStyle(isInChatSearchActive ? Color.white : Color.adaptive(white: 0.3))
-                    .frame(width: 32, height: 32)
-                    .background(isInChatSearchActive ? Color.blue : Color.adaptive(white: 0.95))
-                    .clipShape(Circle())
+                    .foregroundStyle(Color.adaptive(white: 0.3))
                     .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .keyboardShortcut("f", modifiers: [.command])
-            .accessibilityLabel(String(localized: "Search in conversation"))
-            .accessibilityAddTraits(isInChatSearchActive ? .isSelected : [])
+            .keyboardShortcut("n", modifiers: .command)
+
+            if Self.showsInChatSearchButton, !historyManager.currentMessages.isEmpty {
+                Divider()
+                    .frame(height: 16)
+                    .padding(.horizontal, 4)
+
+                inChatSearchToolbarButton
+            }
         }
+        .fixedSize()
+        .background(Color.adaptive(white: 0.95))
+        .clipShape(Capsule())
+    }
+
+    // MARK: - In-Chat Search
+
+    /// The active state fills a 32pt circle inside the cell rather than only
+    /// tinting the glyph, which makes "search is on" legible at a glance.
+    private var inChatSearchToolbarButton: some View {
+        Button {
+            withAnimation(.spring(response: 0.3)) {
+                isInChatSearchActive.toggle()
+                if !isInChatSearchActive {
+                    inChatSearchText = ""
+                    isSearchFieldFocused = false
+                }
+            }
+        } label: {
+            Image(systemName: "magnifyingglass")
+                .font(.body.weight(.medium))
+                .foregroundStyle(isInChatSearchActive ? Color.white : Color.adaptive(white: 0.3))
+                .frame(width: 32, height: 32)
+                .background(isInChatSearchActive ? Color.blue : Color.clear)
+                .clipShape(Circle())
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut("f", modifiers: [.command])
+        .accessibilityLabel(String(localized: "Search in conversation"))
+        .accessibilityAddTraits(isInChatSearchActive ? .isSelected : [])
     }
 
     private var inChatSearchBar: some View {
@@ -907,6 +992,13 @@ struct ChatView: View {
         )
     }
 
+    private var recoveryDetailAlertBinding: Binding<Bool> {
+        Binding(
+            get: { recoveryDetailAlertText != nil },
+            set: { if !$0 { recoveryDetailAlertText = nil } }
+        )
+    }
+
     private func dismissKeyboard() {
         isInputFocused = false
     }
@@ -936,6 +1028,67 @@ struct ChatView: View {
         withAnimation(.spring(response: 0.3)) {
             historyManager.deleteMessage(id: message.id)
         }
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: String(localized: "Message deleted. Undo available.")
+        )
+    }
+
+    /// Undo bar for the most recent single-message delete, matching the
+    /// conversation-level one in the history sheet.
+    private func undoMessageDeleteBar(for pending: ChatHistoryManager.PendingMessageDeletion) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "trash")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.7))
+                .accessibilityHidden(true)
+
+            Text(String(localized: "Message deleted"))
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white)
+
+            Spacer(minLength: 8)
+
+            Button(String(localized: "Undo")) {
+                withAnimation(.spring(response: 0.3)) {
+                    _ = historyManager.undoLastMessageDeletion()
+                }
+            }
+            .font(.subheadline.weight(.bold))
+            .foregroundStyle(.orange)
+            .buttonStyle(.plain)
+            .frame(minHeight: 44)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color(white: 0, opacity: 0.85))
+        )
+        .accessibilityElement(children: .contain)
+    }
+
+    // MARK: - Composer Drafts
+
+    /// Remembers unsent text for the chat being left. Speech partials are
+    /// not drafts: they are dropped so the mic's half-sentence stays put.
+    private func stashComposerDraft(for conversationID: UUID?) {
+        guard let conversationID else { return }
+        let text = messageText
+        let isSpeechPartial = !text.isEmpty && text == speechManager.transcribedText
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSpeechPartial {
+            composerDrafts[conversationID] = nil
+        } else {
+            composerDrafts[conversationID] = text
+        }
+    }
+
+    private func restoreComposerDraft(for conversationID: UUID?) {
+        guard let conversationID else {
+            messageText = ""
+            return
+        }
+        messageText = composerDrafts[conversationID] ?? ""
     }
 
 
@@ -945,13 +1098,19 @@ struct ChatView: View {
     @ViewBuilder
     private func messageRow(for message: ChatMessage) -> some View {
         let recoveryAction = retryAction(for: message)
+            ?? modelPickerAction(for: message)
+            ?? unansweredMessageAction(for: message)
         MessageBubble(
             message: message,
             showsContinue: canContinue(message),
             onContinue: canContinue(message) ? { continueResponse(for: message) } : nil,
             recoveryAction: recoveryAction,
+            generationTokensPerSecond: generationTokensPerSecond(for: message),
             onEdit: { message in
                 startEdit(message)
+            },
+            onRegenerate: { message in
+                regenerate(message: message)
             },
             onRegenerateMore: { message in
                 regenerate(message: message, style: .more)
@@ -974,7 +1133,8 @@ struct ChatView: View {
                 toggleSpeechPlayback(for: message)
             },
             onSearchWeb: { message in
-                if let url = URL(string: "https://www.google.com/search?q=\(message.content.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
+                let engine = WebSearchEngine(rawValue: webSearchEngineRaw) ?? .google
+                if let url = engine.searchURL(for: message.content) {
                     UIApplication.shared.open(url)
                 }
             },
@@ -1071,14 +1231,32 @@ struct ChatView: View {
             // did nothing.
             .onScrollGeometryChange(for: ScrollFollowGeometry.self) { geometry in
                 let overflow = geometry.contentSize.height - geometry.containerSize.height
-                let distanceFromBottom = overflow - geometry.contentOffset.y
+                // Measure from the visible rect, not contentOffset. The offset
+                // is inset-relative (it reads -116 at rest under the header),
+                // so `overflow - offset` bottomed out at the top inset instead
+                // of 0 and "near bottom" never fired once the transcript
+                // outgrew the screen — the jump button stayed up at the end.
+                let distanceFromBottom = geometry.contentSize.height - geometry.visibleRect.maxY
                 return ScrollFollowGeometry(
                     isNearBottom: distanceFromBottom < 48,
-                    isScrollable: overflow > 0
+                    isScrollable: overflow > 0,
+                    contentHeight: Int(geometry.contentSize.height.rounded())
                 )
-            } action: { _, state in
+            } action: { previous, state in
                 isScrollNearBottom = state.isNearBottom
                 isContentScrollable = state.isScrollable
+                // The bottom anchor above only takes hold when the scroll
+                // view is created with it. A chat that starts empty (anchor
+                // nil, nothing to scroll) never picks it up later, so the
+                // first long reply streamed off the bottom of the screen with
+                // the view parked at the top. Pin the tail by hand whenever
+                // the transcript grows mid-reply and the user is following.
+                if isFollowingBottom,
+                   llmEngine.state == .generating,
+                   state.isScrollable,
+                   state.contentHeight > previous.contentHeight {
+                    proxy.scrollTo("bottom", anchor: .bottom)
+                }
                 guard state.isNearBottom, !isFollowingBottom else { return }
                 chatDiagnostic("scroll followingBottom false -> true (reached bottom)")
                 isFollowingBottom = true
@@ -1099,11 +1277,14 @@ struct ChatView: View {
                         isFollowingBottom = false
                     }
             )
-            .onChange(of: historyManager.currentMessages.count) {
+            .onChange(of: historyManager.currentMessages.count) { previousCount, count in
                 // A new message (the user's own send, or the assistant
                 // placeholder that follows it) always resumes following and
                 // jumps to bottom — this is a deliberate, discrete event,
-                // so a single animated scroll is correct.
+                // so a single animated scroll is correct. A shrinking count is
+                // a deletion, and yanking the reader to the bottom right after
+                // they removed a message mid-transcript lost their place.
+                guard count > previousCount else { return }
                 scrollToBottomForced(proxy: proxy)
             }
             .onChange(of: llmEngine.state) { oldState, newState in
@@ -1128,9 +1309,13 @@ struct ChatView: View {
                 // too used to race those with a different animation curve,
                 // which is what produced the visible bounce.
             }
+            // Open a chat on its newest message, like every messaging app.
+            // This used to scroll to the top while the `currentMessages.count`
+            // handler below raced it to the bottom, so where a reopened chat
+            // landed depended on which animation finished last. No animation:
+            // a switch should not sweep through the whole transcript.
             .onChange(of: historyManager.currentConversationID) {
-                isFollowingBottom = true
-                scrollToTop(proxy: proxy)
+                scrollToBottomForced(proxy: proxy, animated: false)
             }
             .onChange(of: pendingSearchJump) { _, target in
                 guard let target else { return }
@@ -1199,7 +1384,7 @@ struct ChatView: View {
         // otherwise the next layout pass would yank the view back down.
         isFollowingBottom = false
 
-        if inChatSearchEnabled, !target.query.isEmpty {
+        if !target.query.isEmpty {
             inChatSearchText = target.query
             isInChatSearchActive = true
         }
@@ -1213,12 +1398,6 @@ struct ChatView: View {
         guard highlightedMessageID == target.messageID else { return }
         highlightedMessageID = nil
         pendingSearchJump = nil
-    }
-
-    private func scrollToTop(proxy: ScrollViewProxy) {
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-            proxy.scrollTo("top", anchor: .top)
-        }
     }
 
     /// Discrete, user-driven jump to bottom (new message sent/received,
@@ -1241,6 +1420,8 @@ struct ChatView: View {
     private struct ScrollFollowGeometry: Equatable {
         var isNearBottom: Bool
         var isScrollable: Bool
+        /// Whole points, so sub-pixel layout jitter doesn't refire the action.
+        var contentHeight: Int
     }
 
     // MARK: - Empty State
@@ -1296,27 +1477,23 @@ struct ChatView: View {
         return nil
     }
 
-    /// "42% · about 3 min left" while downloading, when speed is known.
+    /// "42% · 3 min left" while downloading, when a rate has been reported.
+    /// Shares its number formatting with the downloads screen and the toolbar
+    /// ring so the same transfer is never described two different ways.
     private var downloadDetailText: String? {
         guard let download = activeDownloadingModel, let progress = download.progress else { return nil }
-        let percent = Int(progress * 100)
+        let percent = DownloadProgressFormat.percent(progress)
+        if let pendingSelectedModel, let reason = modelManager.pauseReason(for: pendingSelectedModel.id) {
+            return "\(percent) · \(reason.statusText)"
+        }
         guard let speed = download.speed, speed > 0, download.sizeGB > 0, progress < 1 else {
-            return String(format: String(localized: "%lld%%", defaultValue: "%lld%%"), Int64(percent))
+            return percent
         }
         let remainingBytes = download.sizeGB * 1_000_000_000 * (1 - progress)
-        let secondsLeft = remainingBytes / speed
-        let formatter = DateComponentsFormatter()
-        formatter.unitsStyle = .short
-        formatter.allowedUnits = secondsLeft >= 3600 ? [.hour, .minute] : (secondsLeft >= 60 ? [.minute] : [.second])
-        formatter.maximumUnitCount = 2
-        guard let timeText = formatter.string(from: max(secondsLeft, 1)) else {
-            return String(format: String(localized: "%lld%%", defaultValue: "%lld%%"), Int64(percent))
+        guard let timeText = DownloadProgressFormat.timeRemaining(remainingBytes / speed) else {
+            return percent
         }
-        return String(
-            format: String(localized: "%lld%% · about %@ left", defaultValue: "%lld%% · about %@ left"),
-            Int64(percent),
-            timeText
-        )
+        return "\(percent) · \(timeText)"
     }
 
     // MARK: - Input View
@@ -1336,12 +1513,11 @@ struct ChatView: View {
                     queuedMessageBanner(queuedFirstMessage)
                 }
 
-                if llmEngine.state == .loading {
+                // Prewarm already announces itself with the "Warming up" pill
+                // at the top of the transcript; showing this banner too put
+                // the same news at both ends of the screen for the whole load.
+                if llmEngine.state == .loading, !llmEngine.isPrewarming {
                     modelLoadingBanner
-                }
-
-                if shouldShowContextLimitWarning {
-                    contextLimitBanner
                 }
 
                 // Documents scoped to the current chat
@@ -1385,11 +1561,13 @@ struct ChatView: View {
                         Image(systemName: "plus")
                             .font(.body.weight(.semibold))
                             .foregroundStyle(Color.adaptive(white: 0.4))
-                            .frame(width: 36, height: 36)
+                            .frame(width: composerControlSize, height: composerControlSize)
                             .background(Color.adaptive(white: 0.95))
                             .clipShape(Circle())
                     }
-                    .disabled(!canStartAttachment)
+                    // Not `.disabled`: a tap while busy runs the guard, which
+                    // tells the user *why* (generating, loading, listening)
+                    // instead of a dead button at half opacity.
                     .opacity(canStartAttachment ? 1 : 0.45)
                     .frame(minWidth: 44, minHeight: 44)
                     .accessibilityLabel(String(localized: "Add to chat"))
@@ -1399,7 +1577,9 @@ struct ChatView: View {
                     HStack {
                         TextField(speechManager.isListening ? String(localized: "Listening...") : String(localized: "Ask anything"), text: $messageText, axis: .vertical)
                             .textFieldStyle(.plain)
-                            .lineLimit(1...5)
+                            // Larger text sizes fit fewer words per line, so
+                            // the composer gets more lines before it scrolls.
+                            .lineLimit(1...(dynamicTypeSize.isAccessibilitySize ? 8 : 5))
                             .focused($isInputFocused)
                     }
                     .padding(.horizontal, 16)
@@ -1417,12 +1597,13 @@ struct ChatView: View {
                             Image(systemName: "stop.fill")
                                 .font(.body.weight(.bold))
                                 .foregroundStyle(Color.adaptive(white: 1))
-                                .frame(width: 36, height: 36)
+                                .frame(width: composerControlSize, height: composerControlSize)
                                 .background(Color.adaptive(white: 0))
                                 .clipShape(Circle())
                         }
                         .frame(minWidth: 44, minHeight: 44)
                         .accessibilityLabel(String(localized: "Stop generating"))
+                        .keyboardShortcut(.escape, modifiers: [])
                     } else if speechManager.isListening {
                         // Stop listening button
                         Button {
@@ -1431,7 +1612,7 @@ struct ChatView: View {
                             Image(systemName: "stop.circle.fill")
                                 .font(.system(size: 24)) // Icon size
                                 .foregroundStyle(.red)
-                                .frame(width: 36, height: 36)
+                                .frame(width: composerControlSize, height: composerControlSize)
                                 .background(Color.adaptiveCard)
                                 .clipShape(Circle())
                                 .overlay(
@@ -1457,7 +1638,7 @@ struct ChatView: View {
                             Image(systemName: "arrow.up")
                                 .font(.body.weight(.bold))
                                 .foregroundStyle(Color.adaptive(white: 1))
-                                .frame(width: 36, height: 36)
+                                .frame(width: composerControlSize, height: composerControlSize)
                                 .background(sendButtonGradient)
                                 .clipShape(Circle())
                                 .shadow(color: canSend ? .blue.opacity(0.3) : .clear, radius: 8, y: 4)
@@ -1470,6 +1651,8 @@ struct ChatView: View {
                             value: canSend
                         )
                         .accessibilityLabel(String(localized: "Send message"))
+                        // Hardware keyboards (iPad, Mac): ⌘↩ sends without leaving the field.
+                        .keyboardShortcut(.return, modifiers: [.command])
                     }
                 }
                 .padding(.horizontal, 16)
@@ -1587,14 +1770,29 @@ struct ChatView: View {
             showExtractionNotice(String(format: String(localized: "Finish or cancel document import before %@."), action))
             return false
         }
+        // Silent on purpose: send paths hit this from automatic callers
+        // (voice mode, Siri, follow-ups) where a toast would be noise.
         guard llmEngine.state != .loading else { return false }
         guard llmEngine.state != .generating else { return false }
         return true
     }
 
+    /// Attachment taps are always deliberate, so unlike the send guard this
+    /// one says why nothing happened.
     private func guardCanStartAttachment(action: String) -> Bool {
+        if llmEngine.state == .loading {
+            showExtractionNotice(String(format: String(localized: "Wait for the model to finish loading before %@."), action))
+            return false
+        }
+        if llmEngine.state == .generating {
+            showExtractionNotice(String(format: String(localized: "Wait for the reply to finish before %@."), action))
+            return false
+        }
         guard guardCanStartChatRequest(action: action) else { return false }
-        guard !speechManager.isListening else { return false }
+        if speechManager.isListening {
+            showExtractionNotice(String(format: String(localized: "Stop listening before %@."), action))
+            return false
+        }
         return true
     }
 
@@ -1745,6 +1943,23 @@ struct ChatView: View {
 
     @ViewBuilder
     private func documentChipDetail(for document: ConversationDocument) -> some View {
+        // Say up front how much of the file the model can actually see; the
+        // source drawer already knows, but almost nobody opens it.
+        if document.totalPages > document.extractedPages, document.extractedPages > 0 {
+            Text(String(
+                format: String(localized: "Read %lld of %lld pages", defaultValue: "Read %lld of %lld pages"),
+                Int64(document.extractedPages),
+                Int64(document.totalPages)
+            ))
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.orange)
+                .lineLimit(1)
+        } else if document.isTrimmed {
+            Text(String(localized: "Text trimmed to fit"))
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.orange)
+                .lineLimit(1)
+        }
         if document.textOrigin != .native {
             Text(document.textOrigin.accessibilityLabel)
                 .font(.caption2)
@@ -1818,49 +2033,6 @@ struct ChatView: View {
         .transition(.opacity)
     }
 
-    // Warn before the model's fixed context window silently drops older
-    // turns, so degraded recall reads as a known limit instead of a bug.
-    private var shouldShowContextLimitWarning: Bool {
-        guard !contextLimitWarningDismissed else { return false }
-        guard llmEngine.state != .generating else { return false }
-        return llmEngine.contextUsageFraction(for: selectedModel) >= 0.8
-    }
-
-    private var contextLimitBanner: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "clock.arrow.circlepath")
-                .foregroundStyle(.orange)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(String(localized: "This conversation is getting long"))
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Color.adaptive(white: 0.15))
-                Text(String(localized: "Older messages may be forgotten. Start a new chat for best results."))
-                    .font(.caption2)
-                    .foregroundStyle(Color.adaptive(white: 0.5))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer()
-
-            Button {
-                withAnimation { contextLimitWarningDismissed = true }
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(Color.adaptive(white: 0.45))
-                    .frame(width: 24, height: 24)
-                    .background(Color.adaptive(white: 0.94))
-                    .clipShape(Circle())
-            }
-            .frame(minWidth: 44, minHeight: 44)
-            .accessibilityLabel(String(localized: "Dismiss"))
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .transition(.opacity)
-    }
-
     /// Slide-up for the toasts, collapsing to a plain fade when the user has
     /// Reduce Motion enabled.
     private var toastTransition: AnyTransition {
@@ -1887,13 +2059,53 @@ struct ChatView: View {
         )
     }
 
-    private func modelRecoveryToast(message: String) -> some View {
-        toastCard(
-            icon: "arrow.triangle.2.circlepath.circle.fill",
-            tint: .yellow,
-            message: message,
-            onDismiss: { dismissModelRecoveryNotice(message) }
+    private func modelRecoveryToast(message: String, detail: String?) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.yellow)
+                .frame(width: 30, height: 30)
+                .background(Circle().fill(Color.yellow.opacity(0.12)))
+                .accessibilityHidden(true)
+
+            Text(message)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Color.adaptive(white: 0.15))
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 0)
+
+            if let detail {
+                Button {
+                    recoveryDetailAlertText = detail
+                } label: {
+                    Image(systemName: "info.circle")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 30, height: 30)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(String(localized: "Why did this happen?"))
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.regularMaterial)
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.adaptiveBorder(opacity: 0.6), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
+        .contentShape(RoundedRectangle(cornerRadius: 16))
+        .onTapGesture { dismissModelRecoveryNotice(message) }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(message)
+        .accessibilityHint(Text(String(localized: "Dismisses this notification.")))
     }
 
     /// Shared light-mode notification card used by the chat toasts.
@@ -2041,7 +2253,7 @@ struct ChatView: View {
                 Image(systemName: "mic.fill")
                     .font(.body.weight(.semibold))
                     .foregroundStyle(speechManager.isListening ? .white : Color.adaptive(white: 1))
-                    .frame(width: 36, height: 36)
+                    .frame(width: composerControlSize, height: composerControlSize)
                     .background(speechManager.isListening ? Color.red : Color.adaptive(white: 0))
                     .clipShape(Circle())
             }
@@ -2385,25 +2597,13 @@ struct ChatView: View {
         showUsageToast(message)
     }
 
-    private func showUsageToastIfNeededAfterSend(messageWasCharged: Bool) {
-        guard !monetizationManager.hasPro else { return }
-
-        if monetizationManager.hasReachedFreeDailyMessageLimit {
-            showUsageLimitToast()
-            return
-        }
-
-        // Count down each of the last three so the limit never surprises —
-        // but only when this send actually consumed one, so uncharged short
-        // messages don't repeat the same number.
-        guard messageWasCharged else { return }
-        let remaining = monetizationManager.freeMessagesRemainingToday
-        guard remaining <= 3 else { return }
-        showUsageToast(String(format: String(
-            localized: "%lld free messages left.",
-            defaultValue: "%lld free messages left."
-        ), Int64(remaining)))
-    }
+    /// Intentionally quiet. The allowance banner above the composer already
+    /// counts down the last three messages and flips to "Daily free limit
+    /// reached" on the final one, so a toast here repeated the banner word
+    /// for word on every send. The limit toast is reserved for the moment a
+    /// send is actually refused (see `sendMessage`), when there is no new
+    /// message to explain the silence.
+    private func showUsageToastIfNeededAfterSend(messageWasCharged: Bool) {}
 
     private func showUsageToast(_ message: String) {
         withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85)) {
@@ -2455,9 +2655,10 @@ struct ChatView: View {
         }
     }
 
-    private func showModelRecoveryNotice(_ message: String) {
+    private func showModelRecoveryNotice(_ message: String, detail: String? = nil) {
         withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85)) {
             modelRecoveryNoticeMessage = message
+            modelRecoveryNoticeDetail = detail
         }
         UIAccessibility.post(notification: .announcement, argument: message)
         Task {
@@ -2465,6 +2666,7 @@ struct ChatView: View {
             if modelRecoveryNoticeMessage == message {
                 withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
                     modelRecoveryNoticeMessage = nil
+                    modelRecoveryNoticeDetail = nil
                 }
             }
         }
@@ -2474,8 +2676,16 @@ struct ChatView: View {
         guard modelRecoveryNoticeMessage == message else { return }
         withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
             modelRecoveryNoticeMessage = nil
+            modelRecoveryNoticeDetail = nil
         }
     }
+
+    /// Messages already shown this app session. Memory pressure on a 4 GB
+    /// phone recurs every minute of a long reply, and each recurrence used
+    /// to re-raise the same "lighter configuration" toast, so a chat could
+    /// get the notice five times before the answer finished. Once is enough
+    /// to explain the shorter replies; the condition keeps applying silently.
+    @MainActor private static var announcedRuntimePerformanceMessages = Set<String>()
 
     /// Runtime conditions can last for minutes, but their notification should
     /// behave like every other toast: appear briefly, then get out of the way.
@@ -2486,6 +2696,11 @@ struct ChatView: View {
             withAnimation(reduceMotion ? nil : .easeOut(duration: 0.2)) {
                 runtimePerformanceToast = nil
             }
+            runtimePerformanceDismissTask = nil
+            return
+        }
+
+        guard Self.announcedRuntimePerformanceMessages.insert(status.message).inserted else {
             runtimePerformanceDismissTask = nil
             return
         }
@@ -2810,6 +3025,13 @@ struct ChatView: View {
             // A quiet cue that the reply landed - mirrors the tap-to-send
             // haptic so the round trip feels answered, not just displayed.
             Self.lightHaptic.impactOccurred()
+            // VoiceOver users otherwise get no signal that streaming stopped.
+            if UIAccessibility.isVoiceOverRunning {
+                UIAccessibility.post(
+                    notification: .announcement,
+                    argument: String(localized: "Reply ready")
+                )
+            }
             chatDiagnostic("response finalized assistantID=\(assistantID) contentChars=\(finalizedContent.count) contentWords=\(wordCount(in: finalizedContent))")
             modelManager.markModelUsed(model.id)
             activeGenerationSessionScope = nextSessionScope
@@ -2851,6 +3073,10 @@ struct ChatView: View {
             }
         } catch {
             chatDiagnostic("response failed assistantID=\(assistantID) error=\(error.localizedDescription)")
+            PerformanceLogger.safeDiagnostic(
+                "ChatView response failed model=\(responseModelID) recoveryAttempted=\(recoveryAttempted) " +
+                "recoverable=\(isRecoverableModelFailure(error.localizedDescription)) error=\(error.localizedDescription)"
+            )
             if !recoveryAttempted,
                isRecoverableModelFailure(error.localizedDescription),
                let failedModel = modelManager.models.first(where: { $0.id == responseModelID }),
@@ -2858,6 +3084,9 @@ struct ChatView: View {
                    excluding: failedModel.id,
                    requiresVision: image != nil
                ) {
+                PerformanceLogger.safeDiagnostic(
+                    "ChatView recovering from=\(failedModel.id) to=\(recoveryModel.id)"
+                )
                 let failedResult = ModelQuickTestResult(
                     modelID: failedModel.id,
                     success: false,
@@ -2875,7 +3104,7 @@ struct ChatView: View {
                 showModelRecoveryNotice(String(format: String(
                     localized: "%@ could not continue. Retrying once with %@.",
                     defaultValue: "%@ could not continue. Retrying once with %@."
-                ), failedModel.name, recoveryModel.name))
+                ), failedModel.name, recoveryModel.name), detail: error.localizedDescription)
                 responsePerformanceStatus = "recovered"
                 await runAssistantResponse(
                     prompt: prompt,
@@ -2895,7 +3124,10 @@ struct ChatView: View {
                 )
                 return
             }
-            let errorText = userFacingErrorText(from: error.localizedDescription)
+            if shouldOfferModelPicker(for: error) {
+                modelUnavailableMessageIDs.insert(assistantID)
+            }
+            let errorText = userFacingErrorText(for: error)
             if historyManager.containsMessage(assistantID, in: conversationID) {
                 let fallbackContent = failureContent(
                     assistantID: assistantID,
@@ -2959,7 +3191,7 @@ struct ChatView: View {
         llmEngine.onStreamingUpdate = nil
         llmEngine.currentResponse = ""
         streamingPrefix = ""
-        ReviewPromptManager.noteSuccessfulResponse()
+        ReviewPromptManager.noteSuccessfulResponse(isAtUsageLimit: monetizationManager.hasReachedFreeDailyMessageLimit)
     }
 
     // Cross-chat memory extraction from the latest user message. Its caller
@@ -3621,6 +3853,36 @@ struct ChatView: View {
         }
     }
 
+    /// Plain "try again": re-runs the user's last prompt on a fresh session so
+    /// the model produces a new answer without a length or style nudge.
+    private func regenerate(message: ChatMessage) {
+        guard message.role == .assistant else { return }
+        guard guardCanStartChatRequest(action: String(localized: "regenerating")) else { return }
+        guard historyManager.currentMessages.last?.id == message.id else { return }
+        guard let promptSeed = retryPromptSeed(for: message) else { return }
+
+        Self.lightHaptic.impactOccurred()
+
+        Task {
+            let promptContext = await buildPromptContext(
+                userText: promptSeed,
+                conversationID: historyManager.currentConversationID,
+                model: modelManager.selectedModel
+            )
+            await runAssistantResponse(
+                prompt: promptContext.prompt,
+                conversationID: historyManager.currentConversationID,
+                resetSession: true,
+                assistantID: message.id,
+                existingPrefix: "",
+                placeholderContent: "",
+                assistantSourceTitles: promptContext.sourceTitles,
+                retryPromptSeed: promptSeed,
+                shouldChargeUsage: false
+            )
+        }
+    }
+
     private func branchConversation(from message: ChatMessage) {
         guard llmEngine.state != .generating else { return }
         Task {
@@ -3717,8 +3979,24 @@ struct ChatView: View {
             .content
     }
 
-    private func userFacingErrorText(from message: String) -> String {
+    private func userFacingErrorText(for error: Error) -> String {
+        let message = error.localizedDescription
         let lowercased = message.lowercased()
+
+        // These already carry a localized, actionable sentence; wrapping them
+        // in "Sorry, I encountered an error:" only buries the instruction.
+        if let llmError = error as? LLMError {
+            switch llmError {
+            case .modelNotLoaded, .modelNotAvailable, .deviceCannotRunMLX, .backgroundGPUWorkNotAllowed, .engineBusy:
+                return message
+            case .generationFailed:
+                break
+            }
+        }
+
+        if looksLikeMemoryFailure(lowercased) {
+            return String(localized: "The model ran out of memory while answering. Try a shorter message, or choose a smaller model.")
+        }
 
         if lowercased.contains("unsupported language") || lowercased.contains("locale") {
             return String(localized: "This document's language is not supported by Apple Intelligence. Try switching to an MLX model (like Gemma) in Settings -> Models for multi-language support.")
@@ -3729,6 +4007,96 @@ struct ChatView: View {
         }
 
         return String(format: String(localized: "Sorry, I encountered an error: %@", defaultValue: "Sorry, I encountered an error: %@"), message)
+    }
+
+    private func looksLikeMemoryFailure(_ lowercased: String) -> Bool {
+        if lowercased.contains("out of memory") || lowercased.contains("mtlbuffer") || lowercased.contains("metal buffer") {
+            return true
+        }
+        guard lowercased.contains("memory") else { return false }
+        return lowercased.contains("alloc") || lowercased.contains("insufficient") || lowercased.contains("exceed") || lowercased.contains("pressure")
+    }
+
+    private func shouldOfferModelPicker(for error: Error) -> Bool {
+        if let llmError = error as? LLMError {
+            switch llmError {
+            case .modelNotLoaded, .modelNotAvailable, .deviceCannotRunMLX:
+                return true
+            case .engineBusy, .generationFailed, .backgroundGPUWorkNotAllowed:
+                break
+            }
+        }
+        return looksLikeMemoryFailure(error.localizedDescription.lowercased())
+    }
+
+    /// Speed of the most recent completed reply, for that reply only; the
+    /// engine keeps one number, so older rows would be lying.
+    private func generationTokensPerSecond(for message: ChatMessage) -> Double? {
+        guard message.role == .assistant, !message.isStreaming else { return nil }
+        guard llmEngine.state != .generating else { return nil }
+        guard historyManager.currentMessages.last?.id == message.id else { return nil }
+        let rate = llmEngine.lastCompletedTokensPerSecond
+        return rate >= 1 ? rate : nil
+    }
+
+    /// A user message left as the last row with no reply under it: the app was
+    /// killed or the model failed before the placeholder existed, or the reply
+    /// was deleted. Without this the only way to get an answer was to retype
+    /// the whole prompt.
+    private func unansweredMessageAction(for message: ChatMessage) -> MessageBubble.RecoveryAction? {
+        guard message.role == .user else { return nil }
+        guard historyManager.currentMessages.last?.id == message.id else { return nil }
+        // A send in flight also has the user row last for a moment, while the
+        // prompt context is built; don't flash the chip during that window.
+        guard canStartChatRequest, activeStreamingAssistantID == nil, retrievalStatus == nil else { return nil }
+        guard !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return MessageBubble.RecoveryAction(
+            title: String(localized: "Get a reply"),
+            systemImage: "arrow.clockwise",
+            action: { replyToUnansweredMessage(message) }
+        )
+    }
+
+    private func replyToUnansweredMessage(_ message: ChatMessage) {
+        guard guardCanStartChatRequest(action: String(localized: "retrying")) else { return }
+        guard historyManager.currentMessages.last?.id == message.id else { return }
+        if monetizationManager.hasReachedFreeDailyMessageLimit {
+            showUsageLimitToast()
+            return
+        }
+        guard let model = modelManager.selectedModel else { return }
+        if !hasConsent(for: model.id) {
+            shouldSendAfterConsent = false
+            showModelConsentSheet = true
+            return
+        }
+
+        Self.lightHaptic.impactOccurred()
+        let conversationID = historyManager.currentConversationID
+        Task {
+            let promptContext = await buildPromptContext(
+                userText: message.content,
+                conversationID: conversationID,
+                model: model
+            )
+            await runAssistantResponse(
+                prompt: promptContext.prompt,
+                conversationID: conversationID,
+                resetSession: true,
+                assistantSourceTitles: promptContext.sourceTitles,
+                shouldChargeUsage: true
+            )
+        }
+    }
+
+    private func modelPickerAction(for message: ChatMessage) -> MessageBubble.RecoveryAction? {
+        guard message.role == .assistant, !message.isStreaming else { return nil }
+        guard modelUnavailableMessageIDs.contains(message.id) else { return nil }
+        return MessageBubble.RecoveryAction(
+            title: String(localized: "Choose a model"),
+            systemImage: "square.stack.3d.down.right",
+            action: { showModelDownloadSheet = true }
+        )
     }
 
     private func missingFinalAnswer(_ message: ChatMessage) -> Bool {
@@ -4240,6 +4608,16 @@ struct ChatView: View {
 
         let strongSnippets = snippets.filter { item in
             item.document.id == attachedDocuments.first?.id || item.chunk.score >= 0.22
+        }
+
+        // Say so when retrieval came up empty. Otherwise the reply is built
+        // from the documents' opening text plus general knowledge, and a
+        // confident answer that ignores page 30 reads as the model lying.
+        if snippets.isEmpty, let firstDocument = attachedDocuments.first {
+            let notice = attachedDocuments.count == 1
+                ? String(format: String(localized: "Nothing in \"%@\" matched this question closely. The answer uses its opening text.", defaultValue: "Nothing in \"%@\" matched this question closely. The answer uses its opening text."), firstDocument.name)
+                : String(localized: "Nothing in your documents matched this question closely. The answer uses their opening text.")
+            showUsageToast(notice)
         }
 
         if !snippets.isEmpty {

@@ -10,6 +10,10 @@ enum AppAnimation: String {
     case successCheck = "success-check"
     /// Five pulsing bars, tinted via `.tint`. Loops.
     case voiceWave = "voice-wave"
+    /// A bookmark ribbon settles in with a small overshoot and wiggle. Plays once.
+    case bookmarkPop = "bookmark-pop"
+    /// An arrow bobs down into a tray, landing with a small pulse. Loops.
+    case downloadIdle = "download-idle"
 
     /// Frame progress shown when Reduce Motion is on: the resting pose of
     /// each composition, never a mid-transition frame.
@@ -18,6 +22,8 @@ enum AppAnimation: String {
         case .sparkleHero: return 0
         case .successCheck: return 1
         case .voiceWave: return 0.25
+        case .bookmarkPop: return 1
+        case .downloadIdle: return 0
         }
     }
 
@@ -28,6 +34,8 @@ enum AppAnimation: String {
         case .sparkleHero: return []
         case .successCheck: return ["Circle.**.Circle Fill.Color"]
         case .voiceWave: return ["**.Bar Fill.Color"]
+        case .bookmarkPop: return ["Bookmark.**.Bookmark Fill.Color"]
+        case .downloadIdle: return ["**.Arrow Stroke.Color", "**.Tray Stroke.Color"]
         }
     }
 }
@@ -89,6 +97,10 @@ struct AppLottieView: View {
             .frame(width: 60, height: 60)
         AppLottieView(animation: .voiceWave, tint: .blue)
             .frame(width: 30, height: 20)
+        AppLottieView(animation: .bookmarkPop, loops: false, tint: .orange)
+            .frame(width: 48, height: 48)
+        AppLottieView(animation: .downloadIdle, tint: .blue)
+            .frame(width: 64, height: 64)
     }
     .padding()
 }

@@ -121,7 +121,7 @@ struct OnboardingView: View {
     
     var body: some View {
         ZStack {
-            Color.adaptiveCard.ignoresSafeArea()
+            Color.adaptiveBackground.ignoresSafeArea()
 
             Group {
                 switch currentPage {
@@ -411,6 +411,21 @@ struct OnboardingView: View {
                             )
                     }
                     .disabled(isApplyingRecommendation)
+
+                    // An escape hatch that isn't a full model picker: the app
+                    // already has a usable default, so nobody should feel stuck
+                    // on this page.
+                    Button {
+                        _ = modelManager.applyOnboardingChoice(preferredModelID: nil)
+                        completeOnboarding()
+                    } label: {
+                        Text(String(localized: "Skip for now"))
+                            .font(.footnote.weight(.medium))
+                            .foregroundStyle(Color.adaptive(white: 0.45))
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: 44)
+                    }
+                    .disabled(isApplyingRecommendation)
                 }
                 .padding(.horizontal, 32)
                 .padding(.top, 24)
@@ -472,12 +487,12 @@ struct OnboardingView: View {
                             Image(systemName: "lock.shield.fill")
                                 .foregroundStyle(.green)
                                 .accessibilityHidden(true)
-                            Text(String(localized: "On-Device Models (e.g. Gemma 2 2B)"))
+                            Text(String(localized: "On-Device Models"))
                                 .font(.subheadline.bold())
                                 .foregroundStyle(Color.adaptive(white: 0.2))
                         }
                         
-                        Text("MLX models like Gemma 2 2B run **100% on your device**. Your prompts, documents, and personal data are **never sent** to Google LLC or any third-party AI service.")
+                        Text("Downloaded models run **100% on your device**. Your prompts, documents, and personal data are **never sent** to the model's maker or any third-party AI service.")
                             .font(.caption)
                             .foregroundStyle(Color.adaptive(white: 0.5))
                     }
@@ -597,6 +612,14 @@ struct OnboardingView: View {
                     activeModel.name,
                     Int64(Int(progress * 100))
                 )
+            case .queued:
+                return String(
+                    format: String(
+                        localized: "Continue While %@ Waits to Download",
+                        defaultValue: "Continue While %@ Waits to Download"
+                    ),
+                    activeModel.name
+                )
             case .downloaded, .builtin:
                 return String(
                     format: String(
@@ -655,6 +678,14 @@ struct OnboardingView: View {
                 format: String(
                     localized: "%@ is validating the local files.",
                     defaultValue: "%@ is validating the local files."
+                ),
+                activeModel.name
+            )
+        case .queued:
+            return String(
+                format: String(
+                    localized: "%@ starts as soon as the current download finishes.",
+                    defaultValue: "%@ starts as soon as the current download finishes."
                 ),
                 activeModel.name
             )

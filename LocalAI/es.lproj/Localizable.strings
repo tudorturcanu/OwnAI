@@ -217,6 +217,7 @@
 "Image attached" = "Imagen adjunta";
 "Remove attached image" = "Quitar imagen adjunta";
 "Retry" = "Reintentar";
+"Get a reply" = "Obtener respuesta";
 "This document's language is not supported by Apple Intelligence. Try switching to an MLX model (like Gemma) in Settings -> Models for multi-language support." = "El idioma de este documento no es compatible con Apple Intelligence. Prueba a cambiar a un modelo MLX (como Gemma) en Ajustes -> Modelos para compatibilidad multilingüe.";
 "Sorry, I hit a model template error. Tap Retry to clear the current chat context and try again." = "Lo siento, hubo un error de plantilla del modelo. Toca Reintentar para borrar el contexto actual del chat y volver a intentarlo.";
 "Sorry, I encountered an error: %@" = "Lo siento, encontré un error: %@";
@@ -551,7 +552,6 @@
 "%lld chats could not be opened. The remaining chat history and its index were recovered." = "No se pudieron abrir %lld chats. Se recuperó el resto del historial y su índice.";
 "%lld chats could not be opened. The remaining chat history was recovered." = "No se pudieron abrir %lld chats. Se recuperó el resto del historial.";
 "%lld chats could not be opened. The remaining history was recovered for this launch, but the repaired index could not be saved." = "No se pudieron abrir %lld chats. El resto del historial se recuperó para este inicio, pero el índice reparado no se pudo guardar.";
-"%lld free messages left." = "Quedan %lld mensajes gratis.";
 "%lld matches" = "%lld coincidencias";
 "%lld of %lld pages" = "%lld de %lld páginas";
 "%lld pages" = "%lld páginas";
@@ -743,7 +743,6 @@
 "OCR text looks sparse. The scan may be blurry or low contrast." = "El texto OCR parece escaso. El escaneo puede estar borroso o tener poco contraste.";
 "OCR was used for at least part of this document." = "Se usó OCR en al menos parte de este documento.";
 "Offline Privacy" = "Privacidad sin conexión";
-"Older messages may be forgotten. Start a new chat for best results." = "Los mensajes antiguos pueden olvidarse. Empieza un chat nuevo para obtener mejores resultados.";
 "On-device" = "En el dispositivo";
 "Open" = "Abrir";
 "Optimize document uploads for speed and lower storage use." = "Optimiza la carga de documentos para mayor velocidad y menos almacenamiento.";
@@ -866,7 +865,6 @@
 "The prompt library is full. Delete a prompt before saving another one." = "La biblioteca de prompts está llena. Elimina un prompt antes de guardar otro.";
 "Thinking." = "Pensando.";
 "Thinking…" = "Pensando…";
-"This conversation is getting long" = "Esta conversación se está alargando";
 "This is how messages will look." = "Así se verán los mensajes.";
 "This model may run very slowly or run out of memory here. A smaller model will usually give a better experience." = "Este modelo puede ir muy lento o quedarse sin memoria aquí. Un modelo más pequeño suele dar una mejor experiencia.";
 "This prompt is sent before each chat response. Save Prompt stores only this text; full presets include the tuning below." = "Este prompt se envía antes de cada respuesta del chat. «Guardar prompt» almacena solo este texto; los preajustes completos incluyen los ajustes de abajo.";
@@ -1183,7 +1181,7 @@
 "Use the app normally, then return here to review launch, model, response, and document timings." = "Usa la app con normalidad y vuelve aquí para revisar los tiempos de inicio, modelo, respuesta y documentos.";
 "Voice Conversation Mode" = "Modo de conversación por voz";
 "Welcome to Own AI" = "Te damos la bienvenida a Own AI";
-"What Own AI remembers about you — stored only on this device" = "Lo que Own AI recuerda sobre ti: se guarda solo en este dispositivo";
+"What Own AI remembers across chats — stored only on this device" = "Lo que Own AI recuerda entre chats: se guarda solo en este dispositivo";
 "What stays on-device and when Apple services may be involved" = "Qué permanece en el dispositivo y cuándo pueden intervenir los servicios de Apple";
 "Works Offline" = "Funciona sin conexión";
 "Your Models" = "Tus modelos";
@@ -1294,3 +1292,127 @@
 "1 chat" = "1 chat";
 "1 message" = "1 mensaje";
 "1 matching message" = "1 mensaje coincidente";
+
+/* Actionable errors, document limits, download resume */
+"No model is loaded yet. Choose a model to start chatting." = "Aún no hay ningún modelo cargado. Elige un modelo para empezar a chatear.";
+"The assistant is still finishing the previous request. Try again in a moment." = "El asistente todavía está terminando la solicitud anterior. Inténtalo de nuevo en un momento.";
+"Generation failed: %@" = "La generación falló: %@";
+"Bring the app to the foreground before using a local MLX model." = "Trae la app al primer plano antes de usar un modelo MLX local.";
+"This model needs more memory than this device has. Choose a smaller model in Settings > Models." = "Este modelo necesita más memoria de la que tiene este dispositivo. Elige un modelo más pequeño en Ajustes > Modelos.";
+"This model requires an iPad Pro or Mac. It exceeds the practical memory budget for iPhone." = "Este modelo requiere un iPad Pro o un Mac. Supera el presupuesto de memoria práctico para el iPhone.";
+"This model isn't downloaded yet. Open Settings > Models to download it." = "Este modelo aún no se ha descargado. Abre Ajustes > Modelos para descargarlo.";
+"The model ran out of memory while answering. Try a shorter message, or choose a smaller model." = "El modelo se quedó sin memoria al responder. Prueba con un mensaje más corto o elige un modelo más pequeño.";
+"Read %lld of %lld pages" = "Leídas %lld de %lld páginas";
+"Text trimmed to fit" = "Texto recortado para caber";
+"Could not access the selected file." = "No se pudo acceder al archivo seleccionado.";
+"Could not extract text from the file." = "No se pudo extraer texto del archivo.";
+"Reading this document took too long and was cancelled. Try a smaller PDF, or set Document Processing to Fast under Settings > Advanced > Documents." = "Leer este documento tardó demasiado y se canceló. Prueba con un PDF más pequeño o cambia el procesamiento de documentos a Rápido en Ajustes > Avanzado > Documentos.";
+"No text could be extracted. This may be a scanned document without a text layer." = "No se pudo extraer texto. Puede ser un documento escaneado sin capa de texto.";
+"This file format is not supported." = "Este formato de archivo no es compatible.";
+"%@ is ready to use." = "%@ está listo para usar.";
+"Please return to the app to continue downloading %@." = "Vuelve a la app para continuar descargando %@.";
+"Reads the first %lld pages of a PDF. Faster and uses less storage." = "Lee las primeras %lld páginas de un PDF. Más rápido y usa menos almacenamiento.";
+"Reads up to %lld pages of a PDF and keeps more text for better answers." = "Lee hasta %lld páginas de un PDF y conserva más texto para mejores respuestas.";
+"Attach PDFs, text, docx, or logs. Reads up to %lld pages." = "Adjunta PDF, texto, docx o registros. Lee hasta %lld páginas.";
+"Downloads keep going for a short while after you leave Own AI, then pause. They pick up where they left off when you come back, even if the app was closed in between." = "Las descargas continúan un momento después de salir de Own AI y luego se pausan. Se reanudan donde se quedaron cuando vuelves, incluso si la app se cerró entre tanto.";
+
+/* Download pauses, generation speed, quality tiers */
+"%.0f tok/s" = "%.0f tok/s";
+"About %.0f tokens per second" = "Aproximadamente %.0f tokens por segundo";
+"Paused" = "En pausa";
+"Paused while answering" = "En pausa mientras responde";
+"Paused until Wi-Fi is back" = "En pausa hasta que vuelva la Wi-Fi";
+"Paused on this metered network" = "En pausa en esta red de datos limitados";
+"Metered Network" = "Red de datos limitados";
+"Basic answers" = "Respuestas básicas";
+"Good everyday answers" = "Buenas respuestas cotidianas";
+"Strong answers" = "Respuestas sólidas";
+"Best answers" = "Las mejores respuestas";
+
+/* Share-sheet import, memory entry points, web search engine */
+"Reset custom instructions?" = "¿Restablecer las instrucciones personalizadas?";
+"Keep Mine" = "Conservar las mías";
+"Reply styles work best with the standard instructions. Resetting replaces the AI instructions you wrote." = "Los estilos de respuesta funcionan mejor con las instrucciones estándar. Restablecer sustituye las instrucciones de IA que escribiste.";
+"Web Search" = "Búsqueda web";
+"Used by \"Search on Web\" in a message's menu. Nothing leaves the device until you tap it." = "Lo usa \"Buscar en la web\" en el menú de un mensaje. Nada sale del dispositivo hasta que lo tocas.";
+"What Own AI remembers across chats" = "Lo que Own AI recuerda entre chats";
+
+/* Export formats, onboarding, debug dashboard */
+"Export as Plain Text" = "Exportar como texto sin formato";
+"A download needs your attention" = "Una descarga necesita tu atención";
+"Private AI on your device, with Apple Intelligence available when you choose it." = "IA privada en tu dispositivo, con Apple Intelligence disponible cuando tú lo elijas.";
+"Private AI that runs entirely on your device." = "IA privada que se ejecuta por completo en tu dispositivo.";
+"Performance Dashboard" = "Panel de rendimiento";
+"Reply timings and memory recorded on this device" = "Tiempos de respuesta y memoria registrados en este dispositivo";
+
+/* Retrieval miss notice, legacy .doc, onboarding privacy copy, memory cap */
+"Nothing in \"%@\" matched this question closely. The answer uses its opening text." = "Nada en \"%@\" coincidió bien con esta pregunta. La respuesta usa su texto inicial.";
+"Nothing in your documents matched this question closely. The answer uses their opening text." = "Nada en tus documentos coincidió bien con esta pregunta. La respuesta usa su texto inicial.";
+"Old-style .doc files can't be read. Save the document as .docx or PDF and try again." = "Los archivos .doc antiguos no se pueden leer. Guarda el documento como .docx o PDF e inténtalo de nuevo.";
+"On-Device Models" = "Modelos en el dispositivo";
+"Downloaded models run **100% on your device**. Your prompts, documents, and personal data are **never sent** to the model's maker or any third-party AI service." = "Los modelos descargados se ejecutan **100 % en tu dispositivo**. Tus mensajes, documentos y datos personales **nunca se envían** al creador del modelo ni a ningún servicio de IA de terceros.";
+"Own AI keeps the %lld most recent notes; older ones are dropped." = "Own AI conserva las %lld notas más recientes; las anteriores se descartan.";
+
+/* Corpus eviction notice, onboarding skip */
+"Document storage was full, so %lld older document(s) were removed from past chats." = "El almacenamiento de documentos estaba lleno, así que se eliminaron %lld documento(s) antiguos de chats anteriores.";
+"%@ is already on this device, so you can start chatting right away." = "%@ ya está en este dispositivo, así que puedes empezar a chatear de inmediato.";
+"Skip for now" = "Omitir por ahora";
+
+/* UX improvements: drafts, message undo, catalog search, prompt duplicate */
+"Message deleted" = "Mensaje eliminado";
+"Message deleted. Undo available." = "Mensaje eliminado. Puedes deshacerlo.";
+"Reply ready" = "Respuesta lista";
+"Wait for the model to finish loading before %@." = "Espera a que el modelo termine de cargar antes de %@.";
+"Wait for the reply to finish before %@." = "Espera a que termine la respuesta antes de %@.";
+"Stop listening before %@." = "Deja de escuchar antes de %@.";
+"Search models" = "Buscar modelos";
+"%lld models found" = "%lld modelos encontrados";
+"This device should handle %@ well, and it gives you a noticeably better quality baseline while staying a reasonable download size." = "Este dispositivo debería manejar bien %@, y ofrece una calidad base notablemente mejor con un tamaño de descarga razonable.";
+"This device should handle %@ well, and it gives a better quality baseline than the ultra-small models." = "Este dispositivo debería manejar bien %@, y ofrece una calidad base mejor que los modelos ultrapequeños.";
+"%@ keeps the download light while still fitting comfortably on this device." = "%@ mantiene la descarga ligera y cabe cómodamente en este dispositivo.";
+"%@ is the safest local starting point when storage or device headroom is tighter." = "%@ es el punto de partida local más seguro cuando el almacenamiento o el margen del dispositivo es ajustado.";
+"%@ Copy" = "Copia de %@";
+"Duplicate" = "Duplicar";
+"Prompt duplicated" = "Prompt duplicado";
+"Prompt library is full. Delete a prompt to make room." = "La biblioteca de prompts está llena. Elimina uno para hacer espacio.";
+"Search prompts" = "Buscar prompts";
+
+/* Download pause/resume, chat pinning, text selection */
+"Paused by you" = "Pausado por ti";
+"Resume download" = "Reanudar descarga";
+"Pause download" = "Pausar descarga";
+"Resume" = "Reanudar";
+"Continue download" = "Continuar descarga";
+"Pause" = "Pausar";
+"Chat pinned" = "Chat fijado";
+"Chat unpinned" = "Chat desfijado";
+"Select Text" = "Seleccionar texto";
+"Copy all text" = "Copiar todo el texto";
+
+/* Delete all from History, reset settings, clear partial downloads, space warning */
+"Reset All Settings" = "Restablecer todos los ajustes";
+"Restore defaults. Chats, models, and prompts are kept" = "Restaura los valores predeterminados. Los chats, modelos y prompts se conservan";
+"Reset all settings?" = "¿Restablecer todos los ajustes?";
+"Reset Settings" = "Restablecer ajustes";
+"Settings restored to defaults" = "Ajustes restablecidos";
+"Response tuning, personality prompt, voice, document, and download preferences go back to their defaults. Your chats, downloaded models, saved prompts, and model choice are not touched." = "El ajuste de respuestas, el prompt de personalidad y las preferencias de voz, documentos y descargas vuelven a sus valores predeterminados. Tus chats, modelos descargados, prompts guardados y modelo elegido no se modifican.";
+"Clear %@ of unfinished downloads" = "Borrar %@ de descargas sin terminar";
+"Asks before removing the partial files." = "Pregunta antes de eliminar los archivos parciales.";
+"One download was started but never finished. Clearing it means that model starts from zero next time." = "Una descarga se inició pero nunca terminó. Si la borras, ese modelo empezará desde cero la próxima vez.";
+"%lld downloads were started but never finished. Clearing them means those models start from zero next time." = "%lld descargas se iniciaron pero nunca terminaron. Si las borras, esos modelos empezarán desde cero la próxima vez.";
+"Clear unfinished downloads?" = "¿Borrar descargas sin terminar?";
+"%@ will be freed. Downloads in progress are not affected." = "Se liberarán %@. Las descargas en curso no se ven afectadas.";
+"Not enough space: %@, %@." = "Espacio insuficiente: %@, %@.";
+
+"~%.1f GB RAM" = "~%.1f GB de RAM";
+"Downloads keep going for about half a minute after you leave Own AI, then pause. Reopen the app and they pick up where they left off, even if it was closed in between." = "Las descargas continúan alrededor de medio minuto después de salir de Own AI y luego se pausan. Vuelve a abrir la app y seguirán donde se quedaron, aunque se haya cerrado entre tanto.";
+
+/* Live generation readout, expandable preview */
+"%llds" = "%llds";
+"~%.0f tok/s" = "~%.0f tok/s";
+"%1$lld seconds, about %2$.0f tokens per second" = "%1$lld segundos, unos %2$.0f tokens por segundo";
+"%lld seconds" = "%lld segundos";
+"Expand preview" = "Ampliar vista previa";
+"Opens the rendered preview full screen with zoom." = "Abre la vista previa a pantalla completa con zoom.";
+"Copy Source" = "Copiar código";
+"Copy source" = "Copiar código fuente";

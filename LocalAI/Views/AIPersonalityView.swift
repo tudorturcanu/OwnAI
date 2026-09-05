@@ -409,7 +409,7 @@ struct AIPersonalityView: View {
                 }
                 .padding(16)
 
-                Divider()
+                CardDivider()
 
                 if userPresets.isEmpty {
                     emptyPresetRow
@@ -418,8 +418,7 @@ struct AIPersonalityView: View {
                         customPresetRow(preset)
 
                         if index < userPresets.count - 1 {
-                            Divider()
-                                .padding(.leading, 62)
+                            CardDivider(leadingInset: 62)
                         }
                     }
                 }
@@ -931,8 +930,7 @@ struct AIPersonalityView: View {
                         .tint(.orange)
                 }
 
-                Divider()
-                    .padding(.leading, 16)
+                CardDivider(leadingInset: 16)
 
                 sliderParameterRow(
                     title: "Top-P",
@@ -944,13 +942,11 @@ struct AIPersonalityView: View {
                         .tint(.blue)
                 }
 
-                Divider()
-                    .padding(.leading, 16)
+                CardDivider(leadingInset: 16)
 
                 responseSizeRow
 
-                Divider()
-                    .padding(.leading, 16)
+                CardDivider(leadingInset: 16)
 
                 sliderParameterRow(
                     title: "Max Length",
@@ -969,13 +965,11 @@ struct AIPersonalityView: View {
                     .tint(.teal)
                 }
 
-                Divider()
-                    .padding(.leading, 16)
+                CardDivider(leadingInset: 16)
 
                 voiceRow
 
-                Divider()
-                    .padding(.leading, 16)
+                CardDivider(leadingInset: 16)
 
                 sliderParameterRow(
                     title: "Speaking Speed",

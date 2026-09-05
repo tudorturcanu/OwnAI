@@ -9,6 +9,7 @@ struct ModelStorageView: View {
     /// identity in the catalog.
     @State private var renamingModel: ModelInfo?
     @State private var renameText = ""
+    @State private var showClearPartialsConfirmation = false
 
     private struct Entry: Identifiable {
         let model: ModelInfo
@@ -91,6 +92,31 @@ struct ModelStorageView: View {
                         }
                     }
                     .accessibilityHint(String(localized: "Asks before removing the model files."))
+                }
+            }
+
+            if !partialEntries.isEmpty {
+                Section {
+                    Button(role: .destructive) {
+                        showClearPartialsConfirmation = true
+                    } label: {
+                        Label {
+                            Text(String(format: String(
+                                localized: "Clear %@ of unfinished downloads",
+                                defaultValue: "Clear %@ of unfinished downloads"
+                            ), byteText(partialBytes)))
+                        } icon: {
+                            Image(systemName: "arrow.down.circle.dotted")
+                        }
+                    }
+                    .accessibilityHint(String(localized: "Asks before removing the partial files."))
+                } footer: {
+                    Text(partialEntries.count == 1
+                        ? String(localized: "One download was started but never finished. Clearing it means that model starts from zero next time.")
+                        : String(format: String(
+                            localized: "%lld downloads were started but never finished. Clearing them means those models start from zero next time.",
+                            defaultValue: "%lld downloads were started but never finished. Clearing them means those models start from zero next time."
+                        ), Int64(partialEntries.count)))
                 }
             }
 
@@ -200,6 +226,25 @@ struct ModelStorageView: View {
                 ModelDeletionCopy.message(for: model)
             ))
         }
+        .confirmationDialog(
+            String(localized: "Clear unfinished downloads?"),
+            isPresented: $showClearPartialsConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "Clear"), role: .destructive) {
+                for entry in partialEntries {
+                    modelManager.deleteModel(entry.model.id)
+                }
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                reload()
+            }
+            Button(String(localized: "Cancel"), role: .cancel) {}
+        } message: {
+            Text(String(format: String(
+                localized: "%@ will be freed. Downloads in progress are not affected.",
+                defaultValue: "%@ will be freed. Downloads in progress are not affected."
+            ), byteText(partialBytes)))
+        }
         .alert(
             String(localized: "Rename Model"),
             isPresented: Binding(
@@ -227,6 +272,16 @@ struct ModelStorageView: View {
 
     private var totalBytes: UInt64 {
         entries.reduce(0) { $0 + $1.bytes }
+    }
+
+    /// Leftovers from downloads that stopped and were never resumed. A
+    /// transfer that is running or paused is still live, so it stays out.
+    private var partialEntries: [Entry] {
+        entries.filter { $0.isPartial && !$0.model.downloadState.isActiveOrQueued }
+    }
+
+    private var partialBytes: UInt64 {
+        partialEntries.reduce(0) { $0 + $1.bytes }
     }
 
     private var reclaimRecommendation: Entry? {

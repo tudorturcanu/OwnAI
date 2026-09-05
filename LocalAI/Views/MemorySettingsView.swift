@@ -63,7 +63,7 @@ struct MemorySettingsView: View {
                 } header: {
                     Text(String(localized: "Remembered"))
                 } footer: {
-                    Text(String(localized: "Tap a note to edit it. Swipe to remove it."))
+                    Text(String(localized: "Tap a note to edit it. Swipe to remove it.") + " " + String(format: String(localized: "Own AI keeps the %lld most recent notes; older ones are dropped.", defaultValue: "Own AI keeps the %lld most recent notes; older ones are dropped."), Int64(AssistantMemoryStore.maxFacts)))
                 }
 
                 if !memoryStore.facts.isEmpty {

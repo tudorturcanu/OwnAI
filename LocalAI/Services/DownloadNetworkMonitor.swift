@@ -45,8 +45,20 @@ final class DownloadNetworkMonitor: @unchecked Sendable {
     var isCellularRestricted: Bool {
         lock.lock()
         defer { lock.unlock() }
-        
+
         let path = lastPath ?? monitor.currentPath
         return path.usesInterfaceType(.cellular) || path.isExpensive || path.isConstrained
+    }
+
+    /// Whether the *current* restriction is actually cellular, as opposed to
+    /// Wi-Fi that's expensive (a Personal Hotspot) or constrained (Low Data
+    /// Mode, which a user can turn on for an ordinary Wi-Fi network). Lets a
+    /// caller avoid telling someone already on Wi-Fi to "connect to Wi-Fi".
+    var isActuallyCellular: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        let path = lastPath ?? monitor.currentPath
+        return path.usesInterfaceType(.cellular)
     }
 }

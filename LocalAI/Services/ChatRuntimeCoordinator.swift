@@ -52,10 +52,14 @@ actor ChatWorkloadCoordinator {
 final class ChatStreamingState {
     private(set) var content = ""
     private(set) var assistantID: UUID?
+    /// When this reply started streaming; drives the elapsed-time readout in
+    /// the bubble so a 40-second local generation shows signs of life.
+    private(set) var startedAt: Date?
 
     func begin(assistantID: UUID, initialContent: String) {
         self.assistantID = assistantID
         content = initialContent
+        startedAt = Date()
     }
 
     func update(_ content: String, assistantID: UUID) {
@@ -67,5 +71,6 @@ final class ChatStreamingState {
         guard assistantID == nil || self.assistantID == assistantID else { return }
         self.assistantID = nil
         content = ""
+        startedAt = nil
     }
 }

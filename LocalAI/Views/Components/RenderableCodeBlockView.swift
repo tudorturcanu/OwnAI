@@ -19,6 +19,7 @@ struct RenderableCodeBlockView: View {
     let textScale: Double
 
     @State private var showsCode = false
+    @State private var showsExpandedPreview = false
 
     private static let lightHaptic = UIImpactFeedbackGenerator(style: .light)
 
@@ -99,9 +100,33 @@ struct RenderableCodeBlockView: View {
             .background(theme.headerBackground)
 
             if showsPreview {
-                HTMLPreviewWebView(html: documentHTML)
-                    .frame(height: 280)
-                    .background(Color.white)
+                // A diagram larger than this box used to be unreadable, with
+                // no way in but copying the source. Tapping opens it full
+                // screen with pinch zoom.
+                Button {
+                    showsExpandedPreview = true
+                    Self.lightHaptic.impactOccurred()
+                } label: {
+                    HTMLPreviewWebView(html: documentHTML)
+                        .frame(height: 280)
+                        .background(Color.white)
+                        .overlay(alignment: .bottomTrailing) {
+                            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.white)
+                                .padding(8)
+                                .background(.black.opacity(0.55), in: Circle())
+                                .padding(10)
+                                .accessibilityHidden(true)
+                        }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(String(localized: "Expand preview"))
+                .accessibilityHint(String(localized: "Opens the rendered preview full screen with zoom."))
+                .fullScreenCover(isPresented: $showsExpandedPreview) {
+                    ExpandedPreviewSheet(html: documentHTML, source: content)
+                }
             } else {
                 ScrollView(.horizontal, showsIndicators: true) {
                     AsyncCodeBlockView(
@@ -168,7 +193,7 @@ struct RenderableCodeBlockView: View {
         if trimmed.lowercased().contains("<html") { return trimmed }
         return """
         <!doctype html><html><head>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=6, user-scalable=yes">
         <style>
         html, body { margin: 0; height: 100%; background: #ffffff; }
         body { display: flex; align-items: center; justify-content: center; padding: 12px; box-sizing: border-box; }
@@ -179,10 +204,44 @@ struct RenderableCodeBlockView: View {
     }
 }
 
+/// Full-screen, zoomable version of the inline preview.
+private struct ExpandedPreviewSheet: View {
+    let html: String
+    let source: String
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            HTMLPreviewWebView(html: html, allowsZoom: true)
+                .background(Color.white)
+                .ignoresSafeArea(edges: .bottom)
+                .navigationTitle(String(localized: "Preview"))
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button(String(localized: "Done")) { dismiss() }
+                    }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button {
+                            UIPasteboard.general.string = source
+                            UIAccessibility.post(notification: .announcement, argument: String(localized: "Copied"))
+                        } label: {
+                            Label(String(localized: "Copy Source"), systemImage: "doc.on.doc")
+                        }
+                        .accessibilityLabel(String(localized: "Copy source"))
+                    }
+                }
+        }
+    }
+}
+
 /// Local-only WKWebView host for the preview. Scripts stay disabled — the
 /// document is model-generated, and SVG/static HTML never needs them.
 private struct HTMLPreviewWebView: UIViewRepresentable {
     let html: String
+    /// Inline previews are fixed boxes inside a scrolling transcript, so they
+    /// must not capture scroll or pinch; the full-screen sheet wants both.
+    var allowsZoom: Bool = false
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -208,8 +267,13 @@ private struct HTMLPreviewWebView: UIViewRepresentable {
         webView.navigationDelegate = context.coordinator
         webView.isOpaque = false
         webView.backgroundColor = .white
-        webView.scrollView.isScrollEnabled = false
+        webView.scrollView.isScrollEnabled = allowsZoom
         webView.scrollView.backgroundColor = .white
+        if allowsZoom {
+            webView.scrollView.minimumZoomScale = 1
+            webView.scrollView.maximumZoomScale = 6
+            webView.scrollView.bouncesZoom = true
+        }
         return webView
     }
 

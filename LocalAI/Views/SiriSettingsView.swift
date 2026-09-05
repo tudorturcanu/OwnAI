@@ -113,8 +113,7 @@ struct SiriSettingsView: View {
                     .padding(.vertical, 13)
 
                     if index < siriPhrases.count - 1 {
-                        Divider()
-                            .padding(.leading, 60)
+                        CardDivider(leadingInset: 60)
                     }
                 }
             }
@@ -166,8 +165,7 @@ struct SiriSettingsView: View {
                     .padding(.vertical, 13)
 
                     if index < steps.count - 1 {
-                        Divider()
-                            .padding(.leading, 60)
+                        CardDivider(leadingInset: 60)
                     }
                 }
             }
@@ -227,8 +225,7 @@ struct SiriSettingsView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 13)
 
-                Divider()
-                    .padding(.leading, 60)
+                CardDivider(leadingInset: 60)
 
                 HStack(spacing: 14) {
                     Image(systemName: "lock.shield.fill")

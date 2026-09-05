@@ -10,6 +10,14 @@ enum NewModelCatalogRegression {
         ("qwen38_27b_4bit", "mlx-community/Qwen3.8-27B-4bit", "16.08", true),
         ("devstralSmall2_24b_4bit", "mlx-community/mistralai_Devstral-Small-2-24B-Instruct-2512-MLX-4Bit", "15.14", true),
         ("nemotron35_lightning_30b_a3b_4bit", "mlx-community/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-4bit", "17.79", false),
+        ("gemma4_e2b_it_qat_mobile", "mlx-community/gemma-4-E2B-it-qat-mobile", "2.40", true),
+        ("gemma4_e4b_it_qat_mobile", "mlx-community/gemma-4-E4B-it-qat-mobile", "3.46", true),
+        ("qwen35_0_8b_4bit", "mlx-community/Qwen3.5-0.8B-MLX-4bit", "0.63", false),
+        ("qwen35_2b_4bit", "mlx-community/Qwen3.5-2B-MLX-4bit", "1.72", false),
+        ("qwen35_4b_4bit", "mlx-community/Qwen3.5-4B-MLX-4bit", "3.03", false),
+        ("ovisOCR2_4bit", "mlx-community/OvisOCR2-4bit", "0.63", true),
+        ("granite4_1_8b_4bit", "mlx-community/granite-4.1-8b-4bit", "5.24", false),
+        ("kanana2_3b_4bit", "mlx-community/kanana-2-3b-instruct-4bit", "1.99", false),
     ]
 
     static func main() throws {

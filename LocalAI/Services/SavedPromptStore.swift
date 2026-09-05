@@ -46,6 +46,22 @@ final class SavedPromptStore {
         persist()
     }
 
+    /// Forks a prompt right below the original so variants start from a
+    /// working copy instead of a blank editor.
+    @discardableResult
+    func duplicate(id: UUID) -> Bool {
+        guard prompts.count < Self.maxPrompts,
+              let index = prompts.firstIndex(where: { $0.id == id }) else { return false }
+        let source = prompts[index]
+        let copy = SavedPrompt(
+            name: String(format: String(localized: "%@ Copy", defaultValue: "%@ Copy"), source.name),
+            prompt: source.prompt
+        )
+        prompts.insert(copy, at: index + 1)
+        persist()
+        return true
+    }
+
     func delete(id: UUID) {
         prompts.removeAll { $0.id == id }
         persist()

@@ -119,7 +119,10 @@ struct AttachmentOptionsPopup: View {
                                 .font(.body.weight(.semibold))
                                 .foregroundStyle(Color.primary)
                             
-                            Text(String(localized: "Attach PDFs, text, docx, or logs"))
+                            Text(String(
+                                format: String(localized: "Attach PDFs, text, docx, or logs. Reads up to %lld pages.", defaultValue: "Attach PDFs, text, docx, or logs. Reads up to %lld pages."),
+                                Int64(DocumentManager.currentDocumentProcessingMode().maxPDFPages)
+                            ))
                                 .font(.footnote)
                                 .foregroundStyle(.secondary)
                         }

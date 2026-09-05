@@ -17,6 +17,7 @@ struct SettingsView: View {
     @AppStorage("historyRetentionDays") private var historyRetentionDays = 0
     @AppStorage("downloads.allowCellular") private var allowCellularDownloads = false
     @State private var showClearHistoryConfirmation = false
+    @State private var showResetSettingsConfirmation = false
     @State private var showDataPrivacySheet = false
     @State private var isUpgradeSheetPresented = false
     @State private var upgradeFeature: PremiumFeature?
@@ -288,8 +289,56 @@ struct SettingsView: View {
 
     // MARK: - AI Section
 
+    /// Only offered when there is something to look at: a permanently visible
+    /// "Downloads" row that is empty nine times out of ten is just noise.
+    private var hasDownloadsToShow: Bool {
+        modelManager.hasDownloadActivity || !modelManager.failedDownloadModels.isEmpty
+    }
+
+    private var downloadsSubtitle: String {
+        if let progress = modelManager.aggregateDownloadProgress {
+            let active = modelManager.activeDownloadModels.count + modelManager.queuedDownloadModels.count
+            let percent = DownloadProgressFormat.percent(progress)
+            if active > 1 {
+                return String(
+                    format: String(
+                        localized: "%@ · %lld models in progress",
+                        defaultValue: "%@ · %lld models in progress"
+                    ),
+                    percent,
+                    Int64(active)
+                )
+            }
+            return String(
+                format: String(localized: "%@ downloaded", defaultValue: "%@ downloaded"),
+                percent
+            )
+        }
+        if modelManager.hasDownloadActivity {
+            return String(localized: "Starting…")
+        }
+        return String(localized: "A download needs your attention")
+    }
+
     private var aiSection: some View {
         settingsSection("AI") {
+            if hasDownloadsToShow {
+                NavigationLink {
+                    DownloadsView()
+                        .environment(modelManager)
+                } label: {
+                    settingsRow(
+                        icon: "arrow.down.circle.fill",
+                        tint: modelManager.hasDownloadActivity ? .blue : .orange,
+                        title: "Downloads",
+                        subtitle: downloadsSubtitle
+                    )
+                }
+                .buttonStyle(.plain)
+
+                sectionDivider
+            }
+
             NavigationLink {
                 ModelDownloadView()
                     .environment(llmEngine)
@@ -315,6 +364,23 @@ struct SettingsView: View {
                     tint: .orange,
                     title: "Model Storage",
                     subtitle: downloadedStorageText
+                )
+            }
+            .buttonStyle(.plain)
+
+            sectionDivider
+
+            // Lives next to Models and Personality because this is where people
+            // look for "why does it remember / forget things". It used to be
+            // listed under Privacy as well, which read as two different features.
+            NavigationLink {
+                MemorySettingsView()
+            } label: {
+                settingsRow(
+                    icon: "brain.head.profile",
+                    tint: .pink,
+                    title: "Memory",
+                    subtitle: "What Own AI remembers across chats — stored only on this device"
                 )
             }
             .buttonStyle(.plain)
@@ -367,6 +433,9 @@ struct SettingsView: View {
                 subtitle: "Allow downloading models over mobile data",
                 isOn: $allowCellularDownloads
             )
+            .onChange(of: allowCellularDownloads) {
+                modelManager.handleCellularDownloadsAllowedChanged()
+            }
 
             sectionDivider
 
@@ -376,7 +445,7 @@ struct SettingsView: View {
                 settingsRow(
                     icon: "mic.fill",
                     tint: .purple,
-                    title: "Shortcuts",
+                    title: "Siri & Shortcuts",
                     subtitle: "Talk to Own AI models directly using Shortcuts"
                 )
             }
@@ -401,6 +470,22 @@ struct SettingsView: View {
     #if DEBUG
     private var debugSection: some View {
         settingsSection("Debug") {
+            // The metrics store records every reply; this is the only screen
+            // that shows what it collected.
+            NavigationLink {
+                PerformanceDashboardView()
+            } label: {
+                settingsRow(
+                    icon: "chart.xyaxis.line",
+                    tint: .green,
+                    title: "Performance Dashboard",
+                    subtitle: "Reply timings and memory recorded on this device"
+                )
+            }
+            .buttonStyle(.plain)
+
+            sectionDivider
+
             settingsToggleRow(
                 icon: "crown.fill",
                 tint: .yellow,
@@ -421,20 +506,6 @@ struct SettingsView: View {
 
     private var privacySection: some View {
         settingsSection("Privacy") {
-            NavigationLink {
-                MemorySettingsView()
-            } label: {
-                settingsRow(
-                    icon: "brain.head.profile",
-                    tint: .pink,
-                    title: "Memory",
-                    subtitle: "What Own AI remembers about you — stored only on this device"
-                )
-            }
-            .buttonStyle(.plain)
-
-            sectionDivider
-
             // Auto-delete picker row
             HStack(spacing: 14) {
                 rowIcon(systemImage: "clock.arrow.circlepath", tint: .orange)
@@ -492,6 +563,12 @@ struct SettingsView: View {
                     if isExportingAllChats {
                         ProgressView()
                             .controlSize(.small)
+                    } else if !monetizationManager.canUse(.conversationExport) {
+                        Image(systemName: "crown.fill")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.orange)
+                            .accessibilityLabel(String(localized: "Pro"))
                     }
                 }
                 .padding(.horizontal, 16)
@@ -599,10 +676,42 @@ struct SettingsView: View {
                 )
             }
             .buttonStyle(.plain)
+
+            sectionDivider
+
+            Button {
+                showResetSettingsConfirmation = true
+            } label: {
+                settingsRow(
+                    icon: "arrow.counterclockwise.circle.fill",
+                    tint: .gray,
+                    title: "Reset All Settings",
+                    subtitle: "Restore defaults. Chats, models, and prompts are kept",
+                    trailingIcon: "arrow.counterclockwise"
+                )
+            }
+            .buttonStyle(.plain)
         }
         .sheet(isPresented: $showDataPrivacySheet) {
             DataPrivacySheet()
                 .environment(modelManager)
+        }
+        .confirmationDialog(
+            String(localized: "Reset all settings?"),
+            isPresented: $showResetSettingsConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "Reset Settings"), role: .destructive) {
+                AppSettingsReset.resetToDefaults()
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                UIAccessibility.post(
+                    notification: .announcement,
+                    argument: String(localized: "Settings restored to defaults")
+                )
+            }
+            Button(String(localized: "Cancel"), role: .cancel) {}
+        } message: {
+            Text(String(localized: "Response tuning, personality prompt, voice, document, and download preferences go back to their defaults. Your chats, downloaded models, saved prompts, and model choice are not touched."))
         }
     }
 
@@ -621,8 +730,7 @@ struct SettingsView: View {
     // MARK: - Reusable Components
 
     private var sectionDivider: some View {
-        Divider()
-            .padding(.leading, 62)
+        CardDivider(leadingInset: 62)
     }
 
     private func sectionTitle(_ text: LocalizedStringKey) -> some View {

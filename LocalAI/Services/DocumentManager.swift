@@ -76,14 +76,16 @@ enum DocumentError: LocalizedError {
     case extractionTimedOut
     case emptyDocument
     case unsupportedFormat
+    case legacyWordFormat
     
     var errorDescription: String? {
         switch self {
-        case .fileAccessFailed: return "Could not access the selected file."
-        case .extractionFailed: return "Could not extract text from the file."
-        case .extractionTimedOut: return "Document extraction took too long and was cancelled. Try a smaller PDF or switch document processing to Fast in Settings."
-        case .emptyDocument: return "No text could be extracted. This may be a scanned document without a text layer."
-        case .unsupportedFormat: return "This file format is not supported."
+        case .fileAccessFailed: return String(localized: "Could not access the selected file.")
+        case .extractionFailed: return String(localized: "Could not extract text from the file.")
+        case .extractionTimedOut: return String(localized: "Reading this document took too long and was cancelled. Try a smaller PDF, or set Document Processing to Fast under Settings > Advanced > Documents.")
+        case .emptyDocument: return String(localized: "No text could be extracted. This may be a scanned document without a text layer.")
+        case .unsupportedFormat: return String(localized: "This file format is not supported.")
+        case .legacyWordFormat: return String(localized: "Old-style .doc files can't be read. Save the document as .docx or PDF and try again.")
         }
     }
 }
@@ -92,6 +94,9 @@ enum DocumentError: LocalizedError {
 @Observable
 final class DocumentManager {
     static let shared = DocumentManager()
+    /// Set when the storage budget silently dropped documents from older chats,
+    /// so the chat can tell the user instead of letting files just vanish.
+    var lastEvictionNotice: String?
     private static let maxPersistedCorpusBytes: Int64 = 1_073_741_824
     private static let reclaimBytesOnOverflow: Int64 = 734_003_200
     private static let extractionTimeout: Duration = .seconds(30)
@@ -131,13 +136,19 @@ final class DocumentManager {
     }
     
     func processFile(at url: URL) async throws -> AttachedDocument {
-        // Start accessing security scoped resource
-        guard url.startAccessingSecurityScopedResource() else {
+        // Start accessing security scoped resource. A file handed over by the
+        // share sheet lands in the app's own Inbox, which is not security
+        // scoped: the call returns false there even though the file is fully
+        // readable, so fall back to a plain readability check.
+        let isSecurityScoped = url.startAccessingSecurityScopedResource()
+        guard isSecurityScoped || FileManager.default.isReadableFile(atPath: url.path) else {
             throw DocumentError.fileAccessFailed
         }
         
         defer {
-            url.stopAccessingSecurityScopedResource()
+            if isSecurityScoped {
+                url.stopAccessingSecurityScopedResource()
+            }
         }
         defer {
             extractionProgress = 0
@@ -727,6 +738,12 @@ final class DocumentManager {
 
         guard !removedDocumentIDsByConversation.isEmpty else { return false }
 
+        let removedCount = removedDocumentIDsByConversation.values.reduce(0) { $0 + $1.count }
+        lastEvictionNotice = String(
+            format: String(localized: "Document storage was full, so %lld older document(s) were removed from past chats.", defaultValue: "Document storage was full, so %lld older document(s) were removed from past chats."),
+            Int64(removedCount)
+        )
+
         for (conversationID, removedIDs) in removedDocumentIDsByConversation {
             guard var documents = documentsByConversationID[conversationID] else { continue }
             documents.removeAll { removedIDs.contains($0.id) }
@@ -937,7 +954,12 @@ final class DocumentManager {
             )
         case "rtf", "rtfd":
             genericSectionedText(try extractTextFromRTF(at: url))
-        case "doc", "docx":
+        case "doc":
+            // The binary Word 97 format has no reader here; NSAttributedString
+            // returns garbage or nothing for it, which used to surface as a
+            // generic extraction failure after a full read.
+            throw DocumentError.legacyWordFormat
+        case "docx":
             genericSectionedText(try extractTextFromWord(at: url))
         case "png", "jpg", "jpeg", "heic", "heif", "tif", "tiff", "bmp", "webp":
             try extractTextFromImage(at: url)
@@ -1506,7 +1528,7 @@ final class DocumentManager {
     }
 
     nonisolated
-    private static func currentDocumentProcessingMode() -> DocumentProcessingMode {
+    static func currentDocumentProcessingMode() -> DocumentProcessingMode {
         if DeviceResourcePolicy.current.isLowMemoryPhone {
             return .fast
         }

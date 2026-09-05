@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import UIKit
 import UserNotifications
 
 final class NotificationManager {
@@ -50,15 +51,15 @@ final class NotificationManager {
 
     func postDownloadCompleted(modelName: String) {
         postNotification(
-            title: "Download Complete",
-            body: "\(modelName) is ready to use."
+            title: String(localized: "Download Complete"),
+            body: String(format: String(localized: "%@ is ready to use.", defaultValue: "%@ is ready to use."), modelName)
         )
     }
 
     func postDownloadBackgroundWarning(modelName: String) {
         postNotification(
-            title: "Download May Pause",
-            body: "Please return to the app to continue downloading \(modelName)."
+            title: String(localized: "Download May Pause"),
+            body: String(format: String(localized: "Please return to the app to continue downloading %@.", defaultValue: "Please return to the app to continue downloading %@."), modelName)
         )
     }
 
@@ -69,7 +70,16 @@ final class NotificationManager {
         )
     }
 
+    /// Every local notification this app schedules goes through here, so this
+    /// is the one place that has to get "don't interrupt someone already
+    /// looking at the app" right. `.active` is the obvious case; `.inactive`
+    /// covers the app still being on screen but transiently not receiving
+    /// events — Control Center, Notification Center, a system permission
+    /// alert, a share sheet — where a banner would be just as out of place.
+    /// Only `.background` means the user has actually left.
     private func postNotification(title: String, body: String) {
+        guard UIApplication.shared.applicationState == .background else { return }
+
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body

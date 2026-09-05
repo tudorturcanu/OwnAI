@@ -31,11 +31,17 @@ enum ReviewPromptManager {
     }
 
     /// Call after an assistant reply finishes successfully.
+    ///
+    /// `isAtUsageLimit` skips the prompt when this reply was the one that used
+    /// up the free daily allowance: the next thing the user sees is the
+    /// paywall, and asking for a rating at that exact moment invites a bad one.
+    /// The counter keeps accruing so the prompt shows on a later, happier reply.
     @MainActor
-    static func noteSuccessfulResponse() {
+    static func noteSuccessfulResponse(isAtUsageLimit: Bool = false) {
         successfulResponseCount += 1
 
         guard successfulResponseCount >= responseThreshold else { return }
+        guard !isAtUsageLimit else { return }
         guard UserDefaults.standard.string(forKey: lastPromptedVersionKey) != currentAppVersion else { return }
 
         guard let windowScene = UIApplication.shared.connectedScenes

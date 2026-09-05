@@ -211,14 +211,34 @@ struct ChatConversation: Identifiable, Equatable, Codable {
     // summary rides along with the recent transcript. Optional, so history
     // saved before this field existed decodes unchanged.
     var rollingSummary: String?
+    /// Pinned chats sit in their own section at the top of History, out of
+    /// the date buckets, so a reference chat never scrolls out of reach.
+    var isPinned: Bool = false
 
-    init(id: UUID = UUID(), title: String = "New Chat", messages: [ChatMessage] = [], createdAt: Date = Date(), updatedAt: Date = Date(), rollingSummary: String? = nil) {
+    init(id: UUID = UUID(), title: String = "New Chat", messages: [ChatMessage] = [], createdAt: Date = Date(), updatedAt: Date = Date(), rollingSummary: String? = nil, isPinned: Bool = false) {
         self.id = id
         self.title = title
         self.messages = messages
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.rollingSummary = rollingSummary
+        self.isPinned = isPinned
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, messages, createdAt, updatedAt, rollingSummary, isPinned
+    }
+
+    /// Hand-written so history saved before `isPinned` existed still decodes.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        title = try container.decode(String.self, forKey: .title)
+        messages = try container.decode([ChatMessage].self, forKey: .messages)
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        rollingSummary = try container.decodeIfPresent(String.self, forKey: .rollingSummary)
+        isPinned = try container.decodeIfPresent(Bool.self, forKey: .isPinned) ?? false
     }
     
     /// Generate a title from the first user message
@@ -744,19 +764,83 @@ final class ChatHistoryManager {
             .forEach(deleteImageIfUnreferenced)
     }
 
-    /// Delete a single message from the current conversation
+    /// Delete a single message from the current conversation.
+    ///
+    /// The message is removed immediately but its attachment is kept for a
+    /// short undo window (see `pendingMessageDeletion`), mirroring the
+    /// conversation-level undo so a mis-tap never loses a long reply.
     func deleteMessage(id: UUID) {
         guard let currentConversationID,
               let convIndex = conversationIndexMap[currentConversationID],
-              convIndex < conversations.count else { return }
-        let removedImageFileName = conversations[convIndex].messages
-            .first(where: { $0.id == id })?
-            .imageFileName
-        conversations[convIndex].messages.removeAll { $0.id == id }
-        if let removedImageFileName {
-            deleteImageIfUnreferenced(removedImageFileName)
-        }
+              convIndex < conversations.count,
+              let messageIndex = conversations[convIndex].messages.firstIndex(where: { $0.id == id })
+        else { return }
+
+        // Only one deletion can be pending; a second one finalizes the first.
+        commitPendingMessageDeletion()
+
+        let removed = conversations[convIndex].messages.remove(at: messageIndex)
+        pendingMessageDeletion = PendingMessageDeletion(
+            message: removed,
+            conversationID: currentConversationID,
+            index: messageIndex
+        )
+        schedulePendingMessageDeletionCommit()
         saveConversations(immediately: true, changedConversationIDs: Set([conversations[convIndex].id]))
+    }
+
+    // MARK: - Undo Message Delete
+
+    struct PendingMessageDeletion {
+        let message: ChatMessage
+        let conversationID: UUID
+        /// Position the message occupied, so undo restores the original order.
+        let index: Int
+    }
+
+    /// The most recent single-message deletion, while it can still be undone.
+    private(set) var pendingMessageDeletion: PendingMessageDeletion?
+
+    @ObservationIgnored private var pendingMessageDeletionCommitTask: Task<Void, Never>?
+
+    private func schedulePendingMessageDeletionCommit() {
+        pendingMessageDeletionCommitTask?.cancel()
+        let window = undoDeleteWindow
+        pendingMessageDeletionCommitTask = Task { [weak self] in
+            try? await Task.sleep(for: window)
+            guard !Task.isCancelled else { return }
+            self?.commitPendingMessageDeletion()
+        }
+    }
+
+    /// Puts the last deleted message back where it was.
+    @discardableResult
+    func undoLastMessageDeletion() -> Bool {
+        guard let pending = pendingMessageDeletion else { return false }
+        pendingMessageDeletionCommitTask?.cancel()
+        pendingMessageDeletionCommitTask = nil
+        pendingMessageDeletion = nil
+
+        guard let convIndex = conversationIndexMap[pending.conversationID],
+              convIndex < conversations.count else { return false }
+        // Skip if the same message somehow came back already.
+        guard !conversations[convIndex].messages.contains(where: { $0.id == pending.message.id }) else { return true }
+
+        let insertionIndex = min(pending.index, conversations[convIndex].messages.count)
+        conversations[convIndex].messages.insert(pending.message, at: insertionIndex)
+        saveConversations(immediately: true, changedConversationIDs: Set([pending.conversationID]))
+        return true
+    }
+
+    /// Destroys the attachment of a message deletion that can no longer be undone.
+    func commitPendingMessageDeletion() {
+        guard let pending = pendingMessageDeletion else { return }
+        pendingMessageDeletionCommitTask?.cancel()
+        pendingMessageDeletionCommitTask = nil
+        pendingMessageDeletion = nil
+        if let imageFileName = pending.message.imageFileName {
+            deleteImageIfUnreferenced(imageFileName)
+        }
     }
 
     func togglePinned(messageID: UUID, in conversationID: UUID?) {
@@ -1004,6 +1088,15 @@ final class ChatHistoryManager {
                 }
             }
         }
+    }
+
+    /// Pins or unpins a whole conversation. Does not touch `updatedAt`, so
+    /// unpinning drops the chat back into the date bucket it belongs to.
+    func togglePinned(conversationID: UUID) {
+        guard let convIndex = conversationIndexMap[conversationID],
+              convIndex < conversations.count else { return }
+        conversations[convIndex].isPinned.toggle()
+        saveConversations(immediately: true, changedConversationIDs: Set([conversationID]))
     }
 
     func updateTitle(_ title: String, for conversationID: UUID?) {

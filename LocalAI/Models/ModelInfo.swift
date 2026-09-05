@@ -333,16 +333,27 @@ enum ModelEngine: String, Equatable {
 /// Represents the download state of a model
 enum DownloadState: Equatable {
     case notDownloaded
+    /// Waiting behind another download. Nothing is on the wire yet, so this
+    /// is deliberately distinct from `.downloading(progress: 0)` — a progress
+    /// bar that never moves reads as a stall.
+    case queued
     case downloading(progress: Double, speedBytesPerSecond: Double?)
     case validating(progress: Double)
     case downloaded
     case builtin  // For Apple Foundation Model
     case error(message: String)
-    
+
     var isDownloading: Bool {
         if case .downloading = self { return true }
         if case .validating = self { return true }
         return false
+    }
+
+    /// Downloading *or* waiting to: the model is spoken for, so the UI must
+    /// not offer to start it again.
+    var isActiveOrQueued: Bool {
+        if case .queued = self { return true }
+        return isDownloading
     }
     
     var isDownloaded: Bool {
@@ -353,6 +364,32 @@ enum DownloadState: Equatable {
     
     var isBuiltin: Bool {
         if case .builtin = self { return true }
+        return false
+    }
+
+    /// 0...1 for the two states that carry a measured position, nil otherwise.
+    /// `.queued` deliberately returns nil rather than 0 so a progress view can
+    /// tell "not started" apart from "started and still at zero".
+    var progressFraction: Double? {
+        switch self {
+        case .downloading(let progress, _): return progress
+        case .validating(let progress): return progress
+        default: return nil
+        }
+    }
+
+    /// Last measured transfer rate, in bytes per second. Only `.downloading`
+    /// has one — validation reads local files and reports no rate.
+    var speedBytesPerSecond: Double? {
+        if case .downloading(_, let speed) = self { return speed }
+        return nil
+    }
+
+    /// Verifying the finished checkpoint rather than fetching it. Worth calling
+    /// out: the bar sits near the end and stops moving, which otherwise reads
+    /// as a stalled download.
+    var isValidating: Bool {
+        if case .validating = self { return true }
         return false
     }
 }
@@ -441,7 +478,7 @@ struct ModelInfo: Identifiable, Equatable {
         case .supported:
             return nil
         case .unsupported:
-            return DeviceResourcePolicy.supportsMLXCompute ? "Heavy" : "Unsupported"
+            return DeviceResourcePolicy.supportsMLXCompute ? String(localized: "Heavy") : String(localized: "Unsupported")
         }
     }
 
@@ -579,6 +616,8 @@ struct ModelInfo: Identifiable, Equatable {
         "LiquidAI/LFM2.5-VL-3B-MLX-4bit",
         "mlx-community/gemma-4-e2b-it-4bit",
         "mlx-community/gemma-4-e4b-it-4bit",
+        "mlx-community/gemma-4-E2B-it-qat-mobile",
+        "mlx-community/gemma-4-E4B-it-qat-mobile",
         "mlx-community/gemma-4-26b-a4b-it-4bit",
         "mlx-community/translategemma-4b-it-4bit",
         "mlx-community/SmolVLM2-256M-Video-Instruct-mlx",
@@ -586,8 +625,8 @@ struct ModelInfo: Identifiable, Equatable {
         "mlx-community/SmolVLM2-2.2B-Instruct-mlx",
         "Hcompany/Holo-3.1-0.8B",
         "Hcompany/Holo-3.1-4B",
-        "mlx-community/Muse-Glimmer-30B-4bit",
         "mlx-community/GLM-OCR-4bit",
+        "mlx-community/OvisOCR2-4bit",
         "mlx-community/Qwen3.8-27B-4bit",
         "mlx-community/mistralai_Devstral-Small-2-24B-Instruct-2512-MLX-4Bit"
     ]
@@ -610,9 +649,11 @@ struct ModelInfo: Identifiable, Equatable {
         "mlx-community/Qwen3.5-2B-OptiQ-4bit",
         "mlx-community/Qwen3.5-4B-OptiQ-4bit",
         "mlx-community/Qwen3.5-9B-OptiQ-4bit",
+        "mlx-community/Qwen3.5-0.8B-MLX-4bit",
+        "mlx-community/Qwen3.5-2B-MLX-4bit",
+        "mlx-community/Qwen3.5-4B-MLX-4bit",
         "mlx-community/Qwen3.8-27B-4bit",
         "mlx-community/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-4bit",
-        "catalystsec/GLM-5.1-4bit",
         "Hcompany/Holo-3.1-0.8B",
         "Hcompany/Holo-3.1-4B"
     ]
@@ -687,21 +728,45 @@ struct ModelInfo: Identifiable, Equatable {
     }
 
     private static let macOnlyMLXModelIDs: Set<String> = [
-        "catalystsec/GLM-5.1-4bit",
         "mlx-community/Qwen3-Coder-Next-4bit",
         "mlx-community/Qwen3.8-27B-4bit",
         "mlx-community/mistralai_Devstral-Small-2-24B-Instruct-2512-MLX-4Bit",
-        "mlx-community/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-4bit",
-        "mlx-community/Muse-Glimmer-30B-4bit"
+        "mlx-community/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-4bit"
     ]
 
     /// OCR-only checkpoints are not general chat models and require pixels.
     var requiresImageInput: Bool {
-        id == "mlx-community/GLM-OCR-4bit"
+        Self.imageOnlyOCRMLXModelIDs.contains(id)
     }
+
+    private static let imageOnlyOCRMLXModelIDs: Set<String> = [
+        "mlx-community/GLM-OCR-4bit",
+        "mlx-community/OvisOCR2-4bit"
+    ]
 
     var isTranslateGemma: Bool {
         id == "mlx-community/translategemma-4b-it-4bit"
+    }
+
+    /// Catalog size in bytes, using the same decimal gigabyte the catalog's
+    /// `sizeGB` figures and the download progress reporting are quoted in.
+    /// An estimate: the real checkpoint is a few percent off either way, so it
+    /// is only for byte counts and time estimates shown next to a progress bar.
+    var estimatedTotalBytes: Double {
+        max(sizeGB, 0) * 1_000_000_000
+    }
+
+    /// Plain-language answer-quality expectation for people who don't know what
+    /// "0.8B" means. Coarse on purpose: it tracks parameter count, and the
+    /// device-fit tag next to it covers speed.
+    var qualityTierLabel: String? {
+        guard engine == .mlx else { return nil }
+        switch sizeGB {
+        case ..<0.5: return String(localized: "Basic answers")
+        case ..<1.7: return String(localized: "Good everyday answers")
+        case ..<3.5: return String(localized: "Strong answers")
+        default: return String(localized: "Best answers")
+        }
     }
 
     var sizeLabel: String {
@@ -1433,22 +1498,6 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
-    /// EXAONE 3.5 2.4B Instruct (4-bit MLX)
-    static let exaone35_2_4b_instruct_4bit = ModelInfo(
-        id: "mlx-community/EXAONE-3.5-2.4B-Instruct-4bit",
-        name: "EXAONE 3.5 2.4B",
-        description: "LG AI Research's compact instruction model with a strong size-to-quality tradeoff for modern iPhones and iPads.",
-        family: .exaone,
-        sizeGB: 1.35,
-        engine: .mlx,
-        termsURL: URL(string: "https://huggingface.co/LGAI-EXAONE/EXAONE-3.5-2.4B-Instruct"),
-        privacyURL: nil,
-        shortDescription: "Compact general model with strong quality for its size.",
-        recommendedFor: "Good when you want a capable small model that still feels iPhone-friendly.",
-        badges: [.higherQuality, .everydayChat, .fullyOnDevice],
-        downloadState: .notDownloaded
-    )
-
     /// SmolLM2 1.7B Instruct (4-bit MLX)
     static let smolLM2_1_7b_4bit = ModelInfo(
         id: "Irfanuruchi/SmolLM2-1.7B-Instruct-MLX-4bit",
@@ -1625,22 +1674,6 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
-    /// GLM 5.1 (4-bit MLX)
-    static let glm51_4bit = ModelInfo(
-        id: "catalystsec/GLM-5.1-4bit",
-        name: "GLM 5.1",
-        description: "Z.ai's flagship agentic engineering model converted to MLX. This is an experimental, extremely large local model intended for very high-memory Apple Silicon systems.",
-        family: .glm,
-        sizeGB: 419,
-        engine: .mlx,
-        termsURL: URL(string: "https://huggingface.co/zai-org/GLM-5.1"),
-        privacyURL: nil,
-        shortDescription: "Experimental flagship GLM model for high-memory Macs.",
-        recommendedFor: "Best for experimental coding and long-horizon agentic tasks on machines with hundreds of GB of memory.",
-        badges: [.bestForCoding, .reasoning, .higherQuality, .fullyOnDevice],
-        downloadState: .notDownloaded
-    )
-
     /// GLM-OCR (4-bit MLX)
     static let glmOCR_4bit = ModelInfo(
         id: "mlx-community/GLM-OCR-4bit",
@@ -1753,22 +1786,6 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
-    /// Muse Glimmer 30B (4-bit MLX)
-    static let muse_glimmer_30b_4bit = ModelInfo(
-        id: "mlx-community/Muse-Glimmer-30B-4bit",
-        name: "Muse Glimmer 30B",
-        description: "Meta's multimodal agentic model for long-horizon reasoning, coding, tool use, and image understanding on high-memory Apple Silicon Macs.",
-        family: .muse,
-        sizeGB: 19.44,
-        engine: .mlx,
-        termsURL: URL(string: "https://huggingface.co/meta-models/Muse-Glimmer-30B"),
-        privacyURL: nil,
-        shortDescription: "High-end multimodal agent for demanding local workflows.",
-        recommendedFor: "Best for coding, complex reasoning, and image-aware agentic work on Macs with at least 32 GB of unified memory.",
-        badges: [.images, .vision, .bestForCoding, .reasoning, .multilingual, .higherQuality, .fullyOnDevice],
-        downloadState: .notDownloaded
-    )
-
     /// Qwen3.8 27B (4-bit MLX)
     static let qwen38_27b_4bit = ModelInfo(
         id: "mlx-community/Qwen3.8-27B-4bit",
@@ -1817,6 +1834,134 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Gemma 4 E2B Instruct QAT mobile (4-bit MLX)
+    static let gemma4_e2b_it_qat_mobile = ModelInfo(
+        id: "mlx-community/gemma-4-E2B-it-qat-mobile",
+        name: "Gemma 4 (E2B) Mobile",
+        description: "Google's quantization-aware mobile build of multimodal Gemma 4 E2B. It supports text and image input with the same reasoning as the standard build in a smaller download tuned for phones.",
+        family: .gemma,
+        sizeGB: 2.40,
+        engine: .mlx,
+        termsURL: URL(string: "https://ai.google.dev/gemma/terms"),
+        privacyURL: nil,
+        shortDescription: "Phone-tuned Gemma 4 with vision in a smaller download.",
+        recommendedFor: "Best when you want Gemma 4 image analysis and reasoning without the larger download.",
+        badges: [.recommended, .images, .reasoning, .higherQuality, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Gemma 4 E4B Instruct QAT mobile (4-bit MLX)
+    static let gemma4_e4b_it_qat_mobile = ModelInfo(
+        id: "mlx-community/gemma-4-E4B-it-qat-mobile",
+        name: "Gemma 4 (E4B) Mobile",
+        description: "Google's quantization-aware mobile build of the larger multimodal Gemma 4 E4B model. It supports text and image input and fits on newer iPhones where the standard build does not.",
+        family: .gemma,
+        sizeGB: 3.46,
+        engine: .mlx,
+        termsURL: URL(string: "https://ai.google.dev/gemma/terms"),
+        privacyURL: nil,
+        shortDescription: "Phone-tuned higher-capacity Gemma 4 with vision.",
+        recommendedFor: "Best when you want the stronger Gemma 4 model on a newer iPhone or iPad.",
+        badges: [.images, .reasoning, .higherQuality, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Qwen3.5 0.8B (4-bit MLX)
+    static let qwen35_0_8b_4bit = ModelInfo(
+        id: "mlx-community/Qwen3.5-0.8B-MLX-4bit",
+        name: "Qwen3.5 0.8B",
+        description: "The standard 4-bit build of Qwen3.5 0.8B. A compact, multilingual assistant with optional thinking that stays fast on any supported iPhone.",
+        family: .qwen,
+        sizeGB: 0.63,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen3.5-0.8B"),
+        privacyURL: nil,
+        shortDescription: "Smallest Qwen3.5 in the lightest download.",
+        recommendedFor: "Best when you want a modern small Qwen model with the smallest download.",
+        badges: [.fastest, .multilingual, .smallDownload, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Qwen3.5 2B (4-bit MLX)
+    static let qwen35_2b_4bit = ModelInfo(
+        id: "mlx-community/Qwen3.5-2B-MLX-4bit",
+        name: "Qwen3.5 2B",
+        description: "The standard 4-bit build of Qwen3.5 2B, with stronger instruction following and multilingual output than the 0.8B model in a download that fits most modern iPhones.",
+        family: .qwen,
+        sizeGB: 1.72,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen3.5-2B"),
+        privacyURL: nil,
+        shortDescription: "Balanced Qwen3.5 model for everyday chat.",
+        recommendedFor: "Best when you want a capable Qwen3.5 assistant that still downloads quickly.",
+        badges: [.everydayChat, .multilingual, .reasoning, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Qwen3.5 4B (4-bit MLX)
+    static let qwen35_4b_4bit = ModelInfo(
+        id: "mlx-community/Qwen3.5-4B-MLX-4bit",
+        name: "Qwen3.5 4B",
+        description: "The standard 4-bit build of Qwen3.5 4B, a strong multilingual model for chat, coding, and reasoning that downloads a gigabyte less than the OptiQ build.",
+        family: .qwen,
+        sizeGB: 3.03,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/Qwen/Qwen3.5-4B"),
+        privacyURL: nil,
+        shortDescription: "Strong Qwen3.5 model in a lighter download.",
+        recommendedFor: "Best when you want Qwen3.5 4B quality with less storage and a newer device.",
+        badges: [.higherQuality, .bestForCoding, .multilingual, .reasoning, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// OvisOCR2 (4-bit MLX)
+    static let ovisOCR2_4bit = ModelInfo(
+        id: "mlx-community/OvisOCR2-4bit",
+        name: "OvisOCR2",
+        description: "A compact 853M-parameter document-recognition model built on Qwen3.5 for transcribing scans, tables, and layouts to text. It is specialized for OCR and requires an image input.",
+        family: .qwen,
+        sizeGB: 0.63,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/ATH-MaaS/OvisOCR2"),
+        privacyURL: nil,
+        shortDescription: "Tiny local OCR for documents and scans.",
+        recommendedFor: "Best when you want document text extraction in the smallest possible download.",
+        badges: [.images, .vision, .ocr, .smallDownload, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Granite 4.1 8B (4-bit MLX)
+    static let granite4_1_8b_4bit = ModelInfo(
+        id: "mlx-community/granite-4.1-8b-4bit",
+        name: "Granite 4.1 8B",
+        description: "IBM's largest Granite 4.1 model, with stronger instruction following, coding, and long-form answers for iPads and Macs with enough memory.",
+        family: .granite,
+        sizeGB: 5.24,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/ibm-granite/granite-4.1-8b"),
+        privacyURL: nil,
+        shortDescription: "Higher-capacity Granite for richer answers.",
+        recommendedFor: "Best when you want the strongest Granite model and have iPad Pro or Mac headroom.",
+        badges: [.higherQuality, .bestForCoding, .bestForWriting, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// Kanana 2 3B Instruct (4-bit MLX)
+    static let kanana2_3b_4bit = ModelInfo(
+        id: "mlx-community/kanana-2-3b-instruct-4bit",
+        name: "Kanana 2 3B",
+        description: "Kakao's Korean and English assistant built on the Qwen3 architecture, tuned for natural Korean conversation and writing on modern iPhones.",
+        family: .qwen,
+        sizeGB: 1.99,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/kakaocorp/kanana-2-3b-instruct"),
+        privacyURL: nil,
+        shortDescription: "Korean-first assistant with strong English.",
+        recommendedFor: "Best when you chat or write mostly in Korean.",
+        badges: [.multilingual, .everydayChat, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     static let releasedModels: [ModelInfo] = [
         .appleFoundation,  // Default - first in list
         // Ultra-light and compact (0.1–1.1 GB)
@@ -1824,6 +1969,7 @@ extension ModelInfo {
         .lfm25_350m_4bit,
         .qwen3_0_6b_4bit,
         .lfm25_1_2b_jp_202606_4bit,
+        .qwen35_0_8b_4bit,
         .qwen35_0_8b_optiq_4bit,
         .llama32_1b_4bit,
         .gemma3_1b_qat_4bit,
@@ -1841,6 +1987,7 @@ extension ModelInfo {
         .smolVLM2_500m_4bit,
         .holo31_0_8b,
         .glmOCR_4bit,
+        .ovisOCR2_4bit,
         .smolVLM2_2_2b_4bit,
         .qwen2VL_2b_4bit,
         .qwen3VL_2b_4bit,
@@ -1859,9 +2006,11 @@ extension ModelInfo {
         .lfm25_1_2b_instruct_4bit,
         .lfm25_1_2b_thinking_4bit,
         .lfm25_2_6b_4bit,
-        .exaone35_2_4b_instruct_4bit,
+        .qwen35_2b_4bit,
         .qwen35_2b_optiq_4bit,
+        .qwen35_4b_4bit,
         .qwen35_4b_optiq_4bit,
+        .kanana2_3b_4bit,
         .qwen25_3b_instruct_4bit,
         .qwen25_coder_7b_4bit,
         .llama32_3b_4bit,
@@ -1871,6 +2020,8 @@ extension ModelInfo {
         .phi4_mini_4bit,
         .phi35_mini_4bit,
         .gemma3_4b_qat_4bit,
+        .gemma4_e2b_it_qat_mobile,
+        .gemma4_e4b_it_qat_mobile,
         .gemma4_e2b_it_4bit,
         .translategemma4b_it_4bit,
         .qwen3_4b_4bit,
@@ -1878,15 +2029,14 @@ extension ModelInfo {
         .deepseek_r1_distill_qwen_7b_4bit,
         .deepseek_r1_distill_qwen_14b_4bit,
         .lfm25_8b_a1b_4bit,
-        .glm51_4bit,
         .qwen3_coder_next_4bit,
         .qwen25_7b_instruct_4bit,
         .llama31_8b_4bit,
+        .granite4_1_8b_4bit,
         .qwen3_8b_4bit,
         .qwen35_9b_optiq_4bit,
         .gemma4_e4b_it_4bit,
         .holo31_4b,
-        .muse_glimmer_30b_4bit,
         .qwen38_27b_4bit,
         .devstralSmall2_24b_4bit,
         .nemotron35_lightning_30b_a3b_4bit

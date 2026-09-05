@@ -20,9 +20,9 @@ enum DocumentProcessingMode: String, CaseIterable, Identifiable, Sendable {
     var subtitle: String {
         switch self {
         case .fast:
-            return String(localized: "Optimize document uploads for speed and lower storage use.")
+            return String(format: String(localized: "Reads the first %lld pages of a PDF. Faster and uses less storage.", defaultValue: "Reads the first %lld pages of a PDF. Faster and uses less storage."), Int64(maxPDFPages))
         case .highQuality:
-            return String(localized: "Extract more pages and keep more text for better document answers.")
+            return String(format: String(localized: "Reads up to %lld pages of a PDF and keeps more text for better answers.", defaultValue: "Reads up to %lld pages of a PDF and keeps more text for better answers."), Int64(maxPDFPages))
         }
     }
 

@@ -187,6 +187,9 @@ final class LLMEngine {
     private static let mlxRollingSummaryInputBudgetTokens = 2_000
     #endif
     var streamingTokensPerSecond: Double = 0
+    /// Effective rate of the last reply that finished, so the chat can show
+    /// how fast this model actually runs on this phone.
+    var lastCompletedTokensPerSecond: Double = 0
     private var streamingStartTime: Date?
     private var activeGenerationPerformanceInterval: PerformanceLogger.Interval?
     private var didLogFirstToken = false
@@ -956,6 +959,13 @@ final class LLMEngine {
                 if model.engine == .mlx, let mlxFingerprint {
                 }
             } catch {
+                let nsError = error as NSError
+                let residentMemoryDelta = Int64(MemoryProfiler.currentResidentMemory) - Int64(residentMemoryBefore)
+                PerformanceLogger.safeDiagnostic(
+                    "LLMEngine generation failed model=\(model.id) engine=\(model.engine.rawValue) " +
+                    "errorType=\(type(of: error)) domain=\(nsError.domain) code=\(nsError.code) " +
+                    "description=\(nsError.localizedDescription) residentMemoryDelta=\(residentMemoryDelta)"
+                )
                 await MainActor.run {
                     self.state = .error(message: error.localizedDescription)
                     IdleTimerCoordinator.shared.setReason("llmGenerating", enabled: false)
@@ -1006,6 +1016,9 @@ final class LLMEngine {
             PerformanceLogger.elapsedMilliseconds(since: generationPerformanceInterval) / 1_000
         )
         let completedTokensPerSecond = Double(estimatedTokenCount) / generationDurationSeconds
+        if estimatedTokenCount > 0 {
+            lastCompletedTokensPerSecond = completedTokensPerSecond
+        }
         PerformanceLogger.end(
             generationPerformanceInterval,
             status: generationStatus,
@@ -1049,16 +1062,16 @@ final class LLMEngine {
             }
         case .mlx:
             #if targetEnvironment(simulator)
-            throw LLMError.modelNotAvailable("MLX is not available on the simulator.")
+            throw LLMError.modelNotAvailable(String(localized: "MLX is not available on the simulator."))
             #else
             if model.exceedsDeviceMemoryBudget {
-                throw LLMError.modelNotAvailable("This model needs more memory than this device has. Choose a smaller model in Settings > Models.")
+                throw LLMError.modelNotAvailable(String(localized: "This model needs more memory than this device has. Choose a smaller model in Settings > Models."))
             }
             if UIDevice.current.userInterfaceIdiom == .phone && model.requiresLargeDeviceOnPhone {
-                throw LLMError.modelNotAvailable("This model requires an iPad Pro or Mac. It exceeds the practical memory budget for iPhone.")
+                throw LLMError.modelNotAvailable(String(localized: "This model requires an iPad Pro or Mac. It exceeds the practical memory budget for iPhone."))
             }
             guard model.downloadState.isDownloaded else {
-                throw LLMError.modelNotAvailable("This model isn't downloaded yet. Open Settings > Models to download it.")
+                throw LLMError.modelNotAvailable(String(localized: "This model isn't downloaded yet. Open Settings > Models to download it."))
             }
             #endif
         }
@@ -1385,8 +1398,22 @@ final class LLMEngine {
     /// model has no such limit or no session is active.
     func contextUsageFraction(for model: ModelInfo?) -> Double {
         guard let model, currentModel?.id == model.id else { return 0 }
-        guard model.engine == .appleFoundation else { return 0 }
-        return appleFoundationBridge.contextUsageFraction
+        switch model.engine {
+        case .appleFoundation:
+            return appleFoundationBridge.contextUsageFraction
+        case .mlx:
+            #if targetEnvironment(simulator)
+            return 0
+            #else
+            guard mlxSession != nil else { return 0 }
+            // Once older turns have been folded into the rolling summary the
+            // model has already lost verbatim recall of them, so report the
+            // window as full instead of the (smaller) post-condensation estimate.
+            if mlxRollingSummary != nil { return 1 }
+            let window = max(1, mlxContextWindowEstimate(for: model))
+            return min(1, Double(mlxTranscriptTokenEstimate) / Double(window))
+            #endif
+        }
     }
 
     func mlxImageFingerprint(for image: UIImage?) -> String? {
@@ -2148,17 +2175,17 @@ enum LLMError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .modelNotLoaded:
-            return "No model is loaded. Please select a model first."
+            return String(localized: "No model is loaded yet. Choose a model to start chatting.")
         case .modelNotAvailable(let message):
             return message
         case .engineBusy:
-            return "The engine is busy. Please wait for the current operation to complete."
+            return String(localized: "The assistant is still finishing the previous request. Try again in a moment.")
         case .generationFailed(let message):
-            return "Generation failed: \(message)"
+            return String(format: String(localized: "Generation failed: %@", defaultValue: "Generation failed: %@"), message)
         case .backgroundGPUWorkNotAllowed:
-            return "Bring the app to the foreground before using a local MLX model."
+            return String(localized: "Bring the app to the foreground before using a local MLX model.")
         case .deviceCannotRunMLX:
-            return "This device's chip can't run downloadable models. They need an A14 chip or newer — iPhone 12, iPhone SE (3rd generation), or later."
+            return String(localized: "This device's chip can't run downloadable models. They need an A14 chip or newer — iPhone 12, iPhone SE (3rd generation), or later.")
         }
     }
 }

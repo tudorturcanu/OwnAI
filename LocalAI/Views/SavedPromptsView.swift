@@ -18,7 +18,41 @@ struct SavedPromptsView: View {
     @State private var editingPrompt: SavedPrompt?
     @State private var promptPendingDeletion: SavedPrompt?
     @State private var upgradeFeature: PremiumFeature?
+    @State private var searchText = ""
     private static let selectionHaptic = UISelectionFeedbackGenerator()
+
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var visiblePrompts: [SavedPrompt] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return promptStore.prompts }
+        return promptStore.prompts.filter {
+            $0.name.localizedCaseInsensitiveContains(query)
+                || $0.prompt.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private var canAddPrompt: Bool {
+        promptStore.prompts.count < SavedPromptStore.maxPrompts
+    }
+
+    private func duplicatePrompt(_ prompt: SavedPrompt) {
+        guard promptStore.duplicate(id: prompt.id) else {
+            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            UIAccessibility.post(
+                notification: .announcement,
+                argument: String(localized: "Prompt library is full. Delete a prompt to make room.")
+            )
+            return
+        }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: String(localized: "Prompt duplicated")
+        )
+    }
 
     var body: some View {
         Group {
@@ -115,15 +149,20 @@ struct SavedPromptsView: View {
             } else {
                 List {
                     Section {
-                        ForEach(promptStore.prompts) { prompt in
+                        ForEach(visiblePrompts) { prompt in
                             promptRow(prompt)
+                                // Reordering a filtered list would move the
+                                // wrong rows, so drag-to-reorder only works
+                                // unfiltered.
+                                .moveDisabled(isSearching)
                         }
                         .onDelete { offsets in
                             guard let index = offsets.first,
-                                  promptStore.prompts.indices.contains(index) else { return }
-                            promptPendingDeletion = promptStore.prompts[index]
+                                  visiblePrompts.indices.contains(index) else { return }
+                            promptPendingDeletion = visiblePrompts[index]
                         }
                         .onMove { from, to in
+                            guard !isSearching else { return }
                             promptStore.move(fromOffsets: from, toOffset: to)
                         }
                     } footer: {
@@ -139,6 +178,12 @@ struct SavedPromptsView: View {
                     }
                 }
                 .listStyle(.insetGrouped)
+                .searchable(text: $searchText, prompt: Text(String(localized: "Search prompts")))
+                .overlay {
+                    if isSearching && visiblePrompts.isEmpty {
+                        ContentUnavailableView.search(text: searchText)
+                    }
+                }
             }
         }
     }
@@ -203,16 +248,40 @@ struct SavedPromptsView: View {
                 Label(String(localized: "Edit"), systemImage: "pencil")
             }
             .tint(.blue)
+
+            Button {
+                duplicatePrompt(prompt)
+            } label: {
+                Label(String(localized: "Duplicate"), systemImage: "plus.square.on.square")
+            }
+            .tint(.orange)
+            .disabled(!canAddPrompt)
+        }
+        .contextMenu {
+            Button {
+                editingPrompt = prompt
+            } label: {
+                Label(String(localized: "Edit"), systemImage: "pencil")
+            }
+            Button {
+                duplicatePrompt(prompt)
+            } label: {
+                Label(String(localized: "Duplicate"), systemImage: "plus.square.on.square")
+            }
+            .disabled(!canAddPrompt)
+            Button(role: .destructive) {
+                promptPendingDeletion = prompt
+            } label: {
+                Label(String(localized: "Delete"), systemImage: "trash")
+            }
         }
         .padding(.vertical, 4)
     }
 
     private var emptyState: some View {
         VStack(spacing: 20) {
-            Image(systemName: "books.vertical.fill")
-                .font(.system(size: 48))
-                .foregroundStyle(.orange.opacity(0.7))
-                .accessibilityHidden(true)
+            AppLottieView(animation: .bookmarkPop, loops: false, tint: .orange)
+                .frame(width: 48, height: 48)
 
             VStack(spacing: 8) {
                 Text(String(localized: "No Saved Prompts"))

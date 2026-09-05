@@ -14,6 +14,41 @@ struct ModelDownloadView: View {
     @Environment(LLMEngine.self) private var llmEngine
     @Environment(MonetizationManager.self) private var monetizationManager
     @State private var isShowingAllModels = false
+    @State private var searchText = ""
+
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Flat, name-first match over the whole catalog. The family cards are
+    /// fine for browsing, but with 70+ models finding "Qwen 3B" meant
+    /// guessing which family it lives in.
+    private var searchResults: [ModelInfo] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else { return [] }
+        let terms = query.split(separator: " ").map(String.init)
+        return modelManager.models
+            .filter { model in
+                guard modelManager.shouldShowModelInCatalog(model) || model.downloadState.isDownloaded else { return false }
+                let haystack = [
+                    model.name,
+                    model.family.title,
+                    model.providerName,
+                    model.shortDescription,
+                    model.id
+                ].joined(separator: " ").lowercased()
+                return terms.allSatisfy { haystack.contains($0) }
+            }
+            .sorted { lhs, rhs in
+                let lhsNameHit = lhs.name.lowercased().contains(query)
+                let rhsNameHit = rhs.name.lowercased().contains(query)
+                if lhsNameHit != rhsNameHit { return lhsNameHit }
+                if lhs.downloadState.isDownloaded != rhs.downloadState.isDownloaded {
+                    return lhs.downloadState.isDownloaded
+                }
+                return lhs.sizeGB < rhs.sizeGB
+            }
+    }
 
     private var appleModels: [ModelInfo] {
         modelManager.models.filter { modelManager.shouldShowModelInCatalog($0) && $0.engine == .appleFoundation }
@@ -105,7 +140,63 @@ struct ModelDownloadView: View {
     
     var body: some View {
         ScrollView {
+            if isSearching {
+                searchResultsContent
+            } else {
+                catalogContent
+            }
+        }
+        .background(Color.adaptive(white: 0.96))
+        .navigationTitle(String(localized: "Manage Models"))
+        .navigationBarTitleDisplayMode(.large)
+        .searchable(
+            text: $searchText,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: Text(String(localized: "Search models"))
+        )
+        .cellularRestrictionAlert()
+    }
+
+    private var searchResultsContent: some View {
+        VStack(spacing: 18) {
+            if searchResults.isEmpty {
+                ContentUnavailableView.search(text: searchText)
+                    .padding(.top, 40)
+            } else {
+                Text(String(
+                    format: String(localized: "%lld models found", defaultValue: "%lld models found"),
+                    Int64(searchResults.count)
+                ))
+                    .font(.footnote.weight(.medium))
+                    .foregroundStyle(Color.adaptive(white: 0.48))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityAddTraits(.isHeader)
+
+                ForEach(searchResults) { model in
+                    ModelCard(model: model)
+                }
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 16)
+        .padding(.bottom, 40)
+    }
+
+    private var catalogContent: some View {
             VStack(spacing: 18) {
+                // Downloads started from this screen keep running while the
+                // user keeps browsing, so the status has to stay reachable
+                // without hunting for the card it came from.
+                if modelManager.hasDownloadActivity {
+                    NavigationLink {
+                        DownloadsView()
+                            .environment(modelManager)
+                    } label: {
+                        DownloadActivitySummaryLabel()
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 simpleHeader
 
                 autoPickCard
@@ -197,10 +288,6 @@ struct ModelDownloadView: View {
             .padding(.horizontal, 20)
             .padding(.top, 16)
             .padding(.bottom, 40)
-        }
-        .background(Color.adaptive(white: 0.96))
-        .navigationTitle(String(localized: "Manage Models"))
-        .navigationBarTitleDisplayMode(.large)
     }
     
     private var simpleHeader: some View {
@@ -288,8 +375,7 @@ struct DownloadedModelsSection: View {
                         DownloadedModelRow(model: model)
 
                         if index < models.count - 1 {
-                            Divider()
-                                .padding(.leading, 72)
+                            CardDivider(leadingInset: 72)
                         }
                     }
                 }
@@ -510,8 +596,7 @@ struct ImportedModelsSection: View {
                     if model.supportsThinkingToggle {
                         ImportedThinkingRow(model: model)
                     }
-                    Divider()
-                        .padding(.leading, 72)
+                    CardDivider(leadingInset: 72)
                 }
 
                 ModelImportControl { start, progress in
@@ -699,6 +784,18 @@ struct SimpleModelChoiceCard: View {
         isAppleUnavailable || (compatibilityMessage != nil && !model.downloadState.isDownloading)
     }
 
+    /// Set only for a not-yet-downloaded model that does not fit on disk.
+    private var spaceShortfallMessage: String? {
+        guard case .notDownloaded = model.downloadState,
+              let readiness = modelManager.downloadReadiness(for: model),
+              !readiness.hasEnoughSpace else { return nil }
+        return String(
+            format: String(localized: "Not enough space: %@, %@.", defaultValue: "Not enough space: %@, %@."),
+            readiness.requiredSpaceText,
+            readiness.availableSpaceText
+        )
+    }
+
     private var actionTitle: String {
         if isUnavailable {
             return String(localized: "Unavailable")
@@ -715,7 +812,7 @@ struct SimpleModelChoiceCard: View {
             return String(localized: "Use")
         case .notDownloaded:
             return String(localized: "Download & Select")
-        case .downloading, .validating:
+        case .queued, .downloading, .validating:
             return String(localized: "Cancel")
         case .error:
             return modelManager.downloadErrorAction(for: model.id).title
@@ -738,7 +835,7 @@ struct SimpleModelChoiceCard: View {
             return "checkmark.circle"
         case .notDownloaded:
             return "arrow.down.circle.fill"
-        case .downloading, .validating:
+        case .queued, .downloading, .validating:
             return "xmark"
         case .error:
             return modelManager.downloadErrorAction(for: model.id).iconName
@@ -798,6 +895,15 @@ struct SimpleModelChoiceCard: View {
 
             if let compatibilityMessage, !model.isAppleFoundation {
                 Label(compatibilityMessage, systemImage: "ipad.and.arrow.forward")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // The most-tapped Download button used to learn about a full disk
+            // only from the failure banner after the tap.
+            if let spaceShortfallMessage {
+                Label(spaceShortfallMessage, systemImage: "externaldrive.badge.exclamationmark")
                     .font(.caption)
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
@@ -895,7 +1001,7 @@ struct SimpleModelChoiceCard: View {
             } else {
                 startDownload()
             }
-        case .downloading, .validating:
+        case .queued, .downloading, .validating:
             modelManager.cancelDownload(model.id)
         case .error:
             handleDownloadErrorAction(modelManager.downloadErrorAction(for: model.id))
@@ -928,6 +1034,8 @@ struct SimpleModelChoiceCard: View {
         case .repair:
             modelManager.repairModel(model.id, selectWhenFinished: true)
         case .cellularRestricted:
+            break
+        case .unsupported:
             break
         }
     }
@@ -1007,6 +1115,9 @@ struct ModelFamilyDetailView: View {
         .background(Color.adaptive(white: 0.96))
         .navigationTitle(LocalizedStringKey(family.title))
         .navigationBarTitleDisplayMode(.inline)
+        // Needed on the pushed screen as well as the stack root: an alert
+        // bound to a view that a pushed child covers never presents.
+        .cellularRestrictionAlert()
     }
 
     private var familyGuidance: String {
@@ -1115,8 +1226,14 @@ struct FamilyCard: View {
             }
         }
         .padding(20)
-        .background(Color.adaptiveCard)
+        // Elevated + rimmed: this card is nested inside the "All Models" card,
+        // where a black drop shadow separates nothing.
+        .background(Color.adaptiveElevatedCard)
         .clipShape(RoundedRectangle(cornerRadius: 20))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .strokeBorder(Color.adaptiveNestedCardBorder, lineWidth: 1)
+        )
         .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
     }
 }
@@ -1422,7 +1539,7 @@ struct ModelCard: View {
                     )
                 }
                 let partialBytes = modelManager.partialDownloadBytes(for: model)
-                if partialBytes > 0 {
+                if partialBytes > 0 && !model.downloadState.isDownloading {
                     Label(
                         String(format: String(
                             localized: "%@ saved — download can resume",
@@ -1456,6 +1573,14 @@ struct ModelCard: View {
                         InfoTag(icon: "apple.logo", text: LocalizedStringKey(String(localized: "Built-in")), isHighlighted: true)
                     } else {
                         InfoTag(icon: "externaldrive", text: LocalizedStringKey(String(format: String(localized: "%.1f GB", defaultValue: "%.1f GB"), model.sizeGB)))
+                        // Disk size says nothing about whether the weights fit
+                        // in memory, which is what actually decides if a model
+                        // gets jetsam-killed. Weights load resident, so the
+                        // size is also the floor of the RAM they take.
+                        InfoTag(
+                            icon: "memorychip",
+                            text: LocalizedStringKey(String(format: String(localized: "~%.1f GB RAM", defaultValue: "~%.1f GB RAM"), model.sizeGB))
+                        )
                     }
 
                     if model.downloadState.isDownloaded {
@@ -1470,18 +1595,32 @@ struct ModelCard: View {
                         isHighlighted: !model.isAppleFoundation
                     )
 
-                    if !model.isAppleFoundation {
+                    // The onboarding pick already carries a sparkles
+                    // "Recommended" tag above, and its fit summary line says
+                    // the same; a third identical tag here read as a stutter.
+                    if !model.isAppleFoundation, !modelManager.isOnboardingRecommended(model) {
                         InfoTag(
                             icon: model.currentDeviceFit.iconName,
                             text: LocalizedStringKey(model.currentDeviceFit.title),
                             isHighlighted: model.currentDeviceFit.isHighlighted
                         )
                     }
+
+                    if let qualityTierLabel = model.qualityTierLabel {
+                        InfoTag(icon: "star", text: LocalizedStringKey(qualityTierLabel))
+                    }
                 }
 
-                if !model.badges.isEmpty || model.supportsThinkingToggle {
+                // The curated `.recommended` badge repeats a word the row
+                // already shows whenever the device-fit tag or the onboarding
+                // tag reads "Recommended", so it only earns a chip when
+                // neither of those is on screen.
+                let rowAlreadySaysRecommended = modelManager.isOnboardingRecommended(model)
+                    || model.currentDeviceFit == .recommended
+                let visibleBadges = model.badges.filter { $0 != .recommended || !rowAlreadySaysRecommended }
+                if !visibleBadges.isEmpty || model.supportsThinkingToggle {
                     TagFlowLayout(spacing: 8, rowSpacing: 8) {
-                        ForEach(Array(model.badges.prefix(3)), id: \.self) { badge in
+                        ForEach(Array(visibleBadges.prefix(3)), id: \.self) { badge in
                             InfoTag(
                                 icon: badge.iconName,
                                 text: LocalizedStringKey(badge.title),
@@ -1539,6 +1678,23 @@ struct ModelCard: View {
         isThinkingEnabled = modelManager.isThinkingEnabled(for: model)
     }
 
+    /// Shared by the four states that mean "work is in flight" — a plain
+    /// download and a validation pass, each of which can also be reached on a
+    /// device the model is too large for.
+    private var inFlightDownloadButton: some View {
+        DownloadingButton(
+            progress: model.downloadState.progressFraction,
+            speedBytesPerSecond: model.downloadState.speedBytesPerSecond,
+            timeRemaining: modelManager.downloadTimeRemaining(for: model),
+            totalBytes: model.estimatedTotalBytes,
+            isValidating: model.downloadState.isValidating,
+            pauseReason: modelManager.pauseReason(for: model.id),
+            action: { modelManager.cancelDownload(model.id) },
+            onPause: { modelManager.pauseDownload(model.id) },
+            onResume: { modelManager.resumeDownload(model.id) }
+        )
+    }
+
     @ViewBuilder
     private var actionButton: some View {
         if let compatibilityMessage = modelManager.compatibilityMessage(for: model), !model.isAppleFoundation {
@@ -1552,13 +1708,9 @@ struct ModelCard: View {
                     })
                 }
             case .downloading:
-                DownloadingButton(action: {
-                    modelManager.cancelDownload(model.id)
-                })
+                inFlightDownloadButton
             case .validating:
-                DownloadingButton(action: {
-                    modelManager.cancelDownload(model.id)
-                })
+                inFlightDownloadButton
             default:
                 UnsupportedModelButton(title: title, subtitle: compatibilityMessage)
             }
@@ -1616,15 +1768,16 @@ struct ModelCard: View {
                     }
                 }
                 
+            case .queued:
+                QueuedButton(
+                    position: modelManager.queuePosition(of: model.id),
+                    action: { modelManager.cancelDownload(model.id) }
+                )
             case .downloading:
-                DownloadingButton(action: {
-                    modelManager.cancelDownload(model.id)
-                })
+                inFlightDownloadButton
             case .validating:
-                DownloadingButton(action: {
-                    modelManager.cancelDownload(model.id)
-                })
-                
+                inFlightDownloadButton
+
             case .downloaded:
                 if isPremiumModel && !monetizationManager.hasPro {
                     HStack(spacing: 12) {
@@ -1687,7 +1840,7 @@ struct ModelCard: View {
             } else {
                 startDownload()
             }
-        case .downloading, .validating, .error:
+        case .queued, .downloading, .validating, .error:
             break
         }
     }
@@ -1712,6 +1865,8 @@ struct ModelCard: View {
         case .repair:
             modelManager.repairModel(model.id, selectWhenFinished: true)
         case .cellularRestricted:
+            dismiss()
+        case .unsupported:
             dismiss()
         }
     }
@@ -2377,7 +2532,12 @@ struct UnsupportedModelButton: View {
     }
 }
 
-struct DownloadingButton: View {
+/// Mirrors `DownloadingButton` for a model that is waiting its turn. No
+/// spinner: nothing is moving yet, and a spinner here would read as a stalled
+/// download rather than a deliberate wait.
+struct QueuedButton: View {
+    /// 1-based place in line, or nil if it could not be determined.
+    let position: Int?
     let action: () -> Void
 
     @ScaledMetric(relativeTo: .body) private var closeButtonSize = 44.0
@@ -2386,19 +2546,27 @@ struct DownloadingButton: View {
         RoundedRectangle(cornerRadius: 12)
     }
 
+    private var label: String {
+        guard let position else { return String(localized: "Queued") }
+        return String(
+            format: String(localized: "Queued · #%lld", defaultValue: "Queued · #%lld"),
+            Int64(position)
+        )
+    }
+
     var body: some View {
         HStack(spacing: 12) {
-            HStack(spacing: 12) {
-                ProgressView()
-                    .controlSize(.small)
-                    .tint(.blue)
-
-                Text(String(localized: "Loading"))
+            HStack(spacing: 10) {
+                Image(systemName: "clock")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Color.blue)
+                    .foregroundStyle(Color.adaptive(white: 0.45))
+
+                Text(label)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.adaptive(white: 0.35))
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(String(localized: "Downloading model"))
+            .accessibilityLabel(String(localized: "Waiting to download"))
 
             Spacer(minLength: 8)
 
@@ -2410,11 +2578,133 @@ struct DownloadingButton: View {
                     .background(Color.black.opacity(0.04))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
             }
-            .accessibilityLabel("Cancel download")
-            .accessibilityInputLabels(["Cancel", "Stop download"])
+            .accessibilityLabel("Remove from queue")
+            .accessibilityInputLabels(["Cancel", "Remove from queue"])
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
+        .background(
+            panelShape
+                .fill(Color.adaptive(white: 0.95))
+        )
+        .overlay(
+            panelShape
+                .strokeBorder(Color.adaptiveBorder(opacity: 0.35), lineWidth: 1)
+        )
+    }
+}
+
+struct DownloadingButton: View {
+    /// 0...1 when the transfer has reported a position, nil while it is still
+    /// connecting. The card used to show only a spinner and the word "Loading",
+    /// which for a multi-gigabyte checkpoint said nothing about whether it had
+    /// five seconds or fifteen minutes left.
+    var progress: Double?
+    var speedBytesPerSecond: Double?
+    var timeRemaining: TimeInterval?
+    var totalBytes: Double?
+    var isValidating: Bool = false
+    var pauseReason: DownloadPauseReason? = nil
+    let action: () -> Void
+    /// Optional so callers without a pausable transfer (validation) omit it.
+    var onPause: (() -> Void)? = nil
+    var onResume: (() -> Void)? = nil
+
+    @ScaledMetric(relativeTo: .body) private var closeButtonSize = 44.0
+
+    private var isUserPaused: Bool { pauseReason?.isUserRequested ?? false }
+
+    private var panelShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 12)
+    }
+
+    private var title: String {
+        if isValidating { return String(localized: "Verifying") }
+        if pauseReason != nil { return String(localized: "Paused") }
+        return String(localized: "Downloading")
+    }
+
+    private var detail: String {
+        if isValidating {
+            return String(localized: "Checking the files that arrived")
+        }
+        var parts: [String] = []
+        if let progress, let totalBytes {
+            parts.append(DownloadProgressFormat.transferred(fraction: progress, totalBytes: totalBytes))
+        }
+        if let pauseReason {
+            parts.append(pauseReason.statusText)
+            return parts.joined(separator: " · ")
+        }
+        if let speedBytesPerSecond {
+            parts.append(DownloadProgressFormat.speed(speedBytesPerSecond))
+        }
+        if let timeRemaining, let formatted = DownloadProgressFormat.timeRemaining(timeRemaining) {
+            parts.append(formatted)
+        }
+        if parts.isEmpty {
+            parts.append(String(localized: "Starting…"))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    private var accessibilityValue: String {
+        var value = detail
+        if let progress {
+            value = "\(DownloadProgressFormat.percent(progress)), \(value)"
+        }
+        return value
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                HStack(spacing: 10) {
+                    if progress == nil {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.blue)
+                    }
+
+                    Text(title)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(isValidating ? Color.green : Color.blue)
+                }
+
+                Spacer(minLength: 8)
+
+                if let progress {
+                    Text(DownloadProgressFormat.percent(progress))
+                        .font(.subheadline.weight(.bold).monospacedDigit())
+                        .foregroundStyle(isValidating ? Color.green : Color.blue)
+                }
+
+                if !isValidating, let onPause, let onResume {
+                    DownloadPauseResumeButton(isPaused: isUserPaused, pause: onPause, resume: onResume)
+                }
+
+                Button(role: .cancel, action: action) {
+                    Image(systemName: "xmark")
+                        .font(.caption.bold())
+                        .foregroundStyle(Color.adaptive(white: 0.45))
+                        .frame(width: closeButtonSize, height: closeButtonSize)
+                        .background(Color.black.opacity(0.04))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                .accessibilityLabel(String(localized: "Cancel download"))
+                .accessibilityInputLabels(["Cancel", "Stop download"])
+            }
+
+            DownloadProgressBar(progress: progress, tint: isValidating ? .green : .blue, height: 6)
+
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(Color.adaptive(white: 0.45))
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .background(
             panelShape
                 .fill(Color.blue.opacity(0.05))
@@ -2423,6 +2713,11 @@ struct DownloadingButton: View {
             panelShape
                 .strokeBorder(Color.blue.opacity(0.08), lineWidth: 1)
         )
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(isValidating
+            ? String(localized: "Verifying model")
+            : String(localized: "Downloading model"))
+        .accessibilityValue(accessibilityValue)
     }
 }
 

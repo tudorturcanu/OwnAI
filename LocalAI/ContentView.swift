@@ -16,6 +16,7 @@ struct ContentView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var showHistory = false
     @State private var showSettings = false
+    @State private var showDownloads = false
     @AppStorage("hasShownOnboarding") private var hasShownOnboarding = false
     @State private var showOnboarding = false
     @State private var upgradeFeature: PremiumFeature?
@@ -23,10 +24,12 @@ struct ContentView: View {
     @State private var modelAwaitingConsent: ModelInfo?
     /// Populated by the Siri App Intent; ChatView observes this to auto-send.
     @State private var siriPendingQuery: String?
+    /// A document handed over from the share sheet or Files ("Copy to Own AI"),
+    /// waiting for the chat to attach it.
+    @State private var pendingImportFileURL: URL?
     /// Siri requests received before onboarding completes wait here so setup is
     /// never silently marked finished just to reveal the chat underneath it.
     @State private var postOnboardingSiriQuery: String?
-    @State private var showCellularRestrictionAlert = false
 
     /// True on iPad-width layouts, where chat history lives in a persistent
     /// sidebar instead of a sheet. Restricted to iPad: large iPhones also
@@ -56,7 +59,7 @@ struct ContentView: View {
     }
 
     private var chatContent: some View {
-        ChatView(siriPendingQuery: $siriPendingQuery)
+        ChatView(siriPendingQuery: $siriPendingQuery, pendingImportFileURL: $pendingImportFileURL)
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -163,7 +166,7 @@ struct ContentView: View {
                         .accessibilityHint(String(localized: "Opens automatic and manual model choices."))
                     }
 
-                    // Right: Export + New Chat
+                    // Right: download activity ring
                     if #available(iOS 26.0, *) {
                         ToolbarItemGroup(placement: .topBarTrailing) {
                             trailingToolbarButtons
@@ -180,6 +183,12 @@ struct ContentView: View {
                 .environment(historyManager)
                 .environment(monetizationManager)
                 .environment(modelManager)
+        }
+        .sheet(isPresented: $showDownloads) {
+            NavigationStack {
+                DownloadsView(isPresentedAsSheet: true)
+                    .environment(modelManager)
+            }
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -236,18 +245,11 @@ struct ContentView: View {
             // Dismiss any open sheets so the chat is visible.
             showHistory = false
             showSettings = false
+            showDownloads = false
             // Small delay to let sheet dismissal animate before auto-sending.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
                 siriPendingQuery = query
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .cellularDownloadRestricted)) { _ in
-            showCellularRestrictionAlert = true
-        }
-        .alert(String(localized: "Cellular Downloads Off"), isPresented: $showCellularRestrictionAlert) {
-            Button(String(localized: "OK"), role: .cancel) { }
-        } message: {
-            Text(String(localized: "Connect to Wi-Fi, or enable Cellular Downloads in Settings."))
         }
         .alert(
             String(localized: "Chat History Notice"),
@@ -337,26 +339,15 @@ struct ContentView: View {
         .clipShape(Capsule())
     }
 
+    /// New Chat and in-chat Search live in `ChatView`'s own trailing group so
+    /// the two can share one capsule that mirrors `leadingToolbarButtons`.
+    /// Split across two views they rendered as two loose circles.
     private var trailingToolbarButtons: some View {
-        HStack(spacing: 8) {
-            Button {
-                speechManager.stopSpeaking()
-                withAnimation {
-                    historyManager.newConversation()
-                }
-            } label: {
-                Image(systemName: "square.and.pencil")
-                    .accessibilityLabel(String(localized: "New Chat"))
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(Color.adaptive(white: 0.3))
-                    .frame(width: 32, height: 32)
-                    .background(Color.adaptive(white: 0.95))
-                    .clipShape(Circle())
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .keyboardShortcut("n", modifiers: .command)
+        // Renders nothing when no download is running, so it costs no
+        // toolbar width in the common case.
+        DownloadActivityToolbarButton {
+            speechManager.stopSpeaking()
+            showDownloads = true
         }
         .fixedSize()
     }
@@ -364,6 +355,12 @@ struct ContentView: View {
     private func handleIncomingURL(_ url: URL) {
         showHistory = false
         showSettings = false
+        showDownloads = false
+
+        if url.isFileURL {
+            pendingImportFileURL = url
+            return
+        }
 
         if let conversationID = conversationID(from: url),
            historyManager.conversations.contains(where: { $0.id == conversationID }) {

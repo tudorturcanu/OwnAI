@@ -16,7 +16,8 @@ struct AdvancedSettingsView: View {
     @AppStorage(DocumentProcessingMode.storageKey) private var documentProcessingModeRaw = DocumentProcessingMode.fast.rawValue
     @AppStorage(ImageProcessingMode.storageKey) private var imageProcessingModeRaw = ImageProcessingMode.fast.rawValue
     @AppStorage("lowPowerMode") private var lowPowerMode = false
-    @AppStorage("inChatSearchEnabled") private var inChatSearchEnabled = true
+    @AppStorage(WebSearchEngine.storageKey) private var webSearchEngineRaw = WebSearchEngine.google.rawValue
+    @State private var showReplyStylePromptResetConfirmation = false
     @AppStorage("smartReplyStylesEnabled") private var smartReplyStylesEnabled = false
     @AppStorage("systemPrompt") private var systemPrompt = AIResponseDefaults.defaultSystemPrompt
     @AppStorage("messageTextScale") private var messageTextScale: Double = 1.0
@@ -159,6 +160,7 @@ struct AdvancedSettingsView: View {
         .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .navigationTitle("Advanced")
         .navigationBarTitleDisplayMode(.inline)
+        .cellularRestrictionAlert()
         .onAppear {
             if neuralEmbeddingsEnabled {
                 neuralEmbeddingsEnabled = false
@@ -183,6 +185,17 @@ struct AdvancedSettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: { backend in
             Text(kokoroDownloadAlertMessage(for: backend))
+        }
+        .alert(
+            String(localized: "Reset custom instructions?"),
+            isPresented: $showReplyStylePromptResetConfirmation
+        ) {
+            Button(String(localized: "Reset"), role: .destructive) {
+                systemPrompt = AIResponseDefaults.defaultSystemPrompt
+            }
+            Button(String(localized: "Keep Mine"), role: .cancel) {}
+        } message: {
+            Text(String(localized: "Reply styles work best with the standard instructions. Resetting replaces the AI instructions you wrote."))
         }
         // GLM OCR ships with model terms, so the in-place download clears the
         // same consent gate the Models screen uses before it starts.
@@ -702,13 +715,7 @@ struct AdvancedSettingsView: View {
 
             sectionDivider
 
-            advancedToggleRow(
-                icon: "magnifyingglass",
-                tint: .blue,
-                title: "Search in Conversation",
-                subtitle: "Show a search button inside active chats",
-                isOn: $inChatSearchEnabled
-            )
+            webSearchRow
 
             sectionDivider
 
@@ -720,9 +727,71 @@ struct AdvancedSettingsView: View {
                 isOn: $smartReplyStylesEnabled
             )
             .onChange(of: smartReplyStylesEnabled) {
-                systemPrompt = AIResponseDefaults.defaultSystemPrompt
+                // Reply styles assume the stock prompt. Ask before discarding
+                // instructions the user wrote; a silent reset behind an
+                // innocuous-looking toggle was a nasty surprise.
+                guard systemPrompt != AIResponseDefaults.defaultSystemPrompt else { return }
+                showReplyStylePromptResetConfirmation = true
             }
         }
+    }
+
+    private var webSearchEngine: WebSearchEngine {
+        WebSearchEngine(rawValue: webSearchEngineRaw) ?? .google
+    }
+
+    /// The only action in the app that leaves the device, so which site it
+    /// goes to is the user's call rather than a hardcoded Google URL.
+    private var webSearchRow: some View {
+        HStack(spacing: 14) {
+            rowIcon(systemImage: "globe", tint: .teal)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Web Search")
+                    .font(.body)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.primary)
+
+                Text("Used by \"Search on Web\" in a message's menu. Nothing leaves the device until you tap it.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Menu {
+                    ForEach(WebSearchEngine.allCases) { engine in
+                        Button {
+                            webSearchEngineRaw = engine.rawValue
+                        } label: {
+                            if engine == webSearchEngine {
+                                Label(engine.title, systemImage: "checkmark")
+                            } else {
+                                Text(engine.title)
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(webSearchEngine.title)
+                            .font(.subheadline)
+
+                        Spacer(minLength: 8)
+
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption2)
+                            .fontWeight(.semibold)
+                            .accessibilityHidden(true)
+                    }
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .background(Color.teal.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                }
+                .accessibilityLabel(Text("Web Search"))
+                .accessibilityValue(Text(webSearchEngine.title))
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
     }
 
     // MARK: - Text Size
@@ -790,8 +859,7 @@ struct AdvancedSettingsView: View {
     // MARK: - Reusable Components
 
     private var sectionDivider: some View {
-        Divider()
-            .padding(.leading, 62)
+        CardDivider(leadingInset: 62)
     }
 
     private func advancedSection<Content: View>(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) -> some View {

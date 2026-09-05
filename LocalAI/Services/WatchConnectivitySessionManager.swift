@@ -67,24 +67,24 @@ final class WatchConnectivitySessionManager: NSObject {
         lastRequestDate = request.sentAt
 
         guard let llmEngine, let historyManager, let modelManager, let monetizationManager else {
-            return errorResponse(for: request, message: "The iPhone assistant is not ready yet.")
+            return errorResponse(for: request, message: String(localized: "The iPhone assistant is not ready yet."))
         }
 
         guard let model = modelManager.selectedModel else {
-            return errorResponse(for: request, message: "Select or download a model on your iPhone first.")
+            return errorResponse(for: request, message: String(localized: "Select or download a model on your iPhone first."))
         }
 
         guard modelManager.canSelect(model) else {
-            return errorResponse(for: request, message: "This model requires Own AI Pro.", modelName: model.name)
+            return errorResponse(for: request, message: String(localized: "This model requires Own AI Pro."), modelName: model.name)
         }
 
         guard !monetizationManager.hasReachedFreeDailyMessageLimit else {
-            return errorResponse(for: request, message: "Today's free messages are used up. They reset tomorrow.", modelName: model.name)
+            return errorResponse(for: request, message: String(localized: "Today's free messages are used up. They reset tomorrow."), modelName: model.name)
         }
 
         switch llmEngine.state {
         case .loading, .generating:
-            return errorResponse(for: request, message: "The iPhone assistant is busy. Try again in a moment.")
+            return errorResponse(for: request, message: String(localized: "The iPhone assistant is busy. Try again in a moment."))
         default:
             break
         }

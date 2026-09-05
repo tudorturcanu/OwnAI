@@ -346,11 +346,26 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     }
 
     private func handleAudioSessionInterruption(_ type: AVAudioSession.InterruptionType?) {
-        guard type == .began, isKokoroPlaybackActive else { return }
-        // There is no meaningful "resume mid-sentence" after a phone call;
-        // end the utterance so the UI and the voice loop move on.
-        KokoroDiagnostics.log("speak", "audio session interrupted — ending utterance")
-        stopSpeaking()
+        guard type == .began else { return }
+
+        if isKokoroPlaybackActive {
+            // There is no meaningful "resume mid-sentence" after a phone call;
+            // end the utterance so the UI and the voice loop move on.
+            KokoroDiagnostics.log("speak", "audio session interrupted — ending utterance")
+            stopSpeaking()
+        }
+
+        // The recording engine gets exactly the same treatment as playback,
+        // and for the same reason: iOS tears down the session out from under
+        // it regardless of whether we notice. Without this, `isListening`
+        // stays true forever — the mic never re-arms, the UI is stuck on
+        // "Listening…" — and the next buffer the (now-invalid) input tap
+        // delivers can crash with a sample-rate/format mismatch once the
+        // interruption reconfigures the route.
+        if isListening {
+            KokoroDiagnostics.log("speak", "audio session interrupted — stopping listening")
+            stopListening()
+        }
     }
 
     func startListening() throws {
@@ -520,7 +535,11 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
             speechStatus = await requestSpeechAuthorization()
         }
 
-        if audioStatus == .notDetermined {
+        // Only ask for the microphone once speech recognition is granted.
+        // Declining the first prompt used to be followed by the microphone
+        // prompt and then our own "enable both in Settings" alert: three
+        // dialogs from one tap, two of them pointless once the answer was no.
+        if speechStatus == .authorized, audioStatus == .notDetermined {
             let granted = await requestMicrophoneAuthorization()
             audioStatus = granted ? .authorized : .denied
         }

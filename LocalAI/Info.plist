@@ -15,6 +15,32 @@
 			</array>
 		</dict>
 	</array>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.adobe.pdf</string>
+				<string>public.plain-text</string>
+				<string>public.text</string>
+				<string>public.rtf</string>
+				<string>org.openxmlformats.wordprocessingml.document</string>
+				<string>net.daringfireball.markdown</string>
+				<string>public.json</string>
+				<string>public.comma-separated-values-text</string>
+				<string>public.source-code</string>
+				<string>public.log</string>
+			</array>
+		</dict>
+	</array>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<false/>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>

@@ -15,6 +15,8 @@ import Combine
 // MLX is disabled for simulator - only available on real devices
 #if !targetEnvironment(simulator)
 import MLXLMCommon
+import MLXLLM
+import MLXVLM
 #endif
 
 private final class DownloadProgressLimiter: @unchecked Sendable {
@@ -240,6 +242,10 @@ enum DownloadErrorAction {
     case freeSpace
     case repair
     case cellularRestricted
+    /// The model's architecture isn't implemented by the on-device engine.
+    /// No retry or repair can fix this — only removing the model from the
+    /// catalog (or a future engine update) can.
+    case unsupported
 
     var iconName: String {
         switch self {
@@ -251,6 +257,8 @@ enum DownloadErrorAction {
             return "wrench.and.screwdriver"
         case .cellularRestricted:
             return "wifi.slash"
+        case .unsupported:
+            return "exclamationmark.triangle"
         }
     }
 
@@ -264,6 +272,8 @@ enum DownloadErrorAction {
             return "Repair"
         case .cellularRestricted:
             return "Back"
+        case .unsupported:
+            return "OK"
         }
     }
 }
@@ -281,6 +291,35 @@ enum ModelUseCase: String, CaseIterable, Identifiable {
 
 /// Manages model downloads and lifecycle
 @MainActor
+/// Why a transfer was deliberately taken off the wire. Paused downloads keep
+/// their `.downloading` state at the last known progress so the bar stays put
+/// instead of vanishing, which used to read as a failure.
+enum DownloadPauseReason: Equatable {
+    /// Bandwidth and CPU are needed for an answer; resumes when it finishes.
+    case chat
+    /// The network became cellular or metered while Cellular Downloads is off;
+    /// resumes on its own once Wi-Fi is back or the setting allows it.
+    case meteredNetwork
+    /// The user tapped pause. Nothing resumes it but the user.
+    case userRequested
+
+    /// Only a user pause offers a resume control; the other two clear on their own.
+    var isUserRequested: Bool { self == .userRequested }
+
+    var statusText: String {
+        switch self {
+        case .chat:
+            return String(localized: "Paused while answering")
+        case .userRequested:
+            return String(localized: "Paused by you")
+        case .meteredNetwork:
+            return DownloadNetworkMonitor.shared.isActuallyCellular
+                ? String(localized: "Paused until Wi-Fi is back")
+                : String(localized: "Paused on this metered network")
+        }
+    }
+}
+
 @Observable
 final class ModelManager {
     private static let requiredMLXDownloadGlobs = MLXStorage.modelArtifactGlobs
@@ -325,6 +364,10 @@ final class ModelManager {
         case incomplete(missingRequirements: [String])
         case simulatorUnsupported
         case unknown
+        /// The Hub repo's `config.json` declares a `model_type` the pinned
+        /// MLX runtime has no creator for. Caught before the (often
+        /// multi-GB) weight download starts.
+        case unsupportedArchitecture(modelType: String)
     }
 
     private struct DownloadFailure: Equatable {
@@ -367,6 +410,12 @@ final class ModelManager {
     }
     private(set) var autoSelectionRevision = 0
     private(set) var lastAutoSelectionNotice: AutoModelSelectionNotice?
+    /// Set when a download is refused because the device is on cellular and
+    /// Cellular Downloads is off. Observable rather than a fire-and-forget
+    /// notification so whichever screen is frontmost can present it: the
+    /// models list lives inside a sheet, and an alert attached to the view
+    /// *under* that sheet never reaches the screen.
+    var cellularRestrictionNotice: String?
     @ObservationIgnored private var autoSelectionDismissTask: Task<Void, Never>?
     /// How long the auto-selection toast stays on screen before it self-dismisses.
     /// Shared with the view so its progress indicator stays in sync.
@@ -377,10 +426,20 @@ final class ModelManager {
     }
     
     
+    /// Concurrent transfers. One at a time: several multi-GB downloads just
+    /// share the same pipe, and finishing one model sooner means the user can
+    /// actually start chatting on it while the rest arrive.
+    private static let maxConcurrentDownloads = 1
+    /// Model IDs waiting on a slot, oldest first.
+    private var downloadQueue: [String] = []
+
     private var downloadTasks: [String: Task<Void, Never>] = [:]
     private var downloadTaskIDs: [String: UUID] = [:]
     private var downloadSelectionIntent: [String: Bool] = [:]
-    private var chatPausedDownloads: [String: Bool] = [:]
+    /// Select-when-finished intent for each paused transfer, restored on resume.
+    private var pausedDownloadIntents: [String: Bool] = [:]
+    /// Observable so the downloads screens can label a still-visible bar as paused.
+    private(set) var pausedDownloads: [String: DownloadPauseReason] = [:]
     private var backgroundTaskIDs: [String: UIBackgroundTaskIdentifier] = [:]
     private var downloadFailures: [String: DownloadFailure] = [:]
     private var downloadsWithRollback: Set<String> = []
@@ -397,6 +456,10 @@ final class ModelManager {
         UserDefaults.standard.stringArray(forKey: ModelManager.removedBundledModelsKey) ?? []
     )
     private static let removedBundledModelsKey = "models.removedBundled"
+    /// Downloads that were on the wire when the process last died. Written when
+    /// a transfer starts and cleared when it ends for any reason, so anything
+    /// still here at launch was interrupted by a kill and gets picked back up.
+    private static let interruptedDownloadsKey = "models.interruptedDownloads"
 
     // MARK: - Computed Properties
     
@@ -472,11 +535,16 @@ final class ModelManager {
         // Initialize network monitor early so path is more likely to be resolved before user taps download
         _ = DownloadNetworkMonitor.shared
         
-        // Warn user when app goes to background during an active download
+        // Warn user when app goes to background during an active download.
+        // Deliberately didEnterBackground, not willResignActive: the latter
+        // also fires for transient interruptions where the app never leaves
+        // the foreground — Control Center, Notification Center, a system
+        // permission alert, a share sheet — which posted this warning even
+        // while the user was still looking at the app.
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(handleWillResignActive),
-            name: UIApplication.willResignActiveNotification,
+            selector: #selector(handleDidEnterBackground),
+            name: UIApplication.didEnterBackgroundNotification,
             object: nil
         )
         NotificationCenter.default.addObserver(
@@ -559,7 +627,7 @@ final class ModelManager {
                 summary: String(localized: "Already ready on this device."),
                 detail: downloadedBest.engine == .appleFoundation
                     ? String(localized: "Apple Intelligence is available now, so you can start chatting without downloading anything.")
-                    : String(format: String(localized: "%@ is already available locally, so it will get you to the first reply fastest.", defaultValue: "%@ is already available locally, so it will get you to the first reply fastest."), downloadedBest.name),
+                    : String(format: String(localized: "%@ is already on this device, so you can start chatting right away.", defaultValue: "%@ is already on this device, so you can start chatting right away."), downloadedBest.name),
                 actionTitle: String(format: String(localized: "Use %@", defaultValue: "Use %@"), downloadedBest.name),
                 prefersImmediateUse: true,
                 usesFallback: false
@@ -617,13 +685,13 @@ final class ModelManager {
         if let preferredLocalModel {
             let detail: String
             if preferredLocalModel.id == ModelInfo.qwen25_3b_instruct_4bit.id {
-                detail = "This device should handle \(preferredLocalModel.name) well, and it gives you a noticeably better quality baseline while staying a reasonable download size."
+                detail = String(format: String(localized: "This device should handle %@ well, and it gives you a noticeably better quality baseline while staying a reasonable download size."), preferredLocalModel.name)
             } else if preferredLocalModel.id == ModelInfo.gemma2_2b_4bit.id {
-                detail = "This device should handle \(preferredLocalModel.name) well, and it gives a better quality baseline than the ultra-small models."
+                detail = String(format: String(localized: "This device should handle %@ well, and it gives a better quality baseline than the ultra-small models."), preferredLocalModel.name)
             } else if preferredLocalModel.id == ModelInfo.gemma3_1b_qat_4bit.id {
-                detail = "\(preferredLocalModel.name) keeps the download light while still fitting comfortably on this device."
+                detail = String(format: String(localized: "%@ keeps the download light while still fitting comfortably on this device."), preferredLocalModel.name)
             } else {
-                detail = "\(preferredLocalModel.name) is the safest local starting point when storage or device headroom is tighter."
+                detail = String(format: String(localized: "%@ is the safest local starting point when storage or device headroom is tighter."), preferredLocalModel.name)
             }
 
             return recommendation(
@@ -726,6 +794,8 @@ final class ModelManager {
             return .repair
         case .network, .simulatorUnsupported, .unknown:
             return .retry
+        case .unsupportedArchitecture:
+            return .unsupported
         }
     }
 
@@ -745,7 +815,13 @@ final class ModelManager {
             networkIconName = "antenna.radiowaves.left.and.right"
             isNetworkWarning = false
         } else if isCellularRestricted {
-            networkText = String(localized: "Connect to Wi-Fi, or enable Cellular Downloads in Settings.")
+            // Same "is this actually cellular" split as cellularRestrictedFailure():
+            // this flag also catches Low Data Mode on Wi-Fi and a Personal
+            // Hotspot, where "connect to Wi-Fi" would be wrong — that's
+            // already the connection.
+            networkText = DownloadNetworkMonitor.shared.isActuallyCellular
+                ? String(localized: "Connect to Wi-Fi, or enable Cellular Downloads in Settings.")
+                : String(localized: "This network is metered (Low Data Mode or a Personal Hotspot). Switch networks, or allow downloads on any connection in Settings.")
             networkIconName = "wifi.exclamationmark"
             isNetworkWarning = true
         } else {
@@ -869,7 +945,7 @@ final class ModelManager {
     }
 
     @objc
-    private func handleWillResignActive() {
+    private func handleDidEnterBackground() {
         guard downloadNotifications else { return }
         guard let activeModelID = downloadTasks.keys.first,
               let model = models.first(where: { $0.id == activeModelID }) else { return }
@@ -878,13 +954,37 @@ final class ModelManager {
 
     @objc
     private func handleNetworkRestrictionChange() {
-        if !allowCellularDownloads, DownloadNetworkMonitor.shared.isCellularRestricted {
-            let activeIDs = Array(downloadTasks.keys)
-            for modelID in activeIDs {
-                cancelDownload(modelID)
-                applyDownloadFailure(cellularRestrictedFailure(), for: modelID)
+        let restricted = DownloadNetworkMonitor.shared.isCellularRestricted
+        if !allowCellularDownloads, restricted {
+            // Pause rather than fail: the user did nothing wrong, the phone just
+            // left Wi-Fi range. Picks back up below when the path is unmetered.
+            pauseActiveDownloads(reason: .meteredNetwork)
+        } else {
+            resumePausedDownloads(reason: .meteredNetwork)
+        }
+    }
+
+    func pauseReason(for modelID: String) -> DownloadPauseReason? {
+        pausedDownloads[modelID]
+    }
+
+    /// Call after the user flips Cellular Downloads on in Settings. The
+    /// error banner's message text is a frozen string baked in when the
+    /// download failed, so — unlike the Retry button, which recomputes its
+    /// action from the live setting — it never updated on its own and kept
+    /// reading "Cellular Downloads is off" even after the toggle allowed it.
+    func handleCellularDownloadsAllowedChanged() {
+        guard allowCellularDownloads else { return }
+        let staleModelIDs = downloadFailures
+            .filter { $0.value.reason == .cellularRestricted }
+            .map(\.key)
+        for modelID in staleModelIDs {
+            downloadFailures.removeValue(forKey: modelID)
+            if let index = models.firstIndex(where: { $0.id == modelID }) {
+                models[index].downloadState = .notDownloaded
             }
         }
+        resumePausedDownloads(reason: .meteredNetwork)
     }
 
     func repairModel(_ modelID: String, selectWhenFinished: Bool = false) {
@@ -910,8 +1010,13 @@ final class ModelManager {
         #endif
     }
     
-    /// Start downloading a model
-    func downloadModel(_ modelID: String, selectWhenFinished: Bool = false) {
+    /// Start downloading a model.
+    ///
+    /// `userInitiated` gates the cellular alert: a background resume has no
+    /// tap behind it and no screen guaranteed to be up, so arming an alert
+    /// there would just fire at a random later moment. Those paths still get
+    /// the inline error state on the model card.
+    func downloadModel(_ modelID: String, selectWhenFinished: Bool = false, userInitiated: Bool = true) {
         guard let index = models.firstIndex(where: { $0.id == modelID }) else { return }
         let model = models[index]
         guard model.engine == .mlx else { return }
@@ -923,6 +1028,7 @@ final class ModelManager {
             return
         }
         guard downloadTasks[modelID] == nil else { return }
+        guard !downloadQueue.contains(modelID) else { return }
         guard compatibilityMessage(for: model) == nil else { return }
 
         if let failure = preflightFailure(for: model) {
@@ -930,19 +1036,46 @@ final class ModelManager {
             return
         }
 
-        if let _ = cellularRestrictionFailureIfNeeded(allowCellular: allowCellularDownloads) {
-            NotificationCenter.default.post(name: .cellularDownloadRestricted, object: nil)
+        if let failure = cellularRestrictionFailureIfNeeded(allowCellular: allowCellularDownloads) {
+            if userInitiated {
+                cellularRestrictionNotice = failure.message
+            }
+            applyDownloadFailure(failure, for: modelID)
             return
         }
         
         downloadFailures.removeValue(forKey: modelID)
+
+        // At capacity: take the request, but hold it. Downloading several
+        // multi-GB checkpoints at once just splits the same bandwidth and
+        // makes every one of them slower, so they run one at a time.
+        guard downloadTasks.count < Self.maxConcurrentDownloads else {
+            if !downloadQueue.contains(modelID) {
+                downloadQueue.append(modelID)
+            }
+            downloadSelectionIntent[modelID] = selectWhenFinished
+            models[index].downloadState = .queued
+            return
+        }
+
+        beginDownloadTask(modelID: modelID, model: model, selectWhenFinished: selectWhenFinished)
+    }
+
+    /// Spawns the actual transfer. Split out of `downloadModel` so the queue
+    /// can start a waiting model later; callers are responsible for having
+    /// checked compatibility, disk space and network first.
+    private func beginDownloadTask(modelID: String, model: ModelInfo, selectWhenFinished: Bool) {
+        guard let index = models.firstIndex(where: { $0.id == modelID }) else { return }
+
         downloadProgressLimiter.reset(modelID: modelID)
         downloadDiagnostics.start(
             modelID: modelID,
             modelName: model.name,
             expectedBytes: model.sizeGB * 1_000_000_000
         )
-        models[index].downloadState = .downloading(progress: 0.02, speedBytesPerSecond: nil)
+        // A resumed transfer keeps its bar where it was instead of snapping to 2%.
+        let startingProgress = max(0.02, models[index].downloadState.progressFraction ?? 0)
+        models[index].downloadState = .downloading(progress: startingProgress, speedBytesPerSecond: nil)
 
         if downloadNotifications {
             Task { @MainActor in
@@ -971,17 +1104,206 @@ final class ModelManager {
         downloadTasks[modelID] = task
         downloadTaskIDs[modelID] = taskID
         downloadSelectionIntent[modelID] = selectWhenFinished
+        rememberInterruptedDownload(modelID, selectWhenFinished: selectWhenFinished)
         updateIdleTimer()
         beginBackgroundTask(for: modelID)
     }
-    
-    /// Cancel an ongoing download
+
+    private func rememberInterruptedDownload(_ modelID: String, selectWhenFinished: Bool) {
+        var stored = UserDefaults.standard.dictionary(forKey: Self.interruptedDownloadsKey) as? [String: Bool] ?? [:]
+        stored[modelID] = selectWhenFinished
+        UserDefaults.standard.set(stored, forKey: Self.interruptedDownloadsKey)
+    }
+
+    private func forgetInterruptedDownload(_ modelID: String) {
+        var stored = UserDefaults.standard.dictionary(forKey: Self.interruptedDownloadsKey) as? [String: Bool] ?? [:]
+        guard stored.removeValue(forKey: modelID) != nil else { return }
+        UserDefaults.standard.set(stored, forKey: Self.interruptedDownloadsKey)
+    }
+
+    /// Re-issues any download the previous process was killed in the middle of.
+    /// Hub keeps completed files and partial blobs, so this continues rather
+    /// than restarts; the user otherwise had to notice and tap Resume.
+    private func resumeInterruptedDownloads() {
+        let stored = UserDefaults.standard.dictionary(forKey: Self.interruptedDownloadsKey) as? [String: Bool] ?? [:]
+        guard !stored.isEmpty else { return }
+        UserDefaults.standard.removeObject(forKey: Self.interruptedDownloadsKey)
+        for (modelID, selectWhenFinished) in stored.sorted(by: { $0.key < $1.key }) {
+            guard let model = models.first(where: { $0.id == modelID }),
+                  model.engine == .mlx,
+                  !model.isBundled,
+                  !model.isImported,
+                  !model.downloadState.isDownloaded else { continue }
+            // Relaunched on cellular with Cellular Downloads off: park it as a
+            // network pause at its partial progress rather than re-issuing a
+            // request that would only fail into an error banner.
+            if !allowCellularDownloads, DownloadNetworkMonitor.shared.isCellularRestricted,
+               let index = models.firstIndex(where: { $0.id == modelID }) {
+                let total = max(1, model.estimatedTotalBytes)
+                let partial = min(0.99, Double(MLXStorage.partialDownloadBytes(for: modelID)) / total)
+                models[index].downloadState = .downloading(progress: partial, speedBytesPerSecond: nil)
+                pausedDownloads[modelID] = .meteredNetwork
+                pausedDownloadIntents[modelID] = selectWhenFinished
+                continue
+            }
+            downloadModel(modelID, selectWhenFinished: selectWhenFinished, userInitiated: false)
+        }
+    }
+
+    /// Promotes the next waiting model once a slot frees up. Skips entries
+    /// that stopped being downloadable while they waited (deleted, already
+    /// fetched, or cancelled).
+    func startNextQueuedDownloadIfPossible() {
+        while downloadTasks.count < Self.maxConcurrentDownloads, !downloadQueue.isEmpty {
+            let nextID = downloadQueue.removeFirst()
+            guard let model = models.first(where: { $0.id == nextID }),
+                  model.downloadState == .queued else { continue }
+
+            // Conditions are re-checked here rather than trusted from enqueue
+            // time: the download this one waited behind may have just consumed
+            // the free space it needs, or the device may have dropped onto
+            // cellular in the meantime.
+            if let failure = preflightFailure(for: model)
+                ?? cellularRestrictionFailureIfNeeded(allowCellular: allowCellularDownloads) {
+                applyDownloadFailure(failure, for: nextID)
+                continue
+            }
+
+            let selectWhenFinished = downloadSelectionIntent[nextID] ?? false
+            beginDownloadTask(modelID: nextID, model: model, selectWhenFinished: selectWhenFinished)
+            return
+        }
+    }
+
+    /// Models waiting on a slot, in the order they were requested.
+    var queuedModelIDs: [String] { downloadQueue }
+
+    /// 1-based place in line, or nil if the model is not queued.
+    func queuePosition(of modelID: String) -> Int? {
+        downloadQueue.firstIndex(of: modelID).map { $0 + 1 }
+    }
+
+    // MARK: - Download Activity
+
+    /// Models with work in flight right now — fetching bytes or verifying what
+    /// arrived. At most one fetches at a time; validation can overlap the next
+    /// download starting, so this is a list rather than an optional.
+    var activeDownloadModels: [ModelInfo] {
+        models.filter { $0.downloadState.isDownloading }
+    }
+
+    /// Models waiting on the transfer slot, in the order they were requested.
+    var queuedDownloadModels: [ModelInfo] {
+        downloadQueue.compactMap { id in models.first { $0.id == id } }
+    }
+
+    /// Downloads that stopped on an error and are still showing it. Sorted by
+    /// name so the rows do not reshuffle between redraws — `downloadFailures`
+    /// is a dictionary and has no order of its own.
+    var failedDownloadModels: [ModelInfo] {
+        downloadFailures.keys
+            .compactMap { id in models.first { $0.id == id } }
+            .filter { model in
+                if case .error = model.downloadState { return true }
+                return false
+            }
+            .sorted { $0.name < $1.name }
+    }
+
+    /// True while anything is downloading, validating, or queued. Drives the
+    /// progress indicator's visibility.
+    var hasDownloadActivity: Bool {
+        !activeDownloadModels.isEmpty || !downloadQueue.isEmpty
+    }
+
+    /// Combined position across everything in flight and everything queued,
+    /// weighted by download size so a 4 GB model does not advance the bar at
+    /// the same rate as a 700 MB one. Queued models count as 0% of their size,
+    /// which is what makes the total dip when a new one is added — the honest
+    /// reading, since there really is more left to do.
+    var aggregateDownloadProgress: Double? {
+        let tracked = activeDownloadModels + queuedDownloadModels
+        guard !tracked.isEmpty else { return nil }
+
+        // A floor on the weight keeps a model with no catalog size (an unusual
+        // 0 GB entry) from contributing nothing and skewing the average.
+        let weights = tracked.map { max($0.sizeGB, 0.1) }
+        let totalWeight = weights.reduce(0, +)
+        guard totalWeight > 0 else { return nil }
+
+        let completed = zip(tracked, weights).reduce(0.0) { partial, pair in
+            partial + pair.1 * (pair.0.downloadState.progressFraction ?? 0)
+        }
+        return min(max(completed / totalWeight, 0), 1)
+    }
+
+    /// Sum of the measured rates, or nil until at least one download has
+    /// reported one.
+    var aggregateDownloadSpeedBytesPerSecond: Double? {
+        let speeds = activeDownloadModels.compactMap { $0.downloadState.speedBytesPerSecond }
+        guard !speeds.isEmpty else { return nil }
+        let total = speeds.reduce(0, +)
+        return total > 0 ? total : nil
+    }
+
+    /// Rough seconds until everything active *and* queued is finished. Queued
+    /// models are included because they share the one pipe: leaving them out
+    /// would promise "2 minutes left" with another 4 GB still to come.
+    var aggregateDownloadTimeRemaining: TimeInterval? {
+        guard let speed = aggregateDownloadSpeedBytesPerSecond, speed > 0 else { return nil }
+        let remainingBytes = (activeDownloadModels + queuedDownloadModels).reduce(0.0) { partial, model in
+            let fraction = model.downloadState.progressFraction ?? 0
+            return partial + model.estimatedTotalBytes * (1 - fraction)
+        }
+        guard remainingBytes > 0 else { return nil }
+        return remainingBytes / speed
+    }
+
+    /// Seconds left for one model on its own, from its own reported rate.
+    func downloadTimeRemaining(for model: ModelInfo) -> TimeInterval? {
+        guard let speed = model.downloadState.speedBytesPerSecond, speed > 0,
+              let fraction = model.downloadState.progressFraction else { return nil }
+        let remainingBytes = model.estimatedTotalBytes * (1 - fraction)
+        guard remainingBytes > 0 else { return nil }
+        return remainingBytes / speed
+    }
+
+    /// Stops every transfer and empties the queue. The queue is cleared *before*
+    /// the running download is cancelled: freeing the slot otherwise promotes
+    /// the next queued model onto the wire, so "Cancel All" would leave one
+    /// download running.
+    func cancelAllDownloads() {
+        let queued = downloadQueue
+        downloadQueue.removeAll()
+        for modelID in queued {
+            cancelDownload(modelID)
+        }
+        for modelID in Array(downloadTasks.keys) {
+            cancelDownload(modelID)
+        }
+    }
+
+    /// Clears a failed download's error state without retrying it, so the
+    /// downloads screen can be emptied out.
+    func dismissDownloadFailure(for modelID: String) {
+        guard downloadFailures.removeValue(forKey: modelID) != nil else { return }
+        guard let index = models.firstIndex(where: { $0.id == modelID }) else { return }
+        if case .error = models[index].downloadState {
+            models[index].downloadState = .notDownloaded
+        }
+    }
+
+    /// Cancel an ongoing or queued download
     func cancelDownload(_ modelID: String) {
+        let wasActive = downloadTasks[modelID] != nil
+        downloadQueue.removeAll { $0 == modelID }
         downloadTasks[modelID]?.cancel()
         downloadTasks.removeValue(forKey: modelID)
         downloadTaskIDs.removeValue(forKey: modelID)
         downloadSelectionIntent.removeValue(forKey: modelID)
-        chatPausedDownloads.removeValue(forKey: modelID)
+        pausedDownloadIntents.removeValue(forKey: modelID)
+        pausedDownloads.removeValue(forKey: modelID)
+        forgetInterruptedDownload(modelID)
         downloadFailures.removeValue(forKey: modelID)
         downloadProgressLimiter.reset(modelID: modelID)
         
@@ -995,34 +1317,112 @@ final class ModelManager {
         }
         updateIdleTimer()
         endBackgroundTask(for: modelID)
+        // Cancelling the running transfer frees the slot the queue was
+        // waiting on; cancelling a queued entry never held one.
+        if wasActive {
+            startNextQueuedDownloadIfPossible()
+        }
     }
 
     /// Cancels resumable network work while an answer is being produced. Hub
     /// snapshots retain partial files, so resuming does not discard progress.
     func suspendBackgroundDownloadsForChat() {
-        let activeIDs = Array(downloadTasks.keys)
+        pauseActiveDownloads(reason: .chat)
+    }
+
+    func resumeBackgroundDownloadsAfterChat() {
+        resumePausedDownloads(reason: .chat)
+        // Nothing was paused but a slot is free: anything parked in the queue
+        // during the chat can go now.
+        startNextQueuedDownloadIfPossible()
+    }
+
+    /// User-initiated pause of one transfer. Works on an active download and
+    /// on a queued one (which is parked at its partial progress so the bar
+    /// stays visible). Unlike the chat and network pauses, nothing resumes it
+    /// automatically; see `resumeDownload(_:)`.
+    func pauseDownload(_ modelID: String) {
+        if downloadTasks[modelID] != nil {
+            pauseActiveDownloads(reason: .userRequested, only: [modelID])
+        } else if downloadQueue.contains(modelID) {
+            downloadQueue.removeAll { $0 == modelID }
+            pausedDownloadIntents[modelID] = downloadSelectionIntent[modelID] ?? false
+            downloadSelectionIntent.removeValue(forKey: modelID)
+            pausedDownloads[modelID] = .userRequested
+            if let index = models.firstIndex(where: { $0.id == modelID }) {
+                let total = max(1, models[index].estimatedTotalBytes)
+                let partial = min(0.99, Double(MLXStorage.partialDownloadBytes(for: modelID)) / total)
+                models[index].downloadState = .downloading(progress: partial, speedBytesPerSecond: nil)
+            }
+        } else if let reason = pausedDownloads[modelID], reason != .userRequested {
+            // Already parked by chat or the network: make it stick so it does
+            // not spring back the moment the reply ends or Wi-Fi returns.
+            pausedDownloads[modelID] = .userRequested
+        } else {
+            return
+        }
+        // A user pause should survive a relaunch as "not running", not as a
+        // transfer to silently re-issue at the next launch.
+        forgetInterruptedDownload(modelID)
+        // The freed slot goes to whatever was waiting behind this one.
+        startNextQueuedDownloadIfPossible()
+    }
+
+    /// Resumes a download the user paused. Honors the cellular setting: on a
+    /// restricted network it hands the transfer to the network pause instead
+    /// of issuing a request that would only fail into an error banner.
+    func resumeDownload(_ modelID: String) {
+        guard let reason = pausedDownloads[modelID], reason.isUserRequested else { return }
+        let selectWhenFinished = pausedDownloadIntents[modelID] ?? false
+        if !allowCellularDownloads, DownloadNetworkMonitor.shared.isCellularRestricted {
+            pausedDownloads[modelID] = .meteredNetwork
+            return
+        }
+        pausedDownloads.removeValue(forKey: modelID)
+        pausedDownloadIntents.removeValue(forKey: modelID)
+        downloadModel(modelID, selectWhenFinished: selectWhenFinished, userInitiated: true)
+    }
+
+    private func pauseActiveDownloads(reason: DownloadPauseReason, only limitedTo: Set<String>? = nil) {
+        var activeIDs = Array(downloadTasks.keys)
+        if let limitedTo {
+            activeIDs = activeIDs.filter(limitedTo.contains)
+        }
         guard !activeIDs.isEmpty else { return }
 
         for modelID in activeIDs {
-            chatPausedDownloads[modelID] = downloadSelectionIntent[modelID] ?? false
+            pausedDownloadIntents[modelID] = downloadSelectionIntent[modelID] ?? false
+            pausedDownloads[modelID] = reason
             downloadTasks[modelID]?.cancel()
             downloadTasks.removeValue(forKey: modelID)
             downloadTaskIDs.removeValue(forKey: modelID)
             downloadSelectionIntent.removeValue(forKey: modelID)
             downloadProgressLimiter.reset(modelID: modelID)
             if let index = models.firstIndex(where: { $0.id == modelID }) {
-                models[index].downloadState = .notDownloaded
+                // Keep the bar where it was, with no rate: a pause is not a failure
+                // and must not look like one.
+                let progress = models[index].downloadState.progressFraction ?? 0
+                models[index].downloadState = .downloading(progress: progress, speedBytesPerSecond: nil)
             }
             endBackgroundTask(for: modelID)
         }
         updateIdleTimer()
     }
 
-    func resumeBackgroundDownloadsAfterChat() {
-        let paused = chatPausedDownloads
-        chatPausedDownloads.removeAll()
-        for (modelID, selectWhenFinished) in paused {
-            downloadModel(modelID, selectWhenFinished: selectWhenFinished)
+    private func resumePausedDownloads(reason: DownloadPauseReason) {
+        let toResume = pausedDownloads.filter { $0.value == reason }.map(\.key).sorted()
+        for modelID in toResume {
+            let selectWhenFinished = pausedDownloadIntents[modelID] ?? false
+            // Resuming after a chat onto a metered network would fail the download
+            // outright; hand it to the network pause so it continues on its own
+            // once Wi-Fi is back.
+            if reason == .chat, !allowCellularDownloads, DownloadNetworkMonitor.shared.isCellularRestricted {
+                pausedDownloads[modelID] = .meteredNetwork
+                continue
+            }
+            pausedDownloads.removeValue(forKey: modelID)
+            pausedDownloadIntents.removeValue(forKey: modelID)
+            downloadModel(modelID, selectWhenFinished: selectWhenFinished, userInitiated: false)
         }
     }
     
@@ -1223,9 +1623,13 @@ final class ModelManager {
                 self.downloadTasks.removeValue(forKey: modelID)
                 self.downloadTaskIDs.removeValue(forKey: modelID)
                 self.downloadSelectionIntent.removeValue(forKey: modelID)
+                self.forgetInterruptedDownload(modelID)
                 self.downloadProgressLimiter.reset(modelID: modelID)
                 self.updateIdleTimer()
                 self.endBackgroundTask(for: modelID)
+                // The slot is free however this finished — done, failed or
+                // cancelled — so the next queued model starts now.
+                self.startNextQueuedDownloadIfPossible()
             }
         }
 
@@ -1369,7 +1773,13 @@ final class ModelManager {
     nonisolated private func cellularRestrictedFailure() -> DownloadFailure {
         DownloadFailure(
             reason: .cellularRestricted,
-            message: "Cellular Downloads is off. Connect to Wi-Fi or turn it on in Settings."
+            message: DownloadNetworkMonitor.shared.isActuallyCellular
+                ? "Cellular Downloads is off. Connect to Wi-Fi or turn it on in Settings."
+                // isCellularRestricted also fires for a Personal Hotspot or for
+                // Low Data Mode on an ordinary Wi-Fi network — "connect to
+                // Wi-Fi" would be actively wrong advice there, since that's
+                // already the network in use.
+                : "This network is metered (Low Data Mode or a Personal Hotspot). Switch networks, or allow downloads on any connection in Settings."
         )
     }
 
@@ -1449,7 +1859,10 @@ final class ModelManager {
         switch failure.reason {
         case .network, .cellularRestricted, .simulatorUnsupported:
             return
-        case .lowStorage, .corrupted, .incomplete, .unknown:
+        case .lowStorage, .corrupted, .incomplete, .unknown, .unsupportedArchitecture:
+            // .unsupportedArchitecture is caught before the weight download,
+            // but the config.json probe still writes a few KB into the
+            // persistent model directory — clear it like any other partial.
             cleanupIncompleteArtifactsIfNeeded(modelID: modelID)
         }
     }
@@ -1468,6 +1881,8 @@ final class ModelManager {
     ) async throws {
         let maxAttempts = 3
         let hub = makeHubApi()
+
+        try await validateModelArchitectureIsSupported(modelID: modelID, model: model, hub: hub)
 
         do {
             try await runSnapshotDownload(
@@ -1507,6 +1922,58 @@ final class ModelManager {
 
     nonisolated private func makeHubApi() -> HubApi {
         return HubApi(downloadBase: MLXStorage.persistentBaseURL().deletingLastPathComponent())
+    }
+
+    /// Fetches just the Hub repo's `config.json` (a few KB) and checks
+    /// whether the pinned MLX runtime actually has a creator registered for
+    /// its `model_type`, before committing to the full — often multi-GB —
+    /// weight download. Catches the class of bug where a model downloads
+    /// and shows as "Ready" but can never load: its architecture was simply
+    /// never ported to mlx-swift-lm (e.g. EXAONE 3.5's "exaone", as opposed
+    /// to the supported "exaone4").
+    ///
+    /// Best-effort: any failure to fetch or parse the config is swallowed
+    /// so the real download attempt below surfaces its own, better-classified
+    /// error (network, storage, etc.) instead of a confusing detour here.
+    nonisolated private func validateModelArchitectureIsSupported(
+        modelID: String,
+        model: ModelInfo,
+        hub: HubApi
+    ) async throws {
+        guard let modelType = await fetchModelType(modelID: modelID, hub: hub) else { return }
+
+        let isSupported: Bool
+        if model.supportsVision {
+            isSupported = await VLMTypeRegistry.shared.contains(modelType)
+        } else {
+            isSupported = await LLMTypeRegistry.shared.contains(modelType)
+        }
+        guard !isSupported else { return }
+
+        throw DownloadFailureError(failure: DownloadFailure(
+            reason: .unsupportedArchitecture(modelType: modelType),
+            message: String(format: String(
+                localized: "This model's architecture (\"%@\") isn't supported by Own AI's on-device engine yet.",
+                defaultValue: "This model's architecture (\"%@\") isn't supported by Own AI's on-device engine yet."
+            ), modelType)
+        ))
+    }
+
+    nonisolated private func fetchModelType(modelID: String, hub: HubApi) async -> String? {
+        guard let configDirectory = try? await hub.snapshot(from: modelID, matching: ["config.json"]) else {
+            return nil
+        }
+        let configFile = configDirectory.appendingPathComponent("config.json")
+        guard let data = try? Data(contentsOf: configFile),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        if let modelType = json["model_type"] as? String {
+            return modelType
+        }
+        // Some VLM configs nest the language-model architecture under
+        // text_config rather than declaring model_type at the top level.
+        return (json["text_config"] as? [String: Any])?["model_type"] as? String
     }
 
     nonisolated private func runSnapshotDownload(
@@ -1692,6 +2159,9 @@ final class ModelManager {
         #endif
         
         ensureSelection()
+        #if !targetEnvironment(simulator)
+        resumeInterruptedDownloads()
+        #endif
     }
     
     #if !targetEnvironment(simulator)
@@ -2270,8 +2740,4 @@ final class ModelManager {
             usesFallback: usesFallback
         )
     }
-}
-
-extension Notification.Name {
-    static let cellularDownloadRestricted = Notification.Name("cellularDownloadRestricted")
 }

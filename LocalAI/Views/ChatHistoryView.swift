@@ -16,6 +16,7 @@ struct ChatHistoryView: View {
     /// no own NavigationStack, no Done button, and selection must not dismiss.
     var isEmbedded: Bool = false
 
+    @State private var showDeleteAllConfirmation = false
     @State private var asyncWordCount: String = "0"
     /// Kept alongside the abbreviated string so the tile's label can agree with
     /// the count; "1.2K" can't tell us whether the real total is exactly one.
@@ -127,13 +128,16 @@ struct ChatHistoryView: View {
         let now = Date()
         let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: now) ?? .distantPast
 
+        var pinned: [ChatConversation] = []
         var today: [ChatConversation] = []
         var yesterday: [ChatConversation] = []
         var previous7Days: [ChatConversation] = []
         var earlier: [ChatConversation] = []
 
         for conversation in filteredConversations {
-            if calendar.isDateInToday(conversation.updatedAt) {
+            if conversation.isPinned {
+                pinned.append(conversation)
+            } else if calendar.isDateInToday(conversation.updatedAt) {
                 today.append(conversation)
             } else if calendar.isDateInYesterday(conversation.updatedAt) {
                 yesterday.append(conversation)
@@ -145,6 +149,7 @@ struct ChatHistoryView: View {
         }
 
         var groups: [(title: String, conversations: [ChatConversation])] = []
+        if !pinned.isEmpty { groups.append((String(localized: "Pinned"), pinned)) }
         if !today.isEmpty { groups.append((String(localized: "Today"), today)) }
         if !yesterday.isEmpty { groups.append((String(localized: "Yesterday"), yesterday)) }
         if !previous7Days.isEmpty { groups.append((String(localized: "Previous 7 Days"), previous7Days)) }
@@ -326,86 +331,7 @@ struct ChatHistoryView: View {
                 ForEach(groupedConversations, id: \.title) { section in
                     Section {
                         ForEach(section.conversations) { conversation in
-                            ConversationRow(
-                                conversation: conversation,
-                                isSelected: conversation.id == historyManager.currentConversationID,
-                                folderLabel: folderStore.folder(for: conversation.id).map { "\($0.emoji) \($0.name)" },
-                                searchHit: searchHits[conversation.id]
-                            ) {
-                                historyManager.selectConversation(conversation.id)
-                                requestJumpToMatch(in: conversation.id)
-                                if !isEmbedded {
-                                    dismiss()
-                                }
-                            } onDelete: {
-                                withAnimation(.spring(response: 0.3)) {
-                                    historyManager.deleteConversation(conversation.id)
-                                }
-                            }
-                            .swipeActions(edge: .leading) {
-                                Button {
-                                    handleExport(conversation)
-                                } label: {
-                                    Label(String(localized: "Export"), systemImage: "square.and.arrow.up")
-                                }
-                                .tint(.blue)
-
-                                Button {
-                                    handleMoveToFolder(conversation)
-                                } label: {
-                                    Label(String(localized: "Folder"), systemImage: "folder")
-                                }
-                                .tint(.orange)
-                            }
-                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                                Button(role: .destructive) {
-                                    withAnimation(.spring(response: 0.3)) {
-                                        historyManager.deleteConversation(conversation.id)
-                                    }
-                                } label: {
-                                    Label(String(localized: "Delete"), systemImage: "trash")
-                                }
-                            }
-                            .contextMenu {
-                                Button {
-                                    renameText = conversation.title
-                                    conversationToRename = conversation
-                                    isRenamePresented = true
-                                } label: {
-                                    Label(String(localized: "Rename"), systemImage: "pencil")
-                                }
-
-                                Button {
-                                    handleExport(conversation)
-                                } label: {
-                                    Label(String(localized: "Export as Markdown"), systemImage: "square.and.arrow.up")
-                                }
-
-                                Button {
-                                    handleMoveToFolder(conversation)
-                                } label: {
-                                    Label(String(localized: "Move to Folder"), systemImage: "folder")
-                                }
-
-                                Button {
-                                    conversationForMemory = conversation
-                                } label: {
-                                    Label(String(localized: "Chat Memory"), systemImage: "brain")
-                                }
-
-                                Divider()
-
-                                Button(role: .destructive) {
-                                    withAnimation(.spring(response: 0.3)) {
-                                        historyManager.deleteConversation(conversation.id)
-                                    }
-                                } label: {
-                                    Label(String(localized: "Delete"), systemImage: "trash")
-                                }
-                            }
-                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
+                            conversationRow(for: conversation)
                         }
                     } header: {
                         Text(section.title)
@@ -454,10 +380,12 @@ struct ChatHistoryView: View {
                             upgradeFeature = .chatFolders
                         }
                     } label: {
-                        Image(systemName: "folder.badge.plus")
-                            .accessibilityLabel(String(localized: "New Folder"))
+                        Image(systemName: monetizationManager.canUse(.chatFolders) ? "folder.badge.plus" : "crown.fill")
+                            .accessibilityLabel(monetizationManager.canUse(.chatFolders)
+                                ? String(localized: "New Folder")
+                                : String(localized: "New Folder (Pro)"))
                             .font(.body)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(monetizationManager.canUse(.chatFolders) ? Color.secondary : Color.orange)
                     }
 
                     Button {
@@ -477,8 +405,44 @@ struct ChatHistoryView: View {
                                 )
                             )
                     }
+
+                    // Bulk cleanup used to live only in Settings, two screens
+                    // away from the list the user is looking at.
+                    if historyManager.conversations.contains(where: { !$0.messages.isEmpty }) {
+                        Menu {
+                            Button(role: .destructive) {
+                                showDeleteAllConfirmation = true
+                            } label: {
+                                Label(String(localized: "Delete All Chats"), systemImage: "trash")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.body)
+                                .foregroundStyle(Color.secondary)
+                        }
+                        .accessibilityLabel(String(localized: "More"))
+                    }
                 }
             }
+        }
+        .confirmationDialog(
+            String(localized: "Delete all chats?"),
+            isPresented: $showDeleteAllConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button(String(localized: "Delete All Chats"), role: .destructive) {
+                withAnimation(.spring(response: 0.3)) {
+                    historyManager.clearAllConversations()
+                }
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                UIAccessibility.post(
+                    notification: .announcement,
+                    argument: String(localized: "All chats deleted")
+                )
+            }
+            Button(String(localized: "Cancel"), role: .cancel) {}
+        } message: {
+            Text(String(localized: "This permanently removes every saved conversation from this device."))
         }
         .searchable(text: $searchText, placement: .automatic, prompt: String(localized: "Search history"))
         .task(id: searchTaskID) {
@@ -745,7 +709,160 @@ struct ChatHistoryView: View {
         .accessibilityValue(isSelected ? String(localized: "Selected") : "")
     }
 
+    // MARK: - Row Building
+
+    /// Pulled out of the `ForEach` closure: that one expression (row + two
+    /// `swipeActions` + a five-item `contextMenu`) was past what the type
+    /// checker can solve inline — same class of limit `ChatView.messageRow`
+    /// works around. An explicit return type lets each row check
+    /// independently instead of as one composite inferred blob.
+    @ViewBuilder
+    private func conversationRow(for conversation: ChatConversation) -> some View {
+        ConversationRow(
+            conversation: conversation,
+            isSelected: conversation.id == historyManager.currentConversationID,
+            folderLabel: folderStore.folder(for: conversation.id).map { "\($0.emoji) \($0.name)" },
+            searchHit: searchHits[conversation.id]
+        ) {
+            historyManager.selectConversation(conversation.id)
+            requestJumpToMatch(in: conversation.id)
+            if !isEmbedded {
+                dismiss()
+            }
+        } onDelete: {
+            withAnimation(.spring(response: 0.3)) {
+                historyManager.deleteConversation(conversation.id)
+            }
+        }
+        .swipeActions(edge: .leading) {
+            leadingSwipeActions(for: conversation)
+        }
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                withAnimation(.spring(response: 0.3)) {
+                    historyManager.deleteConversation(conversation.id)
+                }
+            } label: {
+                Label(String(localized: "Delete"), systemImage: "trash")
+            }
+        }
+        .contextMenu {
+            conversationContextMenu(for: conversation)
+        }
+        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+    }
+
+    @ViewBuilder
+    private func leadingSwipeActions(for conversation: ChatConversation) -> some View {
+        Button {
+            togglePinned(conversation)
+        } label: {
+            Label(
+                conversation.isPinned ? String(localized: "Unpin") : String(localized: "Pin"),
+                systemImage: conversation.isPinned ? "pin.slash" : "pin"
+            )
+        }
+        .tint(.yellow)
+
+        Button {
+            handleExport(conversation)
+        } label: {
+            Label(
+                String(localized: "Export"),
+                systemImage: monetizationManager.canUse(.conversationExport) ? "square.and.arrow.up" : "crown.fill"
+            )
+        }
+        .tint(.blue)
+
+        Button {
+            handleMoveToFolder(conversation)
+        } label: {
+            Label(
+                String(localized: "Folder"),
+                systemImage: monetizationManager.canUse(.chatFolders) ? "folder" : "crown.fill"
+            )
+        }
+        .tint(.orange)
+    }
+
+    @ViewBuilder
+    private func conversationContextMenu(for conversation: ChatConversation) -> some View {
+        Button {
+            togglePinned(conversation)
+        } label: {
+            Label(
+                conversation.isPinned ? String(localized: "Unpin") : String(localized: "Pin"),
+                systemImage: conversation.isPinned ? "pin.slash" : "pin"
+            )
+        }
+
+        Button {
+            renameText = conversation.title
+            conversationToRename = conversation
+            isRenamePresented = true
+        } label: {
+            Label(String(localized: "Rename"), systemImage: "pencil")
+        }
+
+        Button {
+            handleExport(conversation)
+        } label: {
+            Label(
+                String(localized: "Export as Markdown"),
+                systemImage: monetizationManager.canUse(.conversationExport) ? "square.and.arrow.up" : "crown.fill"
+            )
+        }
+
+        Button {
+            handleExport(conversation, format: .plainText)
+        } label: {
+            Label(
+                String(localized: "Export as Plain Text"),
+                systemImage: monetizationManager.canUse(.conversationExport) ? "doc.plaintext" : "crown.fill"
+            )
+        }
+
+        Button {
+            handleMoveToFolder(conversation)
+        } label: {
+            Label(
+                String(localized: "Move to Folder"),
+                systemImage: monetizationManager.canUse(.chatFolders) ? "folder" : "crown.fill"
+            )
+        }
+
+        Button {
+            conversationForMemory = conversation
+        } label: {
+            Label(String(localized: "Chat Memory"), systemImage: "brain")
+        }
+
+        Divider()
+
+        Button(role: .destructive) {
+            withAnimation(.spring(response: 0.3)) {
+                historyManager.deleteConversation(conversation.id)
+            }
+        } label: {
+            Label(String(localized: "Delete"), systemImage: "trash")
+        }
+    }
+
     // MARK: - Actions
+
+    private func togglePinned(_ conversation: ChatConversation) {
+        withAnimation(.spring(response: 0.3)) {
+            historyManager.togglePinned(conversationID: conversation.id)
+        }
+        UIAccessibility.post(
+            notification: .announcement,
+            argument: conversation.isPinned
+                ? String(localized: "Chat unpinned")
+                : String(localized: "Chat pinned")
+        )
+    }
 
     /// Asks the chat view to open scrolled to the message that matched the search,
     /// so a result tap lands on the text the user was looking for.
@@ -765,21 +882,21 @@ struct ChatHistoryView: View {
         )
     }
 
-    private func handleExport(_ conversation: ChatConversation) {
+    private func handleExport(_ conversation: ChatConversation, format: ConversationExporter.Format = .markdown) {
         guard monetizationManager.canUse(.conversationExport) else {
             pendingUpgradeAction = .export(conversation.id)
             upgradeFeature = .conversationExport
             return
         }
-        let markdown = ConversationExporter.export(
+        let exported = ConversationExporter.export(
             messages: conversation.messages,
             title: conversation.title,
-            format: .markdown
+            format: format
         )
         let tempURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(ConversationExporter.fileName(title: conversation.title, format: .markdown))
+            .appendingPathComponent(ConversationExporter.fileName(title: conversation.title, format: format))
         do {
-            try markdown.write(to: tempURL, atomically: true, encoding: .utf8)
+            try exported.write(to: tempURL, atomically: true, encoding: .utf8)
             // The conversation store is encrypted at rest; the plain-text
             // hand-off copy gets the same protection and is deleted once the
             // share sheet closes.
@@ -837,10 +954,7 @@ struct ChatHistoryView: View {
         VStack(spacing: 16) {
             Spacer()
 
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 50, weight: .light))
-                .foregroundStyle(Color.adaptive(white: 0.7))
-                .accessibilityHidden(true)
+            SparkleView(size: 90)
 
             Text(String(localized: "No Conversations Yet"))
                 .font(.headline)
@@ -907,6 +1021,13 @@ struct ConversationRow: View {
                 // Content
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
+                        if conversation.isPinned {
+                            Image(systemName: "pin.fill")
+                                .font(.caption2.weight(.semibold))
+                                .foregroundStyle(.yellow)
+                                .accessibilityHidden(true)
+                        }
+
                         Text(conversation.title)
                             .font(.body.weight(.medium))
                             .foregroundStyle(Color.adaptive(white: 0.1))
@@ -1025,6 +1146,9 @@ struct ConversationRow: View {
 
     private var accessibilitySummary: String {
         var parts: [String] = [conversation.title]
+        if conversation.isPinned {
+            parts.append(String(localized: "Pinned"))
+        }
         if let folderLabel {
             parts.append(folderLabel)
         }

@@ -358,7 +358,11 @@ struct TypingDots: View {
     private func dots(
         _ style: @escaping (Int) -> (scale: CGFloat, opacity: Double)
     ) -> some View {
-        HStack(spacing: 4) {
+        // Each dot lays out at its peak size (4pt × 1.35 ≈ 5.4pt) rather than
+        // its resting size. The assistant row has no horizontal padding and is
+        // clipped to a rectangle, so a dot that only grew via `scaleEffect`
+        // spilled past the row's edge and the last one rendered cut off.
+        HStack(spacing: 2) {
             ForEach(0..<3, id: \.self) { index in
                 let appearance = style(index)
                 Circle()
@@ -366,6 +370,7 @@ struct TypingDots: View {
                     .frame(width: 4, height: 4)
                     .scaleEffect(appearance.scale)
                     .opacity(appearance.opacity)
+                    .frame(width: 6, height: 6)
             }
         }
     }
@@ -399,7 +404,9 @@ struct MessageBubble: View {
     let showsContinue: Bool
     let onContinue: (() -> Void)?
     let recoveryAction: RecoveryAction?
+    let generationTokensPerSecond: Double?
     let onEdit: ((ChatMessage) -> Void)?
+    let onRegenerate: ((ChatMessage) -> Void)?
     let onRegenerateMore: ((ChatMessage) -> Void)?
     let onRegenerateLess: ((ChatMessage) -> Void)?
     let smartReplyStyles: [SmartReplyStyle]
@@ -431,6 +438,7 @@ struct MessageBubble: View {
     @State private var isThinkingExpanded = false
     @State private var showCopied = false
     @State private var showStats = false
+    @State private var showTextSelection = false
     @State private var reportErrorMessage: String?
     /// The `[Source n]` citation the reader last tapped, used to briefly pulse the
     /// matching chip so they can connect an inline citation to its document.
@@ -444,7 +452,9 @@ struct MessageBubble: View {
         showsContinue: Bool = false,
         onContinue: (() -> Void)? = nil,
         recoveryAction: RecoveryAction? = nil,
+        generationTokensPerSecond: Double? = nil,
         onEdit: ((ChatMessage) -> Void)? = nil,
+        onRegenerate: ((ChatMessage) -> Void)? = nil,
         onRegenerateMore: ((ChatMessage) -> Void)? = nil,
         onRegenerateLess: ((ChatMessage) -> Void)? = nil,
         smartReplyStyles: [SmartReplyStyle] = [],
@@ -464,7 +474,9 @@ struct MessageBubble: View {
         self.showsContinue = showsContinue
         self.onContinue = onContinue
         self.recoveryAction = recoveryAction
+        self.generationTokensPerSecond = generationTokensPerSecond
         self.onEdit = onEdit
+        self.onRegenerate = onRegenerate
         self.onRegenerateMore = onRegenerateMore
         self.onRegenerateLess = onRegenerateLess
         self.smartReplyStyles = smartReplyStyles
@@ -708,6 +720,12 @@ struct MessageBubble: View {
                 copyAndShowToast(message.content)
             }
 
+            if let onRegenerate, message.role == .assistant {
+                quickActionButton(icon: "arrow.clockwise", label: String(localized: "Regenerate")) {
+                    onRegenerate(message)
+                }
+            }
+
             if onSpeak != nil {
                 let isSpeakingThisMessage = speechManager.isSpeaking && speechManager.currentlySpeakingMessageID == message.id
                 if isSpeakingThisMessage && speechManager.isPreparingSpeechOutput {
@@ -841,14 +859,22 @@ struct MessageBubble: View {
                         }
                 }
             }
+            .sheet(isPresented: $showTextSelection) {
+                MessageTextSelectionSheet(text: message.content)
+            }
             .alert(String(localized: "Message Info"), isPresented: $showStats) {
                 Button(String(localized: "OK"), role: .cancel) { }
             } message: {
                 let stats = messageStats(for: message.content)
-                Text(String(
+                let base = String(
                     format: String(localized: "%1$lld words · %2$lld characters\n~%3$lld min read"),
                     Int64(stats.words), Int64(stats.characters), Int64(stats.readingTime)
-                ))
+                )
+                if let generationTokensPerSecond {
+                    Text(base + "\n" + String(format: String(localized: "About %.0f tokens per second", defaultValue: "About %.0f tokens per second"), generationTokensPerSecond))
+                } else {
+                    Text(base)
+                }
             }
     }
 
@@ -940,6 +966,12 @@ struct MessageBubble: View {
             Label("Copy as Markdown", systemImage: "doc.plaintext")
         }
 
+        Button {
+            showTextSelection = true
+        } label: {
+            Label("Select Text", systemImage: "text.cursor")
+        }
+
         if message.role == .assistant, let codeOnly = extractCodeBlocks(from: message.content), !codeOnly.isEmpty {
             Button {
                 copyAndShowToast(codeOnly)
@@ -1001,6 +1033,13 @@ struct MessageBubble: View {
         }
 
         if message.role == .assistant {
+            if let onRegenerate {
+                Button {
+                    onRegenerate(message)
+                } label: {
+                    Label("Regenerate", systemImage: "arrow.clockwise")
+                }
+            }
             if let onRegenerateMore {
                 Button {
                     onRegenerateMore(message)
@@ -1104,17 +1143,57 @@ struct MessageBubble: View {
     }
 
     private var streamingIndicator: some View {
-        TypingDots(
-            gradient: LinearGradient(
-                colors: [
-                    message.role == .user ? .white.opacity(0.8) : .blue.opacity(0.6),
-                    message.role == .user ? .white.opacity(0.6) : .purple.opacity(0.6)
-                ],
-                startPoint: .leading,
-                endPoint: .trailing
-            ),
-            reduceMotion: reduceMotion
-        )
+        HStack(spacing: 10) {
+            TypingDots(
+                gradient: LinearGradient(
+                    colors: [
+                        message.role == .user ? .white.opacity(0.8) : .blue.opacity(0.6),
+                        message.role == .user ? .white.opacity(0.6) : .purple.opacity(0.6)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                ),
+                reduceMotion: reduceMotion
+            )
+
+            if let startedAt = streamingState?.startedAt {
+                streamingProgressLabel(startedAt: startedAt)
+            }
+        }
+    }
+
+    /// "12s · ~18 tok/s" while the reply is still arriving. Three dots alone
+    /// gave no way to tell a slow model from a hung one. The rate uses the
+    /// same estimate the finished-reply stats use, and only appears once
+    /// there is enough text for it to mean something.
+    private func streamingProgressLabel(startedAt: Date) -> some View {
+        TimelineView(.periodic(from: startedAt, by: 1)) { context in
+            let elapsed = max(0, context.date.timeIntervalSince(startedAt))
+            let tokens = PromptBudgeter.estimatedTokenCount(displayedContent)
+            let rate = elapsed >= 2 && tokens >= 8 ? Double(tokens) / elapsed : nil
+            let elapsedText = String(
+                format: String(localized: "%llds", defaultValue: "%llds"),
+                Int64(elapsed.rounded(.down))
+            )
+            let text = rate.map {
+                elapsedText + " · " + String(
+                    format: String(localized: "~%.0f tok/s", defaultValue: "~%.0f tok/s"),
+                    $0
+                )
+            } ?? elapsedText
+            Text(text)
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .accessibilityLabel(rate.map {
+                    String(
+                        format: String(localized: "%1$lld seconds, about %2$.0f tokens per second", defaultValue: "%1$lld seconds, about %2$.0f tokens per second"),
+                        Int64(elapsed.rounded(.down)), $0
+                    )
+                } ?? String(
+                    format: String(localized: "%lld seconds", defaultValue: "%lld seconds"),
+                    Int64(elapsed.rounded(.down))
+                ))
+        }
     }
 
     private func thinkingCard(thinkingText: String, showsStreamingIndicator: Bool) -> some View {

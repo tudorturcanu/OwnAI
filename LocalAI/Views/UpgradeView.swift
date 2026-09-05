@@ -128,45 +128,45 @@ struct UpgradeView: View {
                     title: String(localized: "Unlimited messages"),
                     subtitle: String(localized: "Keep chatting without the daily free-message limit.")
                 )
-                Divider().padding(.leading, 52)
+                CardDivider(leadingInset: 52)
                 upgradeRow(
                     icon: "square.stack.3d.up.fill",
                     title: String(localized: "All local model families"),
                     subtitle: String(localized: "Unlock the full catalog instead of only the starter models.")
                 )
-                Divider().padding(.leading, 52)
+                CardDivider(leadingInset: 52)
                 upgradeRow(
                     icon: "slider.horizontal.3",
                     title: String(localized: "Advanced personality controls"),
                     subtitle: String(localized: "Custom prompts, response size, and tuning controls.")
                 )
-                Divider().padding(.leading, 52)
+                CardDivider(leadingInset: 52)
                 upgradeRow(
                     icon: "doc.text.fill",
                     title: String(localized: "Unlimited docs per chat"),
                     subtitle: String(localized: "Move beyond the free single-document workflow.")
                 )
                 if SpeechManager.isVoiceConversationEnabled {
-                    Divider().padding(.leading, 52)
+                    CardDivider(leadingInset: 52)
                     upgradeRow(
                         icon: "waveform",
                         title: String(localized: "Hands-free conversation mode"),
                         subtitle: String(localized: "Automatic listen and spoken replies for faster voice use.")
                     )
                 }
-                Divider().padding(.leading, 52)
+                CardDivider(leadingInset: 52)
                 upgradeRow(
                     icon: "books.vertical.fill",
                     title: String(localized: "Prompt Library"),
                     subtitle: String(localized: "Save and switch between up to 20 named AI personas instantly.")
                 )
-                Divider().padding(.leading, 52)
+                CardDivider(leadingInset: 52)
                 upgradeRow(
                     icon: "square.and.arrow.up.fill",
                     title: String(localized: "Conversation Export"),
                     subtitle: String(localized: "Export chats as Markdown or plain text and share anywhere.")
                 )
-                Divider().padding(.leading, 52)
+                CardDivider(leadingInset: 52)
                 upgradeRow(
                     icon: "folder.fill",
                     title: String(localized: "Chat Folders"),
