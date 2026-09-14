@@ -16,8 +16,8 @@
 "Performance is tuned for lower battery impact." = "Die Leistung ist auf geringeren Batterieverbrauch abgestimmt.";
 "System" = "System";
 "Your current setup is ready for fast on-device use." = "Deine aktuelle Einrichtung ist bereit für schnelle Nutzung auf dem Gerät.";
-"Chats stay on device until you delete them." = "Chats bleiben auf dem Gerät, bis du sie löschst.";
-"Chats are removed automatically after %@." = "Chats werden nach %@ automatisch entfernt.";
+"Kept until you delete them" = "Bleiben, bis du sie löschst";
+"Removed after %@" = "Nach %@ entfernt";
 "Never" = "Nie";
 "1 day" = "1 Tag";
 "%lld days" = "%lld Tage";
@@ -203,7 +203,7 @@
 "Version %@ (%@)" = "Version %@ (%@)";
 "Auto-Delete Chats" = "Chats automatisch löschen";
 "Delete All Chats" = "Alle Chats löschen";
-"Remove every saved conversation from this device" = "Alle gespeicherten Unterhaltungen von diesem Gerät entfernen";
+"Permanently remove every saved chat" = "Alle gespeicherten Chats endgültig entfernen";
 "Delete all chats?" = "Alle Chats löschen?";
 "This permanently removes every saved conversation from this device." = "Dies entfernt dauerhaft alle gespeicherten Unterhaltungen von diesem Gerät.";
 "Made in Switzerland 🇨🇭" = "Hergestellt in der Schweiz 🇨🇭";
@@ -851,7 +851,7 @@
 "Give this folder a name and an icon." = "Gib diesem Ordner einen Namen und ein Symbol.";
 "Change this folder's name or icon." = "Ändere Namen oder Symbol dieses Ordners.";
 "Export All Chats" = "Alle Chats exportieren";
-"Save %lld conversations as a Markdown backup" = "%lld Unterhaltungen als Markdown-Backup sichern";
+"Save %lld chats as Markdown" = "%lld Chats als Markdown sichern";
 "Nothing to export yet" = "Noch nichts zu exportieren";
 "Export Failed" = "Export fehlgeschlagen";
 "Chat deleted" = "Chat gelöscht";
@@ -946,7 +946,7 @@
 "Agree & Continue" = "Zustimmen & fortfahren";
 "Agree & Get Started" = "Zustimmen & loslegen";
 "All chats deleted" = "Alle Chats gelöscht";
-"Allow downloading models over mobile data" = "Modelle über mobile Daten herunterladen";
+"Download over mobile data" = "Über mobile Daten laden";
 "Already Unlocked" = "Bereits freigeschaltet";
 "Apple processing" = "Apple-Verarbeitung";
 "Asks before removing the model files." = "Fragt nach, bevor die Modelldateien entfernt werden.";
@@ -956,7 +956,7 @@
 "Auto Mode" = "Automatikmodus";
 "Auto Mode Preference" = "Einstellung für Automatikmodus";
 "Balances response speed and answer quality." = "Wägt Antwortgeschwindigkeit und Antwortqualität ab.";
-"Billing, downloads, models, or account help" = "Hilfe zu Abrechnung, Downloads, Modellen oder Account";
+"Get help by email" = "Hilfe per E-Mail";
 "Cellular Downloads" = "Downloads über Mobilfunk";
 "Chat export ready" = "Chat-Export bereit";
 "Chat response" = "Chat-Antwort";
@@ -973,7 +973,7 @@
 "Describe how the assistant should behave. Changes can't be applied while this is empty." = "Beschreibe, wie sich der Assistent verhalten soll. Solange dies leer ist, können Änderungen nicht übernommen werden.";
 "Device space available" = "Verfügbarer Gerätespeicher";
 "Dismisses this notification." = "Blendet diese Mitteilung aus.";
-"Document and image quality, PDF OCR, low power mode, and more" = "Dokument- und Bildqualität, PDF-OCR, Energiesparmodus und mehr";
+"Documents, OCR, and low power mode" = "Dokumente, OCR und Energiesparmodus";
 "Download GLM OCR · %@" = "GLM OCR laden · %@";
 "Downloaded and resumable model files appear here." = "Heruntergeladene und fortsetzbare Modelldateien erscheinen hier.";
 "Downloaded local models keep working without an internet connection." = "Heruntergeladene lokale Modelle funktionieren auch ohne Internetverbindung.";
@@ -1007,7 +1007,6 @@
 "On" = "Ein";
 "On This Device" = "Auf diesem Gerät";
 "Only the name shown in Own AI changes. The model files stay exactly as they are." = "Nur der in Own AI angezeigte Name ändert sich. Die Modelldateien bleiben unverändert.";
-"Open in your browser" = "Im Browser öffnen";
 "Opens automatic and manual model choices." = "Öffnet die automatische und manuelle Modellauswahl.";
 "Overrides Pro entitlement in debug builds" = "Überschreibt die Pro-Berechtigung in Debug-Builds";
 "Overview" = "Übersicht";
@@ -1035,7 +1034,6 @@
 "Reply Style" = "Antwortstil";
 "Report details copied" = "Berichtsdetails kopiert";
 "Resume & Select" = "Fortsetzen & auswählen";
-"Review the legal terms" = "Rechtliche Bedingungen ansehen";
 "Saved Prompts" = "Gesicherte Prompts";
 "Scroll to latest message" = "Zur neuesten Nachricht springen";
 "Search in Conversation" = "Im Gespräch suchen";
@@ -1051,6 +1049,7 @@
 "Suggestion" = "Vorschlag";
 "Talk hands-free, hear replies aloud, and interrupt naturally." = "Freihändig sprechen, Antworten hören und natürlich unterbrechen.";
 "Talk to Own AI models directly using Shortcuts" = "Über Kurzbefehle direkt mit Own AI-Modellen sprechen";
+"Ask Own AI from Siri and Shortcuts" = "Own AI über Siri und Kurzbefehle fragen";
 "Thinking mode" = "Denkmodus";
 "This device's chip can't run downloadable models. They need an A14 chip or newer — iPhone 12, iPhone SE (3rd generation), or later." = "Der Chip dieses Geräts kann keine herunterladbaren Modelle ausführen. Dafür ist ein A14-Chip oder neuer erforderlich – iPhone 12, iPhone SE (3. Generation) oder neuer.";
 "This removes locally stored performance history. Console logs and Instruments traces are unaffected." = "Dies entfernt den lokal gespeicherten Leistungsverlauf. Konsolenprotokolle und Instruments-Traces sind nicht betroffen.";
@@ -1065,8 +1064,7 @@
 "Use the app normally, then return here to review launch, model, response, and document timings." = "Nutze die App normal und kehre dann hierher zurück, um Zeiten für Start, Modell, Antwort und Dokumente zu prüfen.";
 "Voice Conversation Mode" = "Sprachgesprächsmodus";
 "Welcome to Own AI" = "Willkommen bei Own AI";
-"What Own AI remembers across chats — stored only on this device" = "Was sich Own AI über Chats hinweg merkt – nur auf diesem Gerät gespeichert";
-"What stays on-device and when Apple services may be involved" = "Was auf dem Gerät bleibt und wann Apple-Dienste beteiligt sein können";
+"What stays on your device" = "Was auf deinem Gerät bleibt";
 "Works Offline" = "Funktioniert offline";
 "Your Models" = "Deine Modelle";
 "Your Presets" = "Deine Vorlagen";
@@ -1170,7 +1168,7 @@
 "Word" = "Wort";
 
 /* Added: singular export subtitle. */
-"Save 1 conversation as a Markdown backup" = "1 Chat als Markdown-Backup sichern";
+"Save 1 chat as Markdown" = "1 Chat als Markdown sichern";
 
 /* Added: singular count phrases. */
 "1 chat" = "1 Chat";
@@ -1275,7 +1273,7 @@
 
 /* Delete all from History, reset settings, clear partial downloads, space warning */
 "Reset All Settings" = "Alle Einstellungen zurücksetzen";
-"Restore defaults. Chats, models, and prompts are kept" = "Standardwerte wiederherstellen. Chats, Modelle und Prompts bleiben erhalten";
+"Chats, models, and prompts are kept" = "Chats, Modelle und Prompts bleiben erhalten";
 "Reset all settings?" = "Alle Einstellungen zurücksetzen?";
 "Reset Settings" = "Einstellungen zurücksetzen";
 "Settings restored to defaults" = "Einstellungen auf Standard zurückgesetzt";
@@ -1370,7 +1368,7 @@
 "Notes need to be between %lld and %lld characters." = "Notizen müssen zwischen %lld und %lld Zeichen lang sein.";
 "Saved to Memory. Manage notes in Settings > Memory." = "Im Gedächtnis gespeichert. Notizen verwaltest du unter Einstellungen > Gedächtnis.";
 "Show Chats in Search" = "Chats in der Suche anzeigen";
-"Find chat titles from iPhone search. The index stays on this device." = "Finde Chat-Titel über die iPhone-Suche. Der Index bleibt auf diesem Gerät.";
+"Find chats from iPhone Search" = "In der iPhone-Suche finden";
 
 // Appearance / accent themes
 "Accent Color" = "Akzentfarbe";

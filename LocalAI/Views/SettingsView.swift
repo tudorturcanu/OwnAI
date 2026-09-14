@@ -52,11 +52,11 @@ struct SettingsView: View {
 
     private var privacySummary: String {
         historyRetentionDays == 0
-            ? String(localized: "Chats stay on device until you delete them.")
+            ? String(localized: "Kept until you delete them")
             : String(
                 format: String(
-                    localized: "Chats are removed automatically after %@.",
-                    defaultValue: "Chats are removed automatically after %@."
+                    localized: "Removed after %@",
+                    defaultValue: "Removed after %@"
                 ),
                 retentionLabel(for: historyRetentionDays).lowercased()
             )
@@ -67,14 +67,14 @@ struct SettingsView: View {
         guard count > 0 else {
             return String(localized: "Nothing to export yet")
         }
-        // A single chat read as "Save 1 conversations as a Markdown backup".
+        // A single chat read as "Save 1 chats as Markdown".
         guard count > 1 else {
-            return String(localized: "Save 1 conversation as a Markdown backup")
+            return String(localized: "Save 1 chat as Markdown")
         }
         return String(
             format: String(
-                localized: "Save %lld conversations as a Markdown backup",
-                defaultValue: "Save %lld conversations as a Markdown backup"
+                localized: "Save %lld chats as Markdown",
+                defaultValue: "Save %lld chats as Markdown"
             ),
             Int64(count)
         )
@@ -328,13 +328,14 @@ struct SettingsView: View {
                         .environment(modelManager)
                 } label: {
                     settingsRow(
-                        icon: "arrow.down.circle.fill",
-                        tint: modelManager.hasDownloadActivity ? .brandAccent : .brandAccentDeep,
+                        icon: "arrow.down.to.line",
+                        tint: .teal,
+                        modernTint: modelManager.hasDownloadActivity ? .brandAccent : .brandAccentDeep,
                         title: "Downloads",
                         subtitle: downloadsSubtitle
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(SettingsRowButtonStyle())
 
                 sectionDivider
             }
@@ -347,12 +348,12 @@ struct SettingsView: View {
             } label: {
                 settingsRow(
                     icon: "square.stack.3d.up.fill",
-                    tint: .brandAccent,
+                    tint: .blue,
                     title: "Models",
                     subtitle: selectedModelName
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SettingsRowButtonStyle())
 
             sectionDivider
 
@@ -361,12 +362,12 @@ struct SettingsView: View {
             } label: {
                 settingsRow(
                     icon: "externaldrive.fill",
-                    tint: .brandAccent,
+                    tint: .gray,
                     title: "Model Storage",
                     subtitle: downloadedStorageText
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SettingsRowButtonStyle())
 
             sectionDivider
 
@@ -378,12 +379,13 @@ struct SettingsView: View {
             } label: {
                 settingsRow(
                     icon: "brain.head.profile",
-                    tint: .brandAccentDeep,
+                    tint: .pink,
+                    modernTint: .brandAccentDeep,
                     title: "Memory",
-                    subtitle: "What Own AI remembers across chats — stored only on this device"
+                    subtitle: "What Own AI remembers across chats"
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SettingsRowButtonStyle())
 
             sectionDivider
 
@@ -396,27 +398,29 @@ struct SettingsView: View {
                         .environment(monetizationManager)
                 } label: {
                     settingsRow(
-                        icon: "brain.head.profile",
-                        tint: .brandAccentDeep,
+                        icon: "theatermasks.fill",
+                        tint: .purple,
+                        modernTint: .brandAccentDeep,
                         title: "AI Personality",
                         subtitle: "Tone, style, and response tuning"
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(SettingsRowButtonStyle())
             } else {
                 Button {
                     upgradeFeature = .advancedPersonality
                 } label: {
                     settingsRow(
-                        icon: "brain.head.profile",
-                        tint: .brandAccentDeep,
+                        icon: "theatermasks.fill",
+                        tint: .purple,
+                        modernTint: .brandAccentDeep,
                         title: "AI Personality",
                         subtitle: "Tone, style, and response tuning",
                         trailingIcon: "crown.fill",
                         trailingTint: .brandAccent
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(SettingsRowButtonStyle())
                 .accessibilityHint(String(localized: "Own AI Pro feature. Opens upgrade options."))
             }
         }
@@ -428,9 +432,9 @@ struct SettingsView: View {
         settingsSection("Preferences") {
             settingsToggleRow(
                 icon: "antenna.radiowaves.left.and.right",
-                tint: .brandAccent,
+                tint: .green,
                 title: "Cellular Downloads",
-                subtitle: "Allow downloading models over mobile data",
+                subtitle: "Download over mobile data",
                 isOn: $allowCellularDownloads
             )
             .onChange(of: allowCellularDownloads) {
@@ -444,12 +448,13 @@ struct SettingsView: View {
             } label: {
                 settingsRow(
                     icon: "mic.fill",
-                    tint: .brandAccentDeep,
+                    tint: .indigo,
+                    modernTint: .brandAccentDeep,
                     title: "Siri & Shortcuts",
-                    subtitle: "Talk to Own AI models directly using Shortcuts"
+                    subtitle: "Ask Own AI from Siri and Shortcuts"
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SettingsRowButtonStyle())
 
             sectionDivider
 
@@ -458,12 +463,13 @@ struct SettingsView: View {
             } label: {
                 settingsRow(
                     icon: "slider.horizontal.3",
-                    tint: .brandAccentDeep,
+                    tint: .gray,
+                    modernTint: .brandAccentDeep,
                     title: "Advanced",
-                    subtitle: "Document and image quality, PDF OCR, low power mode, and more"
+                    subtitle: "Documents, OCR, and low power mode"
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SettingsRowButtonStyle())
         }
     }
 
@@ -495,17 +501,19 @@ struct SettingsView: View {
                 settingsRow(
                     icon: "chart.xyaxis.line",
                     tint: .green,
+                    modernTint: .green,
                     title: "Performance Dashboard",
                     subtitle: "Reply timings and memory recorded on this device"
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SettingsRowButtonStyle())
 
             sectionDivider
 
             settingsToggleRow(
                 icon: "crown.fill",
                 tint: .yellow,
+                modernTint: .yellow,
                 title: "Enable Pro",
                 subtitle: "Overrides Pro entitlement in debug builds",
                 isOn: Binding(
@@ -525,7 +533,7 @@ struct SettingsView: View {
         settingsSection("Privacy") {
             // Auto-delete picker row
             HStack(spacing: 14) {
-                rowIcon(systemImage: "clock.arrow.circlepath", tint: .brandAccent)
+                rowIcon(systemImage: "clock.arrow.circlepath", tint: .orange)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Auto-Delete Chats")
@@ -560,9 +568,10 @@ struct SettingsView: View {
 
             settingsToggleRow(
                 icon: "magnifyingglass",
-                tint: .brandAccentDeep,
+                tint: .gray,
+                modernTint: .brandAccentDeep,
                 title: "Show Chats in Search",
-                subtitle: "Find chat titles from iPhone search. The index stays on this device.",
+                subtitle: "Find chats from iPhone Search",
                 isOn: $showChatsInSearch
             )
             .onChange(of: showChatsInSearch) {
@@ -578,7 +587,7 @@ struct SettingsView: View {
             // Back up every chat before anything can remove them
             Button(action: exportAllChats) {
                 HStack(spacing: 14) {
-                    rowIcon(systemImage: "square.and.arrow.up.on.square.fill", tint: .brandAccent)
+                    rowIcon(systemImage: "square.and.arrow.up.fill", tint: .blue)
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Export All Chats")
@@ -608,7 +617,7 @@ struct SettingsView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SettingsRowButtonStyle())
             .disabled(isExportingAllChats || historyManager.conversations.isEmpty)
             .opacity(historyManager.conversations.isEmpty ? 0.5 : 1)
 
@@ -619,7 +628,7 @@ struct SettingsView: View {
                 showClearHistoryConfirmation = true
             } label: {
                 HStack(spacing: 14) {
-                    rowIcon(systemImage: "trash.fill", tint: .red)
+                    rowIcon(systemImage: "trash.fill", tint: .red, modernTint: .red)
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Delete All Chats")
@@ -627,9 +636,9 @@ struct SettingsView: View {
                             .fontWeight(.medium)
                             .foregroundStyle(.red)
 
-                        Text("Remove every saved conversation from this device")
+                        Text("Permanently remove every saved chat")
                             .font(.footnote)
-                            .foregroundStyle(.red.opacity(0.6))
+                            .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
@@ -638,7 +647,7 @@ struct SettingsView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 14)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SettingsRowButtonStyle())
             .disabled(historyManager.conversations.isEmpty)
             .opacity(historyManager.conversations.isEmpty ? 0.5 : 1)
         }
@@ -666,50 +675,49 @@ struct SettingsView: View {
             } label: {
                 settingsRow(
                     icon: "hand.raised.fill",
-                    tint: .brandAccentDeep,
+                    tint: .blue,
+                    modernTint: .brandAccentDeep,
                     title: "Data & Privacy",
-                    subtitle: "What stays on-device and when Apple services may be involved"
+                    subtitle: "What stays on your device"
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SettingsRowButtonStyle())
 
             sectionDivider
 
             Link(destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/privacy.html") ?? URL(string: "about:blank")!) {
                 settingsRow(
                     icon: "lock.doc.fill",
-                    tint: .brandAccent,
+                    tint: .gray,
                     title: "Privacy Policy",
-                    subtitle: "Open in your browser",
                     trailingIcon: "arrow.up.right"
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SettingsRowButtonStyle())
 
             sectionDivider
 
             Link(destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/terms.html") ?? URL(string: "about:blank")!) {
                 settingsRow(
                     icon: "doc.text.fill",
-                    tint: .brandAccent,
+                    tint: .gray,
                     title: "Terms of Service",
-                    subtitle: "Review the legal terms",
                     trailingIcon: "arrow.up.right"
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SettingsRowButtonStyle())
 
             sectionDivider
 
             Button(action: { openMail(subject: String(localized: "Support Request")) }) {
                 settingsRow(
-                    icon: "questionmark.circle.fill",
-                    tint: .brandAccent,
+                    icon: "envelope.fill",
+                    tint: .green,
                     title: "Support",
-                    subtitle: "Billing, downloads, models, or account help"
+                    subtitle: "Get help by email"
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SettingsRowButtonStyle())
 
             sectionDivider
 
@@ -717,14 +725,15 @@ struct SettingsView: View {
                 showResetSettingsConfirmation = true
             } label: {
                 settingsRow(
-                    icon: "arrow.counterclockwise.circle.fill",
-                    tint: .brandAccentDeep,
+                    icon: "arrow.counterclockwise",
+                    tint: .gray,
+                    modernTint: .brandAccentDeep,
                     title: "Reset All Settings",
-                    subtitle: "Restore defaults. Chats, models, and prompts are kept",
-                    trailingIcon: "arrow.counterclockwise"
+                    subtitle: "Chats, models, and prompts are kept",
+                    trailingIcon: nil
                 )
             }
-            .buttonStyle(.plain)
+            .buttonStyle(SettingsRowButtonStyle())
         }
         .sheet(isPresented: $showDataPrivacySheet) {
             DataPrivacySheet()
@@ -763,8 +772,9 @@ struct SettingsView: View {
 
     // MARK: - Reusable Components
 
+    /// Starts under the row titles, past the icon tile, like grouped lists.
     private var sectionDivider: some View {
-        CardDivider(leadingInset: 64)
+        CardDivider(leadingInset: 16 + SettingsRowIcon.size + 14)
     }
 
     private func sectionTitle(_ text: LocalizedStringKey) -> some View {
@@ -788,21 +798,31 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             content()
         }
+        // Clipped so the pressed highlight on the first and last rows follows
+        // the card's rounded corners instead of poking out square.
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .paperCard(radius: 16)
     }
 
+    /// - Parameters:
+    ///   - tint: Tile colour in the Original look.
+    ///   - modernTint: Glyph colour in the Modern look, which stays on the
+    ///     brand accent so its palette remains two-tone.
+    ///   - subtitle: Keep it to one line; nil for rows whose title says it all.
+    ///   - trailingIcon: nil for rows that run an action in place.
     private func settingsRow(
         icon: String,
         tint: Color,
+        modernTint: Color = .brandAccent,
         title: LocalizedStringKey,
-        subtitle: String,
-        trailingIcon: String = "chevron.right",
+        subtitle: String? = nil,
+        trailingIcon: String? = "chevron.right",
         /// nil keeps the default tertiary disclosure grey; a Pro crown needs
         /// the same orange it carries everywhere else.
         trailingTint: Color? = nil
     ) -> some View {
         HStack(spacing: 14) {
-            rowIcon(systemImage: icon, tint: tint)
+            rowIcon(systemImage: icon, tint: tint, modernTint: modernTint)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -810,25 +830,30 @@ struct SettingsView: View {
                     .fontWeight(.medium)
                     .foregroundStyle(.primary)
 
-                Text(LocalizedStringKey(subtitle))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    // Live subtitles (download %, storage used) roll their
-                    // digits instead of snapping when they update.
-                    .contentTransition(.numericText())
-                    .animation(reduceMotion ? nil : .default, value: subtitle)
+                if let subtitle {
+                    Text(LocalizedStringKey(subtitle))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        // Live subtitles (download %, storage used) roll their
+                        // digits instead of snapping when they update.
+                        .contentTransition(.numericText())
+                        .animation(reduceMotion ? nil : .default, value: subtitle)
+                }
             }
 
             Spacer(minLength: 8)
 
-            Image(systemName: trailingIcon)
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundStyle(trailingTint ?? Color(uiColor: .tertiaryLabel))
-                .accessibilityHidden(true)
+            if let trailingIcon {
+                Image(systemName: trailingIcon)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundStyle(trailingTint ?? Color(uiColor: .tertiaryLabel))
+                    .accessibilityHidden(true)
+            }
         }
+        .frame(minHeight: SettingsRowIcon.size + 4)
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
         .contentShape(Rectangle())
@@ -837,12 +862,13 @@ struct SettingsView: View {
     private func settingsToggleRow(
         icon: String,
         tint: Color,
+        modernTint: Color = .brandAccent,
         title: LocalizedStringKey,
         subtitle: LocalizedStringKey,
         isOn: Binding<Bool>
     ) -> some View {
         HStack(spacing: 14) {
-            rowIcon(systemImage: icon, tint: tint)
+            rowIcon(systemImage: icon, tint: tint, modernTint: modernTint)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
@@ -861,20 +887,17 @@ struct SettingsView: View {
 
             Toggle(title, isOn: isOn)
                 .labelsHidden()
-                .tint(tint)
+                // The Original look keeps the system green switch; the tile
+                // colour on a switch would read as a different state.
+                .tint(appTheme.style == .original ? nil : modernTint)
                 .accessibilityHint(Text(subtitle))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 14)
     }
 
-    private func rowIcon(systemImage: String, tint: Color) -> some View {
-        Image(systemName: systemImage)
-            .font(.system(size: 14, weight: .semibold))
-            .foregroundStyle(tint)
-            .frame(width: 34, height: 34)
-            .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
-            .accessibilityHidden(true)
+    private func rowIcon(systemImage: String, tint: Color, modernTint: Color = .brandAccent) -> some View {
+        SettingsRowIcon(systemImage: systemImage, systemTint: tint, modernTint: modernTint)
     }
 
     // MARK: - Helpers
@@ -915,6 +938,55 @@ struct SettingsView: View {
     }
 }
 
+/// Leading glyph tile for a settings row. The Original look uses a solid
+/// colour tile with a white glyph, as iOS Settings does, so rows can be told
+/// apart at a glance. The Modern look keeps its soft accent-tinted well.
+private struct SettingsRowIcon: View {
+    static let size: CGFloat = 32
+
+    let systemImage: String
+    /// Tile colour in the Original look.
+    let systemTint: Color
+    /// Glyph colour in the Modern look.
+    var modernTint: Color = .brandAccent
+    /// Well behind the glyph in the Modern look; defaults to a faint tint.
+    var modernWell: Color?
+
+    private let theme = AppTheme.shared
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        Group {
+            if theme.style == .original {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: Self.size, height: Self.size)
+                    .background(systemTint.gradient, in: shape)
+            } else {
+                Image(systemName: systemImage)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(modernTint)
+                    .frame(width: Self.size, height: Self.size)
+                    .background(modernWell ?? modernTint.opacity(0.1), in: shape)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+/// Press feedback for settings rows: a quiet fill under the row while a finger
+/// is down, the way grouped lists highlight. `.plain` gave no feedback at all,
+/// and only the text and icon were tappable rather than the whole row.
+private struct SettingsRowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .contentShape(Rectangle())
+            .background(configuration.isPressed ? Color.primary.opacity(0.08) : Color.clear)
+            .animation(configuration.isPressed ? nil : .easeOut(duration: 0.25), value: configuration.isPressed)
+    }
+}
+
 /// Swatch row for picking the app's accent theme. Reads and writes the shared
 /// `AppTheme`, so the whole app recolours as soon as a swatch is tapped.
 private struct AccentThemePickerRow: View {
@@ -925,19 +997,14 @@ private struct AccentThemePickerRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 14) {
-                Image(systemName: "paintpalette.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.brandAccent)
-                    .frame(width: 34, height: 34)
-                    .background(Color.brandAccentSoft, in: RoundedRectangle(cornerRadius: 9))
-                    .accessibilityHidden(true)
+                SettingsRowIcon(systemImage: "paintpalette.fill", systemTint: .blue, modernWell: .brandAccentSoft)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Accent Color")
                         .font(.body.weight(.medium))
                         .foregroundStyle(.primary)
                     Text("Used for buttons, highlights, and the sparkle.")
-                        .font(.caption)
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1076,19 +1143,14 @@ private struct AppIconMatchRow: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            Image(systemName: "app.badge.checkmark.fill")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.brandAccent)
-                .frame(width: 34, height: 34)
-                .background(Color.brandAccentSoft, in: RoundedRectangle(cornerRadius: 9))
-                .accessibilityHidden(true)
+            SettingsRowIcon(systemImage: "app.badge.checkmark.fill", systemTint: .blue, modernWell: .brandAccentSoft)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text("Match App Icon")
                     .font(.body.weight(.medium))
                     .foregroundStyle(.primary)
                 Text("Tint the Home Screen icon in the accent color.")
-                    .font(.caption)
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1116,19 +1178,14 @@ private struct ColorStylePickerRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 14) {
-                Image(systemName: "circle.lefthalf.filled")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.brandAccent)
-                    .frame(width: 34, height: 34)
-                    .background(Color.brandAccentSoft, in: RoundedRectangle(cornerRadius: 9))
-                    .accessibilityHidden(true)
+                SettingsRowIcon(systemImage: "circle.lefthalf.filled", systemTint: .blue, modernWell: .brandAccentSoft)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Appearance")
                         .font(.body.weight(.medium))
                         .foregroundStyle(.primary)
                     Text(theme.style.subtitle)
-                        .font(.caption)
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1163,19 +1220,14 @@ private struct PaperTonePickerRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 14) {
-                Image(systemName: "doc.plaintext.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(.brandAccent)
-                    .frame(width: 34, height: 34)
-                    .background(Color.brandAccentSoft, in: RoundedRectangle(cornerRadius: 9))
-                    .accessibilityHidden(true)
+                SettingsRowIcon(systemImage: "doc.plaintext.fill", systemTint: .brown, modernWell: .brandAccentSoft)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Paper")
                         .font(.body.weight(.medium))
                         .foregroundStyle(.primary)
                     Text("The tone of the page behind everything.")
-                        .font(.caption)
+                        .font(.footnote)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
