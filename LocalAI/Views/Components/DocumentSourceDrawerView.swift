@@ -93,15 +93,14 @@ struct DocumentSourceDrawerView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 16)
                 .padding(.bottom, 28)
+                .readableContentWidth()
             }
-            .background(Color.adaptive(white: 0.96))
+            .background(Color.adaptiveBackground)
             .navigationTitle(String(localized: "Document Sources"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(String(localized: "Done")) {
-                        dismiss()
-                    }
+                    SheetCloseButton { dismiss() }
                 }
 
                 ToolbarItem(placement: .primaryAction) {
@@ -125,7 +124,7 @@ struct DocumentSourceDrawerView: View {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [Color.blue.opacity(0.14), Color.cyan.opacity(0.10)],
+                                colors: [Color.brandAccent.opacity(0.14), Color.brandAccent.opacity(0.10)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -134,7 +133,7 @@ struct DocumentSourceDrawerView: View {
 
                     Image(systemName: document.iconName)
                         .font(.title3.weight(.semibold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(.brandAccent)
                         .accessibilityHidden(true)
                 }
 
@@ -159,10 +158,10 @@ struct DocumentSourceDrawerView: View {
                         .font(.subheadline.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 10)
-                        .background(Color.blue.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(Color.brandAccent.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.blue)
+                .foregroundStyle(.brandAccent)
                 .sheet(isPresented: $isPreviewingOriginal) {
                     DocumentPreviewSheet(
                         url: originalFileURL,
@@ -185,7 +184,7 @@ struct DocumentSourceDrawerView: View {
             if hasOCRContent {
                 HStack(spacing: 8) {
                     Image(systemName: "sparkle.magnifyingglass")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(.brandAccent)
                         .accessibilityHidden(true)
                     Text(String(localized: "OCR was used for at least part of this document."))
                         .font(.caption)
@@ -197,20 +196,20 @@ struct DocumentSourceDrawerView: View {
             if let ocrWarningText {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(.brandAccent)
                         .accessibilityHidden(true)
                     Text(ocrWarningText)
                         .font(.caption)
                         .foregroundStyle(Color.adaptive(white: 0.45))
                 }
                 .padding(12)
-                .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(Color.brandAccent.opacity(0.08), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             }
         }
         .padding(16)
         .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
     }
 
     /// The page badge shown beside a section title. PDF sections are already
@@ -246,7 +245,7 @@ struct DocumentSourceDrawerView: View {
                     Text(String(localized: "Used in answer"))
                 }
                 .font(.caption2.weight(.semibold))
-                .foregroundStyle(.blue)
+                .foregroundStyle(.brandAccent)
             }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -266,10 +265,10 @@ struct DocumentSourceDrawerView: View {
                     if isOCR {
                         Text(String(localized: "OCR"))
                             .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(.brandAccent)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.orange.opacity(0.12), in: Capsule())
+                            .background(Color.brandAccent.opacity(0.12), in: Capsule())
                     }
                 }
 
@@ -304,17 +303,17 @@ struct DocumentSourceDrawerView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .foregroundStyle(.blue)
+            .foregroundStyle(.brandAccent)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .fill(isOCR ? Color.orange.opacity(0.06) : Color.blue.opacity(0.05))
+                .fill(isOCR ? Color.brandAccent.opacity(0.06) : Color.brandAccent.opacity(0.05))
                 .overlay(
                     RoundedRectangle(cornerRadius: 14, style: .continuous)
                         .stroke(
-                            isHighlighted ? Color.blue.opacity(0.55) : (isOCR ? Color.orange.opacity(0.18) : Color.blue.opacity(0.14)),
+                            isHighlighted ? Color.brandAccent.opacity(0.55) : (isOCR ? Color.brandAccent.opacity(0.18) : Color.brandAccent.opacity(0.14)),
                             lineWidth: isHighlighted ? 1.5 : 1
                         )
                 )
@@ -441,10 +440,10 @@ private struct DocumentSourceTextView: View {
                     if isOCR {
                         Text(String(localized: "OCR"))
                             .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(.brandAccent)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.orange.opacity(0.12), in: Capsule())
+                            .background(Color.brandAccent.opacity(0.12), in: Capsule())
                     }
                 }
 
@@ -457,34 +456,35 @@ private struct DocumentSourceTextView: View {
             .padding(.horizontal, 20)
             .padding(.top, 18)
             .padding(.bottom, 28)
+            .readableContentWidth()
         }
-        .background(Color.adaptive(white: 0.96))
+        .background(Color.adaptiveBackground)
         .navigationTitle(String(localized: "Source Text"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: 16) {
-                    Button {
-                        isReflowed.toggle()
-                    } label: {
-                        Label(
-                            isReflowed ? String(localized: "Original Layout") : String(localized: "Reflow Text"),
-                            systemImage: isReflowed ? "text.alignleft" : "text.justify"
-                        )
-                    }
-
-                    Button {
-                        UIPasteboard.general.string = displayText
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        UIAccessibility.post(
-                            notification: .announcement,
-                            argument: String(localized: "Copied")
-                        )
-                    } label: {
-                        Label(String(localized: "Copy All"), systemImage: "doc.on.doc")
-                    }
-                    .disabled(text.isEmpty)
+            // A group rather than an HStack in one item, so the system can
+            // space, stack (iPhone Duo side bar), and overflow each button.
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    isReflowed.toggle()
+                } label: {
+                    Label(
+                        isReflowed ? String(localized: "Original Layout") : String(localized: "Reflow Text"),
+                        systemImage: isReflowed ? "text.alignleft" : "text.justify"
+                    )
                 }
+
+                Button {
+                    UIPasteboard.general.string = displayText
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    UIAccessibility.post(
+                        notification: .announcement,
+                        argument: String(localized: "Copied")
+                    )
+                } label: {
+                    Label(String(localized: "Copy All"), systemImage: "doc.on.doc")
+                }
+                .disabled(text.isEmpty)
             }
         }
     }

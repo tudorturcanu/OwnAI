@@ -86,7 +86,7 @@ enum DownloadProgressFormat {
 struct DownloadProgressRing: View {
     let progress: Double?
     var lineWidth: CGFloat = 2.5
-    var tint: Color = .blue
+    var tint: Color = .brandAccent
 
     @State private var sweep = false
     /// Honours Reduce Motion: the indeterminate state stops spinning and shows
@@ -161,7 +161,7 @@ struct DownloadActivityToolbarButton: View {
         if modelManager.hasDownloadActivity {
             Button(action: action) {
                 ZStack {
-                    DownloadProgressRing(progress: progress, tint: isValidating ? .green : .blue)
+                    DownloadProgressRing(progress: progress, tint: isValidating ? .green : .brandAccent)
                         .frame(width: 30, height: 30)
 
                     // The number goes inside the ring rather than beside it:
@@ -173,12 +173,12 @@ struct DownloadActivityToolbarButton: View {
                             .monospacedDigit()
                             .minimumScaleFactor(0.7)
                             .lineLimit(1)
-                            .foregroundStyle(Color.blue)
+                            .foregroundStyle(Color.brandAccent)
                             .padding(.horizontal, 2)
                     } else {
                         Image(systemName: isValidating ? "checkmark.seal" : "arrow.down")
                             .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(isValidating ? Color.green : Color.blue)
+                            .foregroundStyle(isValidating ? Color.green : Color.brandAccent)
                     }
                 }
                 .frame(width: 32, height: 32)
@@ -259,7 +259,7 @@ struct DownloadActivitySummaryLabel: View {
 
                     Image(systemName: "arrow.down")
                         .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Color.blue)
+                        .foregroundStyle(Color.brandAccent)
                 }
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -278,7 +278,7 @@ struct DownloadActivitySummaryLabel: View {
                 if let progress = modelManager.aggregateDownloadProgress {
                     Text(DownloadProgressFormat.percent(progress))
                         .font(.caption.weight(.semibold).monospacedDigit())
-                        .foregroundStyle(Color.blue)
+                        .foregroundStyle(Color.brandAccent)
                 }
 
                 Image(systemName: "chevron.right")
@@ -296,7 +296,7 @@ struct DownloadActivitySummaryLabel: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .strokeBorder(Color.blue.opacity(0.16), lineWidth: 1)
+                .strokeBorder(Color.brandAccent.opacity(0.16), lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel(String(localized: "Downloads in progress"))

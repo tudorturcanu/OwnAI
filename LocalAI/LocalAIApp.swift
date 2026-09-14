@@ -9,8 +9,27 @@ import AppIntents
 import SwiftUI
 import UIKit
 
+/// Receives the one UIKit callback SwiftUI's `App` doesn't surface: the system
+/// relaunching us in the background to finish a background URLSession transfer
+/// (the Kokoro weights download). Without handling it, iOS holds the transfer's
+/// completion and eventually treats the relaunch as unresponsive.
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        handleEventsForBackgroundURLSession identifier: String,
+        completionHandler: @escaping () -> Void
+    ) {
+        guard identifier == KokoroWeightsDownloader.sessionIdentifier else {
+            completionHandler()
+            return
+        }
+        KokoroWeightsDownloader.shared.handleBackgroundEvents(completionHandler: completionHandler)
+    }
+}
+
 @main
 struct LocalAIApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     // Declared first so the interval includes initialization of the app's
     // managers, history restoration, and model-catalog setup.
     @State private var launchPerformanceInterval: PerformanceLogger.Interval? = PerformanceLogger.begin(
@@ -28,6 +47,7 @@ struct LocalAIApp: App {
     @Environment(\.scenePhase) private var scenePhase
     
     init() {
+        AppAppearance.apply()
         NotificationManager.shared.incrementLaunchCount()
         // Donate App Shortcuts to Siri so phrases like "Ask Own AI" are
         // available immediately after install, without requiring user setup.
@@ -36,7 +56,9 @@ struct LocalAIApp: App {
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ThemedRoot {
+                ContentView()
+            }
                 .environment(llmEngine)
                 .environment(historyManager)
                 .environment(modelManager)
@@ -53,6 +75,7 @@ struct LocalAIApp: App {
                         launchPerformanceInterval = nil
                     }
                     modelManager.configure(monetizationManager: monetizationManager)
+                    ConversationSpotlightIndexer.reindexIfOutdated(historyManager.conversations)
                     modelManager.onModelReadyForBenchmark = { model in
                         guard DeviceResourcePolicy.current.shouldRunAutomaticModelBenchmarks else { return }
                         if let existing = modelManager.quickTestResult(for: model.id),
@@ -76,6 +99,9 @@ struct LocalAIApp: App {
                     watchSessionManager.handleScenePhaseChange(scenePhase)
                     llmEngine.handleScenePhaseChange(scenePhase)
                     speechManager.handleScenePhaseChange(scenePhase)
+                    // A voice download from a previous session may still be
+                    // running in the background; reattach its progress.
+                    speechManager.resumeVoiceDownloadIfInFlight()
                 }
                 .onChange(of: scenePhase) {
                     watchSessionManager.handleScenePhaseChange(scenePhase)
@@ -84,6 +110,7 @@ struct LocalAIApp: App {
                     if scenePhase == .active {
                         historyManager.retryPersistenceIfNeeded()
                         historyManager.applyRetentionPolicy()
+                        speechManager.resumeVoiceDownloadIfInFlight()
                     }
                 }
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.protectedDataDidBecomeAvailableNotification)) { _ in
@@ -93,5 +120,17 @@ struct LocalAIApp: App {
                     llmEngine.handleMemoryWarning()
                 }
         }
+    }
+}
+
+/// Applies the user's accent theme as the tint for the whole hierarchy and
+/// re-applies it live when the theme changes in Settings.
+private struct ThemedRoot<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    private let theme = AppTheme.shared
+
+    var body: some View {
+        content()
+            .tint(theme.style == .original ? Color(uiColor: .systemBlue) : theme.accent.accentColor)
     }
 }

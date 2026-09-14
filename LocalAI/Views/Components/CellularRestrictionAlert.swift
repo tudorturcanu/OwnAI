@@ -36,8 +36,31 @@ private struct CellularRestrictionAlertModifier: ViewModifier {
         } message: {
             Text(
                 modelManager.cellularRestrictionNotice
-                    ?? String(localized: "Connect to Wi-Fi, or enable Cellular Downloads in Settings.")
+                    ?? String(localized: "Connect to Wi-Fi, or enable Cellular Downloads in Own AI Settings.")
             )
+        }
+    }
+}
+
+/// Offers to flip Cellular Downloads on right where a download was refused
+/// for being on cellular, instead of sending the user off to find the toggle.
+private struct AllowCellularDownloadsAlertModifier: ViewModifier {
+    @Binding var isPresented: Bool
+    let onAllow: () -> Void
+    @Environment(ModelManager.self) private var modelManager
+
+    func body(content: Content) -> some View {
+        content.alert(
+            String(localized: "Allow Cellular Downloads?"),
+            isPresented: $isPresented
+        ) {
+            Button(String(localized: "Allow")) {
+                modelManager.enableCellularDownloads()
+                onAllow()
+            }
+            Button(String(localized: "Cancel"), role: .cancel) {}
+        } message: {
+            Text(String(localized: "Models will download over cellular data until you turn Cellular Downloads off in Own AI Settings."))
         }
     }
 }
@@ -47,5 +70,11 @@ extension View {
     /// view's presentation context.
     func cellularRestrictionAlert() -> some View {
         modifier(CellularRestrictionAlertModifier())
+    }
+
+    /// Asks before turning Cellular Downloads on; `onAllow` runs once the
+    /// preference is set (typically to retry the refused download).
+    func allowCellularDownloadsAlert(isPresented: Binding<Bool>, onAllow: @escaping () -> Void) -> some View {
+        modifier(AllowCellularDownloadsAlertModifier(isPresented: isPresented, onAllow: onAllow))
     }
 }

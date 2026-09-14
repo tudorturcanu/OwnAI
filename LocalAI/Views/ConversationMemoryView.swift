@@ -37,6 +37,7 @@ struct ConversationMemoryView: View {
                 } footer: {
                     Text(String(localized: "Own AI uses this summary silently to stay consistent in long chats. It stays on this device."))
                 }
+                .listRowBackground(Color.adaptiveCard)
 
                 if summary != nil {
                     Section {
@@ -46,15 +47,15 @@ struct ConversationMemoryView: View {
                     } footer: {
                         Text(String(localized: "New replies will rely on the visible messages only, until a new summary is written."))
                     }
+                    .listRowBackground(Color.adaptiveCard)
                 }
             }
+            .paperList()
             .navigationTitle(String(localized: "Chat Memory"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(String(localized: "Done")) {
-                        dismiss()
-                    }
+                ToolbarItem(placement: .cancellationAction) {
+                    SheetCloseButton { dismiss() }
                 }
             }
             .alert(

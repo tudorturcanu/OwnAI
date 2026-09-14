@@ -12,6 +12,7 @@ import Speech
 import SwiftUI
 import Observation
 import Combine
+import UIKit
 import WhisperKit
 
 enum SpeechInputBackend: String, CaseIterable, Identifiable {
@@ -217,6 +218,10 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     /// Speak pays the load + warm-up again (shown as "Preparing voice…").
     private var kokoroIdleUnloadTask: Task<Void, Never>?
     private static let kokoroIdleUnloadInterval: TimeInterval = 600
+    /// Extra background execution time requested while the ~315 MB Kokoro
+    /// weights download runs, so it survives the app being backgrounded the
+    /// same way `ModelManager` protects MLX model downloads.
+    private var kokoroDownloadBackgroundTaskID: UIBackgroundTaskIdentifier = .invalid
 
     @ObservationIgnored @AppStorage("speechOutputBackend") private var persistedSpeechOutputBackend = SpeechOutputBackend.system.rawValue
 
@@ -1085,14 +1090,29 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
             guard downloadIfNeeded else { return false }
             speechBackendStatus = String(localized: "Downloading \(voice.displayName)…")
             speechOutputDownloadProgress = 0
+            // The weights are ~315 MB; without this, iOS suspends the app a few
+            // seconds after it is backgrounded and the transfer stalls out.
+            beginKokoroDownloadBackgroundTask()
+            defer { endKokoroDownloadBackgroundTask() }
             do {
-                try await KokoroModelStore.download(voice: voice) { fraction in
+                try await KokoroModelStore.download(
+                    voice: voice,
+                    allowsCellular: allowCellularDownloads,
+                    isCellularRestricted: DownloadNetworkMonitor.shared.isCellularRestricted
+                ) { fraction in
                     Task { @MainActor [weak self] in
                         self?.speechOutputDownloadProgress = fraction
                     }
                 }
             } catch is CancellationError {
                 KokoroDiagnostics.log("prepare", "download cancelled")
+                return false
+            } catch KokoroError.cellularRestricted {
+                // Not a failure to alarm the user with — the same gentle nudge
+                // the model downloads give when Wi-Fi-only is on.
+                KokoroDiagnostics.log("prepare", "download refused: cellular restricted")
+                publishError(KokoroError.cellularRestricted.errorDescription ?? "")
+                speechBackendStatus = statusMessage(for: .system)
                 return false
             } catch {
                 KokoroDiagnostics.log("prepare", "download FAILED: \(error)")
@@ -1115,6 +1135,17 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
                 speechBackendStatus = statusMessage(for: .system)
                 return false
             }
+            // Loading (and warming up) the synthesizer submits Metal command
+            // buffers, which the OS refuses from a backgrounded app — the
+            // failure surfaces as an uncaught C++ exception that hard-kills the
+            // process, not a Swift error we can catch. Bail out while
+            // backgrounded and let a later foreground prepare do the load. The
+            // weights download above is network-only and safe here, so we gate
+            // only this GPU-touching step.
+            if UIApplication.shared.applicationState == .background {
+                KokoroDiagnostics.log("prepare", "DEFERRED: app backgrounded, cannot submit GPU work; will load when foregrounded")
+                return false
+            }
             speechBackendStatus = String(localized: "Preparing \(voice.displayName)…")
             let weightsURL = KokoroModelStore.weightsURL
             let synthesizer = await Task.detached(priority: .userInitiated) {
@@ -1130,6 +1161,54 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
         speechBackendStatus = statusMessage(for: .kokoro(voice))
         KokoroDiagnostics.log("prepare", "READY voice=\(voice.rawValue)")
         return true
+    }
+
+    /// Mirrors `ModelManager`'s "Cellular Downloads" toggle so the ~315 MB
+    /// weights download honours the same Wi-Fi-only preference.
+    private var allowCellularDownloads: Bool {
+        UserDefaults.standard.bool(forKey: "downloads.allowCellular")
+    }
+
+    /// After a background relaunch the in-process download task is gone, but
+    /// iOS may still be running (or have just finished) the weights transfer.
+    /// If a transfer is live, re-enter the normal prepare path so the
+    /// "Downloading…" progress and eventual load reflect it — without kicking
+    /// off a fresh download when none is in flight. No-op otherwise.
+    func resumeVoiceDownloadIfInFlight() {
+        guard let voice = activeKokoroVoice,
+              !KokoroModelStore.isReady(for: voice),
+              kokoroLoadTask == nil else { return }
+        let task = Task { @MainActor [weak self] () -> Bool in
+            guard let self else { return false }
+            guard await KokoroWeightsDownloader.shared.isDownloadInFlight() else { return false }
+            KokoroDiagnostics.log("prepareIfNeeded", "reattaching to in-flight background download")
+            return await self.loadKokoro(voice: voice, downloadIfNeeded: true)
+        }
+        kokoroLoadTask = task
+        Task { @MainActor [weak self] in
+            _ = await task.value
+            if self?.kokoroLoadTask == task { self?.kokoroLoadTask = nil }
+        }
+    }
+
+    /// Requests extra background execution time so the Kokoro weights download
+    /// keeps running when the app is backgrounded. Mirrors `ModelManager`'s
+    /// protection for MLX model downloads.
+    private func beginKokoroDownloadBackgroundTask() {
+        guard kokoroDownloadBackgroundTaskID == .invalid else { return }
+        kokoroDownloadBackgroundTaskID = UIApplication.shared.beginBackgroundTask(
+            withName: "KokoroVoiceDownload"
+        ) { [weak self] in
+            // iOS is about to reclaim the time — release the assertion so the
+            // system doesn't kill us for holding it past expiry.
+            self?.endKokoroDownloadBackgroundTask()
+        }
+    }
+
+    private func endKokoroDownloadBackgroundTask() {
+        guard kokoroDownloadBackgroundTaskID != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(kokoroDownloadBackgroundTaskID)
+        kokoroDownloadBackgroundTaskID = .invalid
     }
 
     private func releaseKokoro() {
@@ -1179,6 +1258,14 @@ final class SpeechManager: NSObject, SFSpeechRecognizerDelegate {
     /// first words play while later sentences are still being generated.
     private func speakWithKokoro(_ text: String, voice: KokoroVoice) {
         guard let synthesizer = kokoroSynthesizer else {
+            speakWithSystemVoice(text)
+            return
+        }
+        // Kokoro synthesis submits Metal command buffers, which the OS refuses
+        // from a backgrounded app (an uncaught C++ exception that hard-kills the
+        // process). Fall back to the system voice, which is CPU-only and safe.
+        if UIApplication.shared.applicationState == .background {
+            KokoroDiagnostics.log("speak", "app backgrounded: falling back to system voice (no GPU work)")
             speakWithSystemVoice(text)
             return
         }

@@ -2,6 +2,8 @@ import SwiftUI
 
 struct AttachmentOptionsPopup: View {
     let onPhotoPicker: () -> Void
+    /// Nil hides the camera row (simulator, iPads without a camera).
+    let onCamera: (() -> Void)?
     let onDocumentImport: () -> Void
     let onCancel: () -> Void
     
@@ -16,7 +18,7 @@ struct AttachmentOptionsPopup: View {
                 HStack(spacing: 8) {
                     Image(systemName: "paperclip")
                         .font(.headline)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(.brandAccent)
                         .accessibilityHidden(true)
                     
                     Text(String(localized: "Add to Chat"))
@@ -44,7 +46,7 @@ struct AttachmentOptionsPopup: View {
                         Circle()
                             .fill(
                                 LinearGradient(
-                                    colors: [Color.blue, Color.cyan],
+                                    colors: [Color.brandAccent, Color.brandAccentDeep],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -56,7 +58,7 @@ struct AttachmentOptionsPopup: View {
                                     .foregroundStyle(.white)
                                     .accessibilityHidden(true)
                             )
-                            .shadow(color: Color.blue.opacity(0.3), radius: 6, x: 0, y: 3)
+                            .shadow(color: Color.brandAccent.opacity(0.3), radius: 6, x: 0, y: 3)
                         
                         // Text Label
                         VStack(alignment: .leading, spacing: 3) {
@@ -80,15 +82,69 @@ struct AttachmentOptionsPopup: View {
                     .padding(.vertical, 14)
                     .background(
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(Color(uiColor: .systemBackground).opacity(0.6))
+                            .fill(Color.adaptiveCard)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 16)
-                            .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                            .stroke(Color.brandHairline, lineWidth: 1)
                     )
                 }
                 .buttonStyle(PressedScaleButtonStyle())
                 
+                if let onCamera {
+                    Button {
+                        lightHaptic.impactOccurred()
+                        onCamera()
+                    } label: {
+                        HStack(spacing: 16) {
+                            Circle()
+                                .fill(
+                                    LinearGradient(
+                                        colors: [Color.brandAccent, Color.brandAccentDeep],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
+                                .frame(width: 44, height: 44)
+                                .overlay(
+                                    Image(systemName: "camera.fill")
+                                        .font(.title3.weight(.bold))
+                                        .foregroundStyle(.white)
+                                        .accessibilityHidden(true)
+                                )
+                                .shadow(color: Color.brandAccent.opacity(0.3), radius: 6, x: 0, y: 3)
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(String(localized: "Take Photo"))
+                                    .font(.body.weight(.semibold))
+                                    .foregroundStyle(Color.primary)
+
+                                Text(String(localized: "Snap a document, whiteboard, or receipt."))
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: "chevron.right")
+                                .font(.subheadline.weight(.semibold))
+                                .foregroundStyle(.tertiary)
+                                .accessibilityHidden(true)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 16)
+                                .fill(Color.adaptiveCard)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16)
+                                .stroke(Color.brandHairline, lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(PressedScaleButtonStyle())
+                }
+
                 // Document Button
                 Button {
                     lightHaptic.impactOccurred()
@@ -99,7 +155,7 @@ struct AttachmentOptionsPopup: View {
                         Circle()
                             .fill(
                                 LinearGradient(
-                                    colors: [Color.indigo, Color.purple],
+                                    colors: [Color.brandAccentDeep, Color.brandAccent],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -111,7 +167,7 @@ struct AttachmentOptionsPopup: View {
                                     .foregroundStyle(.white)
                                     .accessibilityHidden(true)
                             )
-                            .shadow(color: Color.indigo.opacity(0.3), radius: 6, x: 0, y: 3)
+                            .shadow(color: Color.brandAccentDeep.opacity(0.3), radius: 6, x: 0, y: 3)
                         
                         // Text Label
                         VStack(alignment: .leading, spacing: 3) {
@@ -138,11 +194,11 @@ struct AttachmentOptionsPopup: View {
                     .padding(.vertical, 14)
                     .background(
                         RoundedRectangle(cornerRadius: 16)
-                            .fill(Color(uiColor: .systemBackground).opacity(0.6))
+                            .fill(Color.adaptiveCard)
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 16)
-                            .stroke(Color.primary.opacity(0.06), lineWidth: 1)
+                            .stroke(Color.brandHairline, lineWidth: 1)
                     )
                 }
                 .buttonStyle(PressedScaleButtonStyle())
@@ -172,13 +228,13 @@ struct AttachmentOptionsPopup: View {
         .padding(.vertical, 24)
         .frame(maxWidth: 400)
         .background(
-            RoundedRectangle(cornerRadius: 28)
-                .fill(.ultraThinMaterial)
-                .shadow(color: Color.black.opacity(0.12), radius: 30, x: 0, y: 15)
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(Color.adaptiveBackground)
+                .shadow(color: Color.black.opacity(0.18), radius: 30, x: 0, y: 15)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 28)
-                .stroke(Color.adaptiveBorder(opacity: 0.35), lineWidth: 1.5)
+                .stroke(Color.brandHairline, lineWidth: 1)
         )
     }
 }
@@ -200,6 +256,6 @@ struct PressedScaleButtonStyle: ButtonStyle {
 #Preview {
     ZStack {
         Color.black.ignoresSafeArea()
-        AttachmentOptionsPopup(onPhotoPicker: {}, onDocumentImport: {}, onCancel: {})
+        AttachmentOptionsPopup(onPhotoPicker: {}, onCamera: {}, onDocumentImport: {}, onCancel: {})
     }
 }

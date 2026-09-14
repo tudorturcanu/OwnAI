@@ -31,6 +31,7 @@ struct PerformanceDashboardView: View {
             recentSection
             dataSection
         }
+        .paperList()
         .navigationTitle("Performance")
         .navigationBarTitleDisplayMode(.inline)
         .refreshable { await refresh() }
@@ -39,15 +40,14 @@ struct PerformanceDashboardView: View {
                 Button {
                     Task { await refresh() }
                 } label: {
-                    Image(systemName: "arrow.clockwise")
+                    Label("Refresh measurements", systemImage: "arrow.clockwise")
                 }
-                .accessibilityLabel("Refresh measurements")
 
                 Button(action: exportReport) {
                     if isExporting {
                         ProgressView()
                     } else {
-                        Image(systemName: "square.and.arrow.up")
+                        Label("Export performance report", systemImage: "square.and.arrow.up")
                     }
                 }
                 .disabled(isExporting || dashboard.samples.isEmpty)
@@ -129,6 +129,7 @@ struct PerformanceDashboardView: View {
         } footer: {
             Text("Measurements stay on this device for up to 30 days. Prompts, responses, and document text are never recorded.")
         }
+        .listRowBackground(Color.adaptiveCard)
     }
 
     @ViewBuilder
@@ -189,6 +190,7 @@ struct PerformanceDashboardView: View {
                     .accessibilityElement(children: .combine)
                 }
             }
+            .listRowBackground(Color.adaptiveCard)
         }
     }
 
@@ -207,6 +209,7 @@ struct PerformanceDashboardView: View {
                 }
             }
         }
+        .listRowBackground(Color.adaptiveCard)
     }
 
     @ViewBuilder
@@ -227,6 +230,7 @@ struct PerformanceDashboardView: View {
                 Text("Showing the latest \(recentSamples.count) of \(dashboard.samples.count) measurements. Export the report for the full history.")
             }
         }
+        .listRowBackground(Color.adaptiveCard)
     }
 
     private var dataSection: some View {
@@ -245,6 +249,7 @@ struct PerformanceDashboardView: View {
         } footer: {
             Text("For Instruments, profile the app with the Points of Interest track. The same operations appear there as signpost intervals.")
         }
+        .listRowBackground(Color.adaptiveCard)
     }
 
     private func metricRow(_ summary: PerformanceMetricSummary) -> some View {

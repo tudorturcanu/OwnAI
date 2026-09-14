@@ -256,7 +256,7 @@ enum DownloadErrorAction {
         case .repair:
             return "wrench.and.screwdriver"
         case .cellularRestricted:
-            return "wifi.slash"
+            return "antenna.radiowaves.left.and.right"
         case .unsupported:
             return "exclamationmark.triangle"
         }
@@ -265,15 +265,15 @@ enum DownloadErrorAction {
     var title: String {
         switch self {
         case .retry:
-            return "Retry"
+            return String(localized: "Retry")
         case .freeSpace:
-            return "Free Space"
+            return String(localized: "Free Space")
         case .repair:
-            return "Repair"
+            return String(localized: "Repair")
         case .cellularRestricted:
-            return "Back"
+            return String(localized: "Allow Cellular")
         case .unsupported:
-            return "OK"
+            return String(localized: "OK")
         }
     }
 }
@@ -354,11 +354,15 @@ final class ModelManager {
         let networkIconName: String
         let isNetworkWarning: Bool
         let offlineText: String
+        /// No network route at all; the download cannot start until one is back.
+        let isOffline: Bool
     }
 
     private enum DownloadFailureReason: Equatable {
         case lowStorage(requiredGB: Double, availableGB: Double)
         case cellularRestricted
+        /// No network route at all when the download was requested.
+        case offline
         case network
         case corrupted
         case incomplete(missingRequirements: [String])
@@ -416,6 +420,9 @@ final class ModelManager {
     /// models list lives inside a sheet, and an alert attached to the view
     /// *under* that sheet never reaches the screen.
     var cellularRestrictionNotice: String?
+    /// Mirrors `DownloadNetworkMonitor.isOffline` as observable state so the
+    /// download plan and Download buttons re-render when the route drops.
+    private(set) var isOffline = DownloadNetworkMonitor.shared.isOffline
     @ObservationIgnored private var autoSelectionDismissTask: Task<Void, Never>?
     /// How long the auto-selection toast stays on screen before it self-dismisses.
     /// Shared with the view so its progress indicator stays in sync.
@@ -792,7 +799,7 @@ final class ModelManager {
             return .repair
         case .incomplete:
             return .repair
-        case .network, .simulatorUnsupported, .unknown:
+        case .offline, .network, .simulatorUnsupported, .unknown:
             return .retry
         case .unsupportedArchitecture:
             return .unsupported
@@ -810,7 +817,11 @@ final class ModelManager {
         let networkText: String
         let networkIconName: String
         let isNetworkWarning: Bool
-        if allowCellularDownloads {
+        if isOffline {
+            networkText = offlineMessage(for: model)
+            networkIconName = "wifi.slash"
+            isNetworkWarning = true
+        } else if allowCellularDownloads {
             networkText = String(localized: "Wi-Fi or cellular download allowed.")
             networkIconName = "antenna.radiowaves.left.and.right"
             isNetworkWarning = false
@@ -820,8 +831,8 @@ final class ModelManager {
             // Hotspot, where "connect to Wi-Fi" would be wrong — that's
             // already the connection.
             networkText = DownloadNetworkMonitor.shared.isActuallyCellular
-                ? String(localized: "Connect to Wi-Fi, or enable Cellular Downloads in Settings.")
-                : String(localized: "This network is metered (Low Data Mode or a Personal Hotspot). Switch networks, or allow downloads on any connection in Settings.")
+                ? String(localized: "Connect to Wi-Fi, or enable Cellular Downloads in Own AI Settings.")
+                : String(localized: "This network is metered (Low Data Mode or a Personal Hotspot). Switch networks, or allow downloads on any connection in Own AI Settings.")
             networkIconName = "wifi.exclamationmark"
             isNetworkWarning = true
         } else {
@@ -838,7 +849,8 @@ final class ModelManager {
             networkText: networkText,
             networkIconName: networkIconName,
             isNetworkWarning: isNetworkWarning,
-            offlineText: String(localized: "Works offline after download. Prompts stay on-device for inference.")
+            offlineText: String(localized: "Works offline after download. Prompts stay on-device for inference."),
+            isOffline: isOffline
         )
     }
 
@@ -954,6 +966,7 @@ final class ModelManager {
 
     @objc
     private func handleNetworkRestrictionChange() {
+        isOffline = DownloadNetworkMonitor.shared.isOffline
         let restricted = DownloadNetworkMonitor.shared.isCellularRestricted
         if !allowCellularDownloads, restricted {
             // Pause rather than fail: the user did nothing wrong, the phone just
@@ -966,6 +979,15 @@ final class ModelManager {
 
     func pauseReason(for modelID: String) -> DownloadPauseReason? {
         pausedDownloads[modelID]
+    }
+
+    /// Flips the Cellular Downloads preference on from a download error
+    /// banner, so the user can fix the refusal where they hit it instead of
+    /// hunting for the toggle in Own AI Settings. Same key `SettingsView`
+    /// binds its toggle to, so the switch there reflects the change.
+    func enableCellularDownloads() {
+        UserDefaults.standard.set(true, forKey: "downloads.allowCellular")
+        handleCellularDownloadsAllowedChanged()
     }
 
     /// Call after the user flips Cellular Downloads on in Settings. The
@@ -1032,6 +1054,13 @@ final class ModelManager {
         guard compatibilityMessage(for: model) == nil else { return }
 
         if let failure = preflightFailure(for: model) {
+            applyDownloadFailure(failure, for: modelID)
+            return
+        }
+
+        // Fail fast with a plain reason instead of letting URLSession time
+        // out into a generic "network issue" banner a minute later.
+        if let failure = offlineFailureIfNeeded(for: model) {
             applyDownloadFailure(failure, for: modelID)
             return
         }
@@ -1164,6 +1193,7 @@ final class ModelManager {
             // the free space it needs, or the device may have dropped onto
             // cellular in the meantime.
             if let failure = preflightFailure(for: model)
+                ?? offlineFailureIfNeeded(for: model)
                 ?? cellularRestrictionFailureIfNeeded(allowCellular: allowCellularDownloads) {
                 applyDownloadFailure(failure, for: nextID)
                 continue
@@ -1665,6 +1695,9 @@ final class ModelManager {
                 self.downloadFailures.removeValue(forKey: modelID)
                 self.downloadsWithRollback.remove(modelID)
             }
+            await MainActor.run {
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            }
             if downloadNotifications {
                 await MainActor.run {
                     NotificationManager.shared.postDownloadCompleted(modelName: modelName)
@@ -1697,6 +1730,7 @@ final class ModelManager {
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.applyDownloadFailure(failureError.failure, for: modelID)
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
             }
             if downloadNotifications {
                 await MainActor.run {
@@ -1715,6 +1749,7 @@ final class ModelManager {
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 self.applyDownloadFailure(failure, for: modelID)
+                UINotificationFeedbackGenerator().notificationOccurred(.error)
             }
             if downloadNotifications {
                 await MainActor.run {
@@ -1738,6 +1773,21 @@ final class ModelManager {
         if let index = models.firstIndex(where: { $0.id == modelID }) {
             models[index].downloadState = .error(message: failure.message)
         }
+    }
+
+    nonisolated private func offlineMessage(for model: ModelInfo) -> String {
+        String(
+            format: String(
+                localized: "You're offline. Connect to Wi‑Fi or cellular to download %@.",
+                defaultValue: "You're offline. Connect to Wi‑Fi or cellular to download %@."
+            ),
+            model.name
+        )
+    }
+
+    nonisolated private func offlineFailureIfNeeded(for model: ModelInfo) -> DownloadFailure? {
+        guard DownloadNetworkMonitor.shared.isOffline else { return nil }
+        return DownloadFailure(reason: .offline, message: offlineMessage(for: model))
     }
 
     nonisolated private func cellularRestrictionFailureIfNeeded(allowCellular: Bool) -> DownloadFailure? {
@@ -1774,12 +1824,12 @@ final class ModelManager {
         DownloadFailure(
             reason: .cellularRestricted,
             message: DownloadNetworkMonitor.shared.isActuallyCellular
-                ? "Cellular Downloads is off. Connect to Wi-Fi or turn it on in Settings."
+                ? String(localized: "Cellular Downloads is off. Connect to Wi-Fi or turn it on in Own AI Settings.")
                 // isCellularRestricted also fires for a Personal Hotspot or for
                 // Low Data Mode on an ordinary Wi-Fi network — "connect to
                 // Wi-Fi" would be actively wrong advice there, since that's
                 // already the network in use.
-                : "This network is metered (Low Data Mode or a Personal Hotspot). Switch networks, or allow downloads on any connection in Settings."
+                : String(localized: "This network is metered (Low Data Mode or a Personal Hotspot). Switch networks, or allow downloads on any connection in Own AI Settings.")
         )
     }
 
@@ -1857,7 +1907,7 @@ final class ModelManager {
 
     nonisolated private func cleanupArtifactsIfNeeded(after failure: DownloadFailure, modelID: String) {
         switch failure.reason {
-        case .network, .cellularRestricted, .simulatorUnsupported:
+        case .offline, .network, .cellularRestricted, .simulatorUnsupported:
             return
         case .lowStorage, .corrupted, .incomplete, .unknown, .unsupportedArchitecture:
             // .unsupportedArchitecture is caught before the weight download,

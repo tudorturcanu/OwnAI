@@ -32,12 +32,14 @@ struct PersonalityEditorSheet: View {
                          ? String(localized: "No SF Symbol by that name — “sparkles” will be used instead.")
                          : String(localized: "Tip: Use an SF Symbol name like “sparkles” or “terminal”."))
                 }
+                .listRowBackground(Color.adaptiveCard)
 
                 Section(String(localized: "System Prompt")) {
                     TextEditor(text: $draft.systemPrompt)
                         .frame(minHeight: 140)
                         .font(.body)
                 }
+                .listRowBackground(Color.adaptiveCard)
 
                 Section(String(localized: "Parameters")) {
                     VStack(alignment: .leading, spacing: 8) {
@@ -86,6 +88,7 @@ struct PersonalityEditorSheet: View {
                         }
                     }
                 }
+                .listRowBackground(Color.adaptiveCard)
 
                 Section {
                     Picker(String(localized: "Voice"), selection: voiceSelection) {
@@ -110,6 +113,7 @@ struct PersonalityEditorSheet: View {
                 } footer: {
                     Text(String(localized: "Used when replies are read aloud and in voice conversations. A Kokoro voice is applied only once it has been downloaded in Settings › Advanced."))
                 }
+                .listRowBackground(Color.adaptiveCard)
 
                 Section(String(localized: "Preview")) {
                     VStack(alignment: .leading, spacing: 10) {
@@ -130,7 +134,9 @@ struct PersonalityEditorSheet: View {
                         .lineLimit(6)
                     }
                 }
+                .listRowBackground(Color.adaptiveCard)
             }
+            .paperList()
             .navigationTitle(LocalizedStringKey(title))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

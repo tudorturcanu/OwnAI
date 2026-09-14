@@ -72,68 +72,6 @@ def comp(name, w, h, op, layers, fr=60):
     return {"v": "5.9.0", "fr": fr, "ip": 0, "op": op, "w": w, "h": h, "nm": name,
             "ddd": 0, "assets": [], "layers": layers}
 
-ORANGE = (1.0, 0.62, 0.22)
-PINK = (1.0, 0.36, 0.56)
-
-# ---------------------------------------------------------------- sparkle hero
-# 200x200, 4 s loop. Big 4-point star breathes and slowly rotates; two small
-# stars twinkle on offset cycles; three soft dots orbit behind.
-OP = 240
-layers = []
-
-layers.append(layer(1, "Twinkle A", [group([
-    star(4, 14, 4, name="Twinkle Path"),
-    fill(PINK, name="Twinkle Fill"),
-    group_tr(),
-], "Twinkle")], transform(
-    p=(146, 58),
-    s=kf([(0, [0, 0, 100]), (30, [100, 100, 100]), (70, [0, 0, 100]), (OP, [0, 0, 100])]),
-    r=kf([(0, 0), (OP, 90)]),
-), op=OP))
-
-layers.append(layer(2, "Twinkle B", [group([
-    star(4, 10, 3, name="Twinkle Path"),
-    fill(ORANGE, name="Twinkle Fill"),
-    group_tr(),
-], "Twinkle")], transform(
-    p=(60, 140),
-    s=kf([(0, [0, 0, 100]), (110, [0, 0, 100]), (140, [100, 100, 100]), (180, [0, 0, 100]), (OP, [0, 0, 100])]),
-    r=kf([(0, 0), (OP, -90)]),
-), op=OP))
-
-layers.append(layer(3, "Twinkle C", [group([
-    star(4, 8, 2.5, name="Twinkle Path"),
-    fill((1.0, 0.5, 0.4), name="Twinkle Fill"),
-    group_tr(),
-], "Twinkle")], transform(
-    p=(150, 146),
-    s=kf([(0, [0, 0, 100]), (60, [0, 0, 100]), (90, [100, 100, 100]), (120, [0, 0, 100]), (OP, [0, 0, 100])]),
-), op=OP))
-
-layers.append(layer(4, "Hero Star", [group([
-    star(4, 62, 19, roundness=8, name="Star Path"),
-    gradient_fill(ORANGE, PINK, (-50, -50), (50, 50), name="Star Gradient"),
-    group_tr(),
-], "Star")], transform(
-    p=(100, 100),
-    s=kf([(0, [100, 100, 100]), (120, [109, 109, 100]), (OP, [100, 100, 100])]),
-    r=kf([(0, 0), (OP, 8)]),
-), op=OP))
-
-# Orbiting dots: each dot sits on a rotating parent null so it circles the hero.
-for i, (angle, radius, size, color, alpha) in enumerate([
-    (0, 84, 7, PINK, 55), (140, 88, 5, ORANGE, 50), (250, 80, 6, (1.0, 0.5, 0.4), 45)
-]):
-    layers.append(layer(5 + i, f"Orbit Dot {i+1}", [group([
-        ellipse(size, size, p=(radius, 0), name="Dot Path"),
-        fill(color, name="Dot Fill", o=alpha),
-        group_tr(),
-    ], "Dot")], transform(
-        p=(100, 100),
-        r=kf([(0, angle), (OP, angle + 360)], ease=(0.0, 1.0)),
-    ), op=OP))
-
-json.dump(comp("Sparkle Hero", 200, 200, OP, layers), open(f"{OUT}/sparkle-hero.json", "w"), separators=(",", ":"))
 
 # -------------------------------------------------------------- success check
 # 100x100, 0.75 s. Circle pops in with a slight overshoot, then the tick draws.

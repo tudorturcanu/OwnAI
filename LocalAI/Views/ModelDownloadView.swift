@@ -13,6 +13,7 @@ struct ModelDownloadView: View {
     @Environment(ModelManager.self) private var modelManager
     @Environment(LLMEngine.self) private var llmEngine
     @Environment(MonetizationManager.self) private var monetizationManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isShowingAllModels = false
     @State private var searchText = ""
 
@@ -99,9 +100,9 @@ struct ModelDownloadView: View {
         HStack(spacing: 12) {
             Image(systemName: "wand.and.stars")
                 .font(.headline)
-                .foregroundStyle(.purple)
+                .foregroundStyle(.brandAccentDeep)
                 .frame(width: 36, height: 36)
-                .background(Color.purple.opacity(0.1))
+                .background(Color.brandAccentDeep.opacity(0.1))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
 
             VStack(alignment: .leading, spacing: 3) {
@@ -134,19 +135,22 @@ struct ModelDownloadView: View {
         .padding(16)
         .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
         .accessibilityElement(children: .contain)
     }
     
     var body: some View {
         ScrollView {
-            if isSearching {
-                searchResultsContent
-            } else {
-                catalogContent
+            Group {
+                if isSearching {
+                    searchResultsContent
+                } else {
+                    catalogContent
+                }
             }
+            .readableContentWidth()
         }
-        .background(Color.adaptive(white: 0.96))
+        .background(Color.adaptiveGroupedBackground)
         .navigationTitle(String(localized: "Manage Models"))
         .navigationBarTitleDisplayMode(.large)
         .searchable(
@@ -174,9 +178,15 @@ struct ModelDownloadView: View {
 
                 ForEach(searchResults) { model in
                     ModelCard(model: model)
+                        .transition(
+                            reduceMotion
+                                ? .opacity
+                                : .opacity.combined(with: .move(edge: .top))
+                        )
                 }
             }
         }
+        .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.9), value: searchText)
         .padding(.horizontal, 20)
         .padding(.top, 16)
         .padding(.bottom, 40)
@@ -263,9 +273,9 @@ struct ModelDownloadView: View {
                     HStack(spacing: 12) {
                         Image(systemName: "square.stack.3d.up.fill")
                             .font(.headline)
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(.brandAccent)
                             .frame(width: 36, height: 36)
-                            .background(Color.blue.opacity(0.09))
+                            .background(Color.brandAccent.opacity(0.09))
                             .clipShape(RoundedRectangle(cornerRadius: 10))
 
                         VStack(alignment: .leading, spacing: 3) {
@@ -283,7 +293,7 @@ struct ModelDownloadView: View {
                 .padding(16)
                 .background(Color.adaptiveCard)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
-                .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
             }
             .padding(.horizontal, 20)
             .padding(.top, 16)
@@ -295,9 +305,9 @@ struct ModelDownloadView: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: "sparkles")
                     .font(.headline)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(.brandAccent)
                     .frame(width: 34, height: 34)
-                    .background(Color.blue.opacity(0.09))
+                    .background(Color.brandAccent.opacity(0.09))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -315,7 +325,7 @@ struct ModelDownloadView: View {
         .padding(16)
         .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
     }
 }
 
@@ -348,9 +358,9 @@ struct DownloadedModelsSection: View {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "externaldrive.badge.plus")
                         .font(.headline)
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(.brandAccent)
                         .frame(width: 34, height: 34)
-                        .background(Color.blue.opacity(0.09))
+                        .background(Color.brandAccent.opacity(0.09))
                         .clipShape(RoundedRectangle(cornerRadius: 10))
 
                     VStack(alignment: .leading, spacing: 4) {
@@ -368,7 +378,7 @@ struct DownloadedModelsSection: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.adaptiveCard)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
-                .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(models.enumerated()), id: \.element.id) { index, model in
@@ -381,7 +391,7 @@ struct DownloadedModelsSection: View {
                 }
                 .background(Color.adaptiveCard)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
-                .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
             }
         }
     }
@@ -413,9 +423,9 @@ struct DownloadedModelRow: View {
         HStack(spacing: 10) {
             Image(systemName: isSelected ? "checkmark.circle.fill" : "externaldrive.fill")
                 .font(.headline)
-                .foregroundStyle(isSelected ? .green : .blue)
+                .foregroundStyle(isSelected ? .green : .brandAccent)
                 .frame(width: 38, height: 38)
-                .background((isSelected ? Color.green : Color.blue).opacity(0.09))
+                .background((isSelected ? Color.green : Color.brandAccent).opacity(0.09))
                 .clipShape(RoundedRectangle(cornerRadius: 11))
                 .accessibilityHidden(true)
 
@@ -439,7 +449,7 @@ struct DownloadedModelRow: View {
                             .foregroundStyle(.white)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(Color.blue)
+                            .background(Color.brandAccent)
                             .clipShape(Capsule())
                             .fixedSize()
                     }
@@ -459,9 +469,9 @@ struct DownloadedModelRow: View {
             } label: {
                 Image(systemName: isLockedPremiumModel ? "crown.fill" : (isSelected ? "checkmark" : "circle"))
                     .font(.body.weight(.bold))
-                .foregroundStyle(isSelected ? .white : .blue)
+                .foregroundStyle(isSelected ? .white : .brandAccent)
                 .frame(width: 44, height: 44)
-                .background(isSelected ? Color.blue : Color.blue.opacity(0.08))
+                .background(isSelected ? Color.brandAccent : Color.brandAccent.opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .buttonStyle(ActionButtonStyle())
@@ -604,9 +614,9 @@ struct ImportedModelsSection: View {
                         HStack(spacing: 10) {
                             Image(systemName: progress == nil ? "square.and.arrow.down.on.square" : "arrow.down.circle.dotted")
                                 .font(.headline)
-                                .foregroundStyle(.blue)
+                                .foregroundStyle(.brandAccent)
                                 .frame(width: 38, height: 38)
-                                .background(Color.blue.opacity(0.09))
+                                .background(Color.brandAccent.opacity(0.09))
                                 .clipShape(RoundedRectangle(cornerRadius: 11))
                                 .accessibilityHidden(true)
 
@@ -644,7 +654,7 @@ struct ImportedModelsSection: View {
             }
             .background(Color.adaptiveCard)
             .clipShape(RoundedRectangle(cornerRadius: 14))
-            .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
         }
     }
 
@@ -686,10 +696,10 @@ private struct ImportedThinkingRow: View {
                         .font(.caption)
                         .fontWeight(.medium)
                 }
-                .foregroundStyle(isOn ? .blue : Color.adaptive(white: 0.5))
+                .foregroundStyle(isOn ? .brandAccent : Color.adaptive(white: 0.5))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(isOn ? Color.blue.opacity(0.1) : Color.adaptive(white: 0.95))
+                .background(isOn ? Color.brandAccent.opacity(0.1) : Color.adaptive(white: 0.95))
                 .clipShape(Capsule())
                 .contentShape(Capsule())
             }
@@ -745,7 +755,7 @@ struct CurrentModelSummaryCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
     }
 }
 
@@ -757,15 +767,23 @@ struct SimpleModelChoiceCard: View {
 
     @Environment(ModelManager.self) private var modelManager
     @Environment(MonetizationManager.self) private var monetizationManager
-    @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var showConsentSheet = false
     @State private var pendingAction: (() -> Void)?
     @State private var upgradeFeature: PremiumFeature?
     @State private var showHeavyDownloadConfirm = false
+    @State private var showStorageSheet = false
+    @State private var showAllowCellularAlert = false
 
     private var isSelected: Bool {
         modelManager.selectedModel?.id == model.id
+    }
+
+    /// A fresh download can't start without a route; the button says so
+    /// instead of failing into an error banner after the tap.
+    private var isOfflineForDownload: Bool {
+        if case .notDownloaded = model.downloadState { return modelManager.isOffline }
+        return false
     }
 
     private var isPremiumModel: Bool {
@@ -811,7 +829,7 @@ struct SimpleModelChoiceCard: View {
         case .builtin, .downloaded:
             return String(localized: "Use")
         case .notDownloaded:
-            return String(localized: "Download & Select")
+            return isOfflineForDownload ? String(localized: "Offline") : String(localized: "Download & Select")
         case .queued, .downloading, .validating:
             return String(localized: "Cancel")
         case .error:
@@ -834,7 +852,7 @@ struct SimpleModelChoiceCard: View {
         case .builtin, .downloaded:
             return "checkmark.circle"
         case .notDownloaded:
-            return "arrow.down.circle.fill"
+            return isOfflineForDownload ? "wifi.slash" : "arrow.down.circle.fill"
         case .queued, .downloading, .validating:
             return "xmark"
         case .error:
@@ -847,15 +865,15 @@ struct SimpleModelChoiceCard: View {
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: model.isAppleFoundation ? "apple.intelligence" : "sparkles")
                     .font(.headline)
-                    .foregroundStyle(model.isAppleFoundation ? .orange : .blue)
+                    .foregroundStyle(model.isAppleFoundation ? .brandAccent : .brandAccent)
                     .frame(width: 40, height: 40)
-                    .background((model.isAppleFoundation ? Color.orange : Color.blue).opacity(0.09))
+                    .background((model.isAppleFoundation ? Color.brandAccent : Color.brandAccent).opacity(0.09))
                     .clipShape(RoundedRectangle(cornerRadius: 11))
 
                 VStack(alignment: .leading, spacing: 5) {
                     Text(eyebrow)
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(model.isAppleFoundation ? .orange : .blue)
+                        .foregroundStyle(model.isAppleFoundation ? .brandAccent : .brandAccent)
 
                     Text(title)
                         .font(.headline)
@@ -896,7 +914,7 @@ struct SimpleModelChoiceCard: View {
             if let compatibilityMessage, !model.isAppleFoundation {
                 Label(compatibilityMessage, systemImage: "ipad.and.arrow.forward")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.brandAccent)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -905,7 +923,7 @@ struct SimpleModelChoiceCard: View {
             if let spaceShortfallMessage {
                 Label(spaceShortfallMessage, systemImage: "externaldrive.badge.exclamationmark")
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.brandAccent)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -920,23 +938,29 @@ struct SimpleModelChoiceCard: View {
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .foregroundStyle(isSelected ? .white : .blue)
+                .foregroundStyle(isSelected ? .white : .brandAccent)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 13)
-                .background(isSelected ? Color.blue : Color.blue.opacity(0.08))
+                .background(isSelected ? Color.brandAccent : Color.brandAccent.opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             .buttonStyle(ActionButtonStyle())
-            .disabled(isUnavailable || isSelected)
+            .disabled(isUnavailable || isSelected || isOfflineForDownload)
         }
         .padding(16)
         .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)
-                .stroke(isSelected ? Color.blue.opacity(0.24) : Color.clear, lineWidth: 1.5)
+                .stroke(isSelected ? Color.brandAccent.opacity(0.24) : Color.clear, lineWidth: 1.5)
         )
         .shadow(color: .black.opacity(0.035), radius: 7, y: 3)
+        .sheet(isPresented: $showStorageSheet) {
+            ModelStorageSheet()
+        }
+        .allowCellularDownloadsAlert(isPresented: $showAllowCellularAlert) {
+            modelManager.downloadModel(model.id, selectWhenFinished: true)
+        }
         .sheet(isPresented: $showConsentSheet) {
             ModelConsentSheet(model: model) {
                 UserDefaults.standard.set(true, forKey: consentKey)
@@ -1028,15 +1052,13 @@ struct SimpleModelChoiceCard: View {
         case .retry:
             modelManager.downloadModel(model.id, selectWhenFinished: true)
         case .freeSpace:
-            if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
-                openURL(settingsURL)
-            }
+            showStorageSheet = true
         case .repair:
             modelManager.repairModel(model.id, selectWhenFinished: true)
         case .cellularRestricted:
-            break
+            showAllowCellularAlert = true
         case .unsupported:
-            break
+            modelManager.dismissDownloadFailure(for: model.id)
         }
     }
 }
@@ -1074,7 +1096,7 @@ struct ModelFamilyDetailView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
                         Image(systemName: family.symbolName)
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(.brandAccent)
                         Text(LocalizedStringKey(family.title))
                             .font(.title3.bold())
                             .foregroundStyle(Color.adaptive(white: 0.1))
@@ -1102,7 +1124,7 @@ struct ModelFamilyDetailView: View {
                 .padding(16)
                 .background(Color.adaptiveCard)
                 .clipShape(RoundedRectangle(cornerRadius: 14))
-                .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
 
                 ForEach(models) { model in
                     ModelCard(model: model)
@@ -1111,8 +1133,9 @@ struct ModelFamilyDetailView: View {
             .padding(.horizontal, 20)
             .padding(.top, 16)
             .padding(.bottom, 40)
+            .readableContentWidth()
         }
-        .background(Color.adaptive(white: 0.96))
+        .background(Color.adaptiveGroupedBackground)
         .navigationTitle(LocalizedStringKey(family.title))
         .navigationBarTitleDisplayMode(.inline)
         // Needed on the pushed screen as well as the stack root: an alert
@@ -1171,7 +1194,7 @@ struct FamilyCard: View {
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(Color.blue)
+                                .background(Color.brandAccent)
                                 .clipShape(Capsule())
                         }
                     }
@@ -1253,43 +1276,10 @@ struct FamilyLogoMark: View {
         .accessibilityHidden(true)
     }
 
+    /// One accent wash for every family: the vendor logo carries the identity,
+    /// the well stays on the app's own palette.
     private var backgroundStyle: LinearGradient {
-        switch family {
-        case .llama:
-            return LinearGradient(colors: [.blue.opacity(0.10), .cyan.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .muse:
-            return LinearGradient(colors: [.blue.opacity(0.12), .purple.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .gemma:
-            return LinearGradient(colors: [.purple.opacity(0.11), .blue.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .qwen:
-            return LinearGradient(colors: [.orange.opacity(0.10), .yellow.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .deepSeek:
-            return LinearGradient(colors: [.blue.opacity(0.12), .indigo.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .granite:
-            return LinearGradient(colors: [.blue.opacity(0.10), .white], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .lfm:
-            return LinearGradient(colors: [.black.opacity(0.06), .blue.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .exaone:
-            return LinearGradient(colors: [.pink.opacity(0.09), .red.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .glm:
-            return LinearGradient(colors: [.teal.opacity(0.10), .green.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .holo:
-            return LinearGradient(colors: [.black.opacity(0.06), .gray.opacity(0.04)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .nemotron:
-            return LinearGradient(colors: [.green.opacity(0.14), .mint.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .miniCPM:
-            return LinearGradient(colors: [.cyan.opacity(0.12), .blue.opacity(0.07)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .mistral:
-            return LinearGradient(colors: [.orange.opacity(0.13), .red.opacity(0.07)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .phi:
-            return LinearGradient(colors: [.blue.opacity(0.08), .green.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .smol:
-            return LinearGradient(colors: [.yellow.opacity(0.16), .orange.opacity(0.07)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .appleIntelligence:
-            return LinearGradient(colors: [.orange.opacity(0.12), .pink.opacity(0.08)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        case .imported:
-            return LinearGradient(colors: [.blue.opacity(0.10), .indigo.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing)
-        }
+        .brandAccentSoft
     }
 
     @ViewBuilder
@@ -1311,11 +1301,11 @@ struct FamilyLogoMark: View {
         case .appleIntelligence:
             Image(systemName: family.symbolName)
                 .font(.title3)
-                .foregroundStyle(.orange)
+                .foregroundStyle(.brandAccent)
         default:
             Image(systemName: family.symbolName)
                 .font(.title3)
-                .foregroundStyle(.blue)
+                .foregroundStyle(.brandAccent)
         }
     }
 }
@@ -1328,13 +1318,14 @@ struct ModelCard: View {
     @Environment(LLMEngine.self) private var llmEngine
     @Environment(MonetizationManager.self) private var monetizationManager
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
     @State private var isHovered = false
     @State private var isThinkingEnabled = false
     @State private var showConsentSheet = false
     @State private var pendingAction: (() -> Void)?
     @State private var upgradeFeature: PremiumFeature?
     @State private var showHeavyDownloadConfirm = false
+    @State private var showStorageSheet = false
+    @State private var showAllowCellularAlert = false
     
     private var isSelected: Bool {
         modelManager.selectedModel?.id == model.id
@@ -1371,7 +1362,7 @@ struct ModelCard: View {
                                 .padding(.vertical, 2)
                                 .background(
                                     LinearGradient(
-                                        colors: [.orange, .pink],
+                                        colors: [.brandAccent, .brandAccentDeep],
                                         startPoint: .leading,
                                         endPoint: .trailing
                                     )
@@ -1432,7 +1423,7 @@ struct ModelCard: View {
                 .stroke(
                     model.isAppleFoundation ?
                     LinearGradient(
-                        colors: [.orange.opacity(0.3), .pink.opacity(0.3)],
+                        colors: [.brandAccent.opacity(0.3), .brandAccentDeep.opacity(0.3)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ) :
@@ -1472,6 +1463,12 @@ struct ModelCard: View {
             }
                 .environment(monetizationManager)
         }
+        .sheet(isPresented: $showStorageSheet) {
+            ModelStorageSheet()
+        }
+        .allowCellularDownloadsAlert(isPresented: $showAllowCellularAlert) {
+            modelManager.downloadModel(model.id, selectWhenFinished: true)
+        }
     }
     
     // MARK: - Components
@@ -1482,12 +1479,12 @@ struct ModelCard: View {
                 .fill(
                     model.isAppleFoundation ?
                     LinearGradient(
-                        colors: [.orange.opacity(0.15), .pink.opacity(0.15)],
+                        colors: [.brandAccent.opacity(0.15), .brandAccentDeep.opacity(0.15)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ) :
                     LinearGradient(
-                        colors: [.blue.opacity(0.12), .purple.opacity(0.12)],
+                        colors: [.brandAccent.opacity(0.12), .brandAccentDeep.opacity(0.12)],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -1499,12 +1496,12 @@ struct ModelCard: View {
                 .foregroundStyle(
                     model.isAppleFoundation ?
                     LinearGradient(
-                        colors: [.orange, .pink],
+                        colors: [.brandAccent, .brandAccentDeep],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     ) :
                     LinearGradient(
-                        colors: [.blue, .purple],
+                        colors: [.brandAccent, .brandAccentDeep],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )
@@ -1517,7 +1514,7 @@ struct ModelCard: View {
             if model.isAppleFoundation {
                 HStack(spacing: 6) {
                     Image(systemName: "bolt.shield")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(.brandAccent)
                     Text(modelManager.isAppleIntelligenceAvailable ? String(localized: "No download required.") : modelManager.appleIntelligenceUnavailableHint)
                         .font(.caption)
                         .foregroundStyle(Color.adaptive(white: 0.5))
@@ -1526,7 +1523,7 @@ struct ModelCard: View {
                 if let compatibilityMessage = modelManager.compatibilityMessage(for: model) {
                     HStack(spacing: 6) {
                         Image(systemName: "ipad.and.arrow.forward")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(.brandAccent)
                         Text(compatibilityMessage)
                             .font(.caption)
                             .foregroundStyle(Color.adaptive(white: 0.5))
@@ -1548,7 +1545,7 @@ struct ModelCard: View {
                         systemImage: "arrow.down.circle.dotted"
                     )
                     .font(.caption)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.brandAccent)
                 }
             }
 
@@ -1658,10 +1655,10 @@ struct ModelCard: View {
                         .fontWeight(.medium)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .foregroundStyle(isThinkingEnabled ? .blue : Color.adaptive(white: 0.5))
+                .foregroundStyle(isThinkingEnabled ? .brandAccent : Color.adaptive(white: 0.5))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(isThinkingEnabled ? Color.blue.opacity(0.1) : Color.adaptive(white: 0.95))
+                .background(isThinkingEnabled ? Color.brandAccent.opacity(0.1) : Color.adaptive(white: 0.95))
                 .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -1739,6 +1736,7 @@ struct ModelCard: View {
                     DownloadButton(
                         sizeLabel: model.sizeLabel,
                         isResumable: modelManager.partialDownloadBytes(for: model) > 0,
+                        isOffline: modelManager.isOffline,
                         action: {
                         if model.currentDeviceFit == .unsupported {
                             showHeavyDownloadConfirm = true
@@ -1859,15 +1857,33 @@ struct ModelCard: View {
         case .retry:
             modelManager.downloadModel(model.id, selectWhenFinished: true)
         case .freeSpace:
-            if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
-                openURL(settingsURL)
-            }
+            showStorageSheet = true
         case .repair:
             modelManager.repairModel(model.id, selectWhenFinished: true)
         case .cellularRestricted:
-            dismiss()
+            showAllowCellularAlert = true
         case .unsupported:
-            dismiss()
+            modelManager.dismissDownloadFailure(for: model.id)
+        }
+    }
+}
+
+// MARK: - Model Storage Sheet
+
+/// The app's own storage screen, presented from a "Free Space" error action
+/// so the user can delete a model right where the download failed instead of
+/// being bounced into the iOS Settings pane for the app.
+struct ModelStorageSheet: View {
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ModelStorageView()
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        SheetCloseButton { dismiss() }
+                    }
+                }
         }
     }
 }
@@ -1897,6 +1913,7 @@ struct ModelConsentSheet: View {
                     termsCard
                 }
                 .padding(20)
+                .readableContentWidth()
             }
             .navigationTitle(String(localized: "Data & Privacy"))
             .navigationBarTitleDisplayMode(.inline)
@@ -1921,7 +1938,7 @@ struct ModelConsentSheet: View {
                             .frame(height: 52)
                             .background(
                                 LinearGradient(
-                                    colors: model.isAppleFoundation ? [.orange, .pink] : [.blue, .blue.opacity(0.85)],
+                                    colors: model.isAppleFoundation ? [.brandAccent, .brandAccentDeep] : [.brandAccent, .brandAccent.opacity(0.85)],
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 )
@@ -1944,7 +1961,7 @@ struct ModelConsentSheet: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(model.name)
-                .font(.title2.bold())
+                .font(.display(.title2, weight: .bold))
                 .foregroundStyle(Color.adaptive(white: 0.1))
             Text(String(format: String(localized: "Provider: %@", defaultValue: "Provider: %@"), model.providerName))
                 .font(.subheadline)
@@ -1958,7 +1975,7 @@ struct ModelConsentSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "hand.raised.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.brandAccent)
                 Text(String(localized: "Data Sent to Apple Inc."))
                     .font(.headline)
                     .foregroundStyle(Color.adaptive(white: 0.2))
@@ -1982,7 +1999,7 @@ struct ModelConsentSheet: View {
         .padding(16)
         .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
     }
     
     // MARK: - Local Model: No Data Shared Card
@@ -2010,7 +2027,7 @@ struct ModelConsentSheet: View {
             
             HStack(spacing: 6) {
                 Image(systemName: "info.circle.fill")
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(.brandAccent)
                 Text(String(localized: "All AI inference happens on your device. No personal data leaves your device for AI processing."))
                     .font(.caption)
                     .foregroundStyle(Color.adaptive(white: 0.45))
@@ -2032,7 +2049,7 @@ struct ModelConsentSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.down.circle.fill")
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(.brandAccent)
                 Text(String(localized: "Model Download Data"))
                     .font(.headline)
                     .foregroundStyle(Color.adaptive(white: 0.2))
@@ -2055,7 +2072,7 @@ struct ModelConsentSheet: View {
         .padding(16)
         .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
     }
     
     // MARK: - Terms Card
@@ -2064,7 +2081,7 @@ struct ModelConsentSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "doc.text.fill")
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(.brandAccent)
                 Text(String(localized: "Terms & Conditions"))
                     .font(.headline)
                     .foregroundStyle(Color.adaptive(white: 0.2))
@@ -2085,12 +2102,12 @@ struct ModelConsentSheet: View {
                 Link(String(localized: "App Privacy Policy"), destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/privacy.html") ?? URL(string: "about:blank")!)
             }
             .font(.subheadline.weight(.medium))
-            .foregroundStyle(.blue)
+            .foregroundStyle(.brandAccent)
         }
         .padding(16)
         .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
     }
     
     // MARK: - Helper Views
@@ -2099,7 +2116,7 @@ struct ModelConsentSheet: View {
         HStack(spacing: 10) {
             Image(systemName: icon)
                 .font(.caption)
-                .foregroundStyle(.orange)
+                .foregroundStyle(.brandAccent)
                 .frame(width: 20)
             Text(text)
                 .font(.subheadline)
@@ -2232,7 +2249,7 @@ struct DownloadReadinessView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: isDownloaded ? "checkmark.circle.fill" : "arrow.down.circle.fill")
-                    .foregroundStyle(isDownloaded ? .green : .blue)
+                    .foregroundStyle(isDownloaded ? .green : .brandAccent)
                 Text(isDownloaded ? String(localized: "Ready offline") : String(localized: "Download plan"))
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(Color.adaptive(white: 0.24))
@@ -2272,7 +2289,14 @@ struct DownloadReadinessView: View {
                 readinessRow(
                     icon: readiness.networkIconName,
                     text: readiness.networkText,
-                    color: readiness.isNetworkWarning ? .orange : .blue
+                    color: readiness.isOffline ? .red : (readiness.isNetworkWarning ? .brandAccent : .brandAccent)
+                )
+                // Said here, at the moment of decision: iOS suspends the
+                // transfer shortly after the app leaves the foreground.
+                readinessRow(
+                    icon: "iphone",
+                    text: String(localized: "Keep Own AI open — downloads pause about 30 seconds after you leave the app"),
+                    color: .brandAccent
                 )
                 readinessRow(
                     icon: "lock.shield.fill",
@@ -2299,10 +2323,10 @@ struct DownloadReadinessView: View {
                 .font(.caption2.weight(.medium))
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .foregroundStyle(isWarning ? .orange : Color.adaptive(white: 0.45))
+        .foregroundStyle(isWarning ? .brandAccent : Color.adaptive(white: 0.45))
         .padding(.horizontal, 8)
         .padding(.vertical, 5)
-        .background(isWarning ? Color.orange.opacity(0.08) : Color.adaptiveCard)
+        .background(isWarning ? Color.brandAccent.opacity(0.08) : Color.adaptiveCard)
         .clipShape(Capsule())
     }
 
@@ -2341,18 +2365,18 @@ struct BuiltInButton: View {
                         .fontWeight(.medium)
                 }
             }
-            .foregroundStyle(isSelected ? .white : .orange)
+            .foregroundStyle(isSelected ? .white : .brandAccent)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .background(
                 isSelected ?
                 LinearGradient(
-                    colors: [.orange, .pink],
+                    colors: [.brandAccent, .brandAccentDeep],
                     startPoint: .leading,
                     endPoint: .trailing
                 ) :
                 LinearGradient(
-                    colors: [.orange.opacity(0.1), .pink.opacity(0.1)],
+                    colors: [.brandAccent.opacity(0.1), .brandAccentDeep.opacity(0.1)],
                     startPoint: .leading,
                     endPoint: .trailing
                 )
@@ -2382,18 +2406,18 @@ struct SelectButton: View {
                         .fontWeight(.medium)
                 }
             }
-            .foregroundStyle(isSelected ? .white : .blue)
+            .foregroundStyle(isSelected ? .white : .brandAccent)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)
             .background(
                 isSelected ?
                 LinearGradient(
-                    colors: [.blue, .blue.opacity(0.85)],
+                    colors: [.brandAccent, .brandAccent.opacity(0.85)],
                     startPoint: .top,
                     endPoint: .bottom
                 ) :
                 LinearGradient(
-                    colors: [.blue.opacity(0.08), .blue.opacity(0.08)],
+                    colors: [.brandAccent.opacity(0.08), .brandAccent.opacity(0.08)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
@@ -2407,19 +2431,34 @@ struct SelectButton: View {
 struct DownloadButton: View {
     let sizeLabel: String
     var isResumable = false
+    /// No network route: the button relabels itself and refuses the tap
+    /// rather than starting a download that can only fail.
+    var isOffline = false
     let action: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var title: String {
+        if isOffline { return String(localized: "Offline") }
+        return isResumable ? String(localized: "Resume & Select") : String(localized: "Download & Select")
+    }
+
+    private var subtitle: String {
+        if isOffline {
+            return String(localized: "Connect to Wi‑Fi or cellular to download")
+        }
+        return String(format: String(localized: "%@ • Works offline after download", defaultValue: "%@ • Works offline after download"), sizeLabel)
+    }
     
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Image(systemName: "arrow.down.circle.fill")
+                Image(systemName: isOffline ? "wifi.slash" : "arrow.down.circle.fill")
                     .font(.body.bold())
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(isResumable ? String(localized: "Resume & Select") : String(localized: "Download & Select"))
+                    Text(title)
                         .font(.subheadline.weight(.semibold))
-                    Text(String(format: String(localized: "%@ • Works offline after download", defaultValue: "%@ • Works offline after download"), sizeLabel))
+                    Text(subtitle)
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.78))
                         .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
@@ -2433,7 +2472,7 @@ struct DownloadButton: View {
             .padding(.vertical, 12)
             .background(
                 LinearGradient(
-                    colors: [.blue, .blue.opacity(0.85)],
+                    colors: isOffline ? [.gray, .gray.opacity(0.85)] : [.brandAccent, .brandAccent.opacity(0.85)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
@@ -2441,6 +2480,7 @@ struct DownloadButton: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(ActionButtonStyle())
+        .disabled(isOffline)
     }
 }
 
@@ -2471,7 +2511,7 @@ struct RestoreBundledButton: View {
             .padding(.vertical, 12)
             .background(
                 LinearGradient(
-                    colors: [.blue, .blue.opacity(0.85)],
+                    colors: [.brandAccent, .brandAccent.opacity(0.85)],
                     startPoint: .top,
                     endPoint: .bottom
                 )
@@ -2498,7 +2538,7 @@ struct UpgradeActionButton: View {
             .padding(.vertical, 14)
             .background(
                 LinearGradient(
-                    colors: [.orange, .pink],
+                    colors: [.brandAccent, .brandAccentDeep],
                     startPoint: .leading,
                     endPoint: .trailing
                 )
@@ -2611,6 +2651,7 @@ struct DownloadingButton: View {
     var onResume: (() -> Void)? = nil
 
     @ScaledMetric(relativeTo: .body) private var closeButtonSize = 44.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var isUserPaused: Bool { pauseReason?.isUserRequested ?? false }
 
@@ -2663,12 +2704,12 @@ struct DownloadingButton: View {
                     if progress == nil {
                         ProgressView()
                             .controlSize(.small)
-                            .tint(.blue)
+                            .tint(.brandAccent)
                     }
 
                     Text(title)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(isValidating ? Color.green : Color.blue)
+                        .foregroundStyle(isValidating ? Color.green : Color.brandAccent)
                 }
 
                 Spacer(minLength: 8)
@@ -2676,7 +2717,11 @@ struct DownloadingButton: View {
                 if let progress {
                     Text(DownloadProgressFormat.percent(progress))
                         .font(.subheadline.weight(.bold).monospacedDigit())
-                        .foregroundStyle(isValidating ? Color.green : Color.blue)
+                        .foregroundStyle(isValidating ? Color.green : Color.brandAccent)
+                        // Roll the digits as the transfer climbs instead of
+                        // snapping between whole percents.
+                        .contentTransition(.numericText())
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.3), value: progress)
                 }
 
                 if !isValidating, let onPause, let onResume {
@@ -2695,7 +2740,7 @@ struct DownloadingButton: View {
                 .accessibilityInputLabels(["Cancel", "Stop download"])
             }
 
-            DownloadProgressBar(progress: progress, tint: isValidating ? .green : .blue, height: 6)
+            DownloadProgressBar(progress: progress, tint: isValidating ? .green : .brandAccent, height: 6)
 
             Text(detail)
                 .font(.caption)
@@ -2707,11 +2752,11 @@ struct DownloadingButton: View {
         .padding(.vertical, 12)
         .background(
             panelShape
-                .fill(Color.blue.opacity(0.05))
+                .fill(Color.brandAccent.opacity(0.05))
         )
         .overlay(
             panelShape
-                .strokeBorder(Color.blue.opacity(0.08), lineWidth: 1)
+                .strokeBorder(Color.brandAccent.opacity(0.08), lineWidth: 1)
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel(isValidating
@@ -2778,7 +2823,7 @@ struct ErrorButton: View {
         VStack(spacing: 10) {
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.brandAccent)
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(Color.adaptive(white: 0.5))
@@ -2791,10 +2836,10 @@ struct ErrorButton: View {
                     Text(actionTitle)
                         .fontWeight(.medium)
                 }
-                .foregroundStyle(.blue)
+                .foregroundStyle(.brandAccent)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
-                .background(Color.blue.opacity(0.08))
+                .background(Color.brandAccent.opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             }
             .buttonStyle(ActionButtonStyle())

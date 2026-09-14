@@ -18,6 +18,13 @@ enum NewModelCatalogRegression {
         ("ovisOCR2_4bit", "mlx-community/OvisOCR2-4bit", "0.63", true),
         ("granite4_1_8b_4bit", "mlx-community/granite-4.1-8b-4bit", "5.24", false),
         ("kanana2_3b_4bit", "mlx-community/kanana-2-3b-instruct-4bit", "1.99", false),
+        ("ministral3_3b_instruct_4bit", "mlx-community/Ministral-3-3B-Instruct-2512-4bit", "2.78", true),
+        ("lfm25_230m_optiq_4bit", "mlx-community/LFM2.5-230M-OptiQ-4bit", "0.19", false),
+        ("lfm25_350m_optiq_4bit", "mlx-community/LFM2.5-350M-OptiQ-4bit", "0.29", false),
+        ("lfm25_1_2b_instruct_optiq_4bit", "mlx-community/LFM2.5-1.2B-Instruct-OptiQ-4bit", "0.86", false),
+        ("lfm25_1_2b_thinking_optiq_4bit", "mlx-community/LFM2.5-1.2B-Thinking-OptiQ-4bit", "0.86", false),
+        ("lfm25_2_6b_optiq_4bit", "mlx-community/LFM2.5-2.6B-OptiQ-4bit", "2.01", false),
+        ("lfm25_8b_a1b_optiq_4bit", "mlx-community/LFM2.5-8B-A1B-OptiQ-4bit", "5.47", false),
     ]
 
     static func main() throws {

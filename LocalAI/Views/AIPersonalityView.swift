@@ -126,8 +126,9 @@ struct AIPersonalityView: View {
             .padding(.horizontal, 20)
             .padding(.top, 14)
             .padding(.bottom, 40)
+            .readableContentWidth()
         }
-        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+        .background(Color.adaptiveGroupedBackground.ignoresSafeArea())
         .navigationTitle(String(localized: "AI Personality"))
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showUpgradeSheet) {
@@ -268,7 +269,7 @@ struct AIPersonalityView: View {
                     .frame(width: 50, height: 50)
                     .background(
                         LinearGradient(
-                            colors: [.indigo, .blue, .teal],
+                            colors: [.brandAccentDeep, .brandAccent, .brandAccent],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
@@ -311,7 +312,7 @@ struct AIPersonalityView: View {
                     .environment(monetizationManager)
             } label: {
                 HStack(spacing: 14) {
-                    rowIcon(systemImage: "books.vertical.fill", tint: .orange)
+                    rowIcon(systemImage: "books.vertical.fill", tint: .brandAccent)
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(String(localized: "Prompt Library"))
@@ -326,7 +327,7 @@ struct AIPersonalityView: View {
 
                     if !monetizationManager.canUse(.savedPrompts) {
                         Image(systemName: "crown.fill")
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(.brandAccent)
                             .accessibilityLabel(String(localized: "Pro"))
                     }
 
@@ -369,7 +370,7 @@ struct AIPersonalityView: View {
                                 .padding(.vertical, 10)
                                 .foregroundStyle(selectedPresetID == preset.id ? .white : .primary)
                                 .background(
-                                    selectedPresetID == preset.id ? Color.accentColor : Color(uiColor: .secondarySystemGroupedBackground),
+                                    selectedPresetID == preset.id ? Color.brandAccent : Color.adaptiveCard,
                                     in: Capsule()
                                 )
                                 .overlay {
@@ -450,7 +451,7 @@ struct AIPersonalityView: View {
             }
         } label: {
             HStack(spacing: 14) {
-                rowIcon(systemImage: preset.icon, tint: .indigo)
+                rowIcon(systemImage: preset.icon, tint: .brandAccentDeep)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(preset.name)
@@ -498,7 +499,7 @@ struct AIPersonalityView: View {
                     Button(String(localized: "Save Prompt")) {
                         savePromptToLibrary()
                     }
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.brandAccent)
 
                     if draftSystemPrompt != AIResponseDefaults.defaultSystemPrompt {
                         Button(String(localized: "Reset")) {
@@ -516,7 +517,7 @@ struct AIPersonalityView: View {
                     .frame(minHeight: 170, maxHeight: 260)
                     .padding(12)
                     .scrollContentBackground(.hidden)
-                    .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
+                    .background(Color.adaptiveCard, in: RoundedRectangle(cornerRadius: 14))
                     .overlay(alignment: .topLeading) {
                         if draftPromptIsEmpty {
                             Text(String(localized: "Describe how the assistant should behave. Changes can't be applied while this is empty."))
@@ -924,10 +925,10 @@ struct AIPersonalityView: View {
                     title: "Temperature",
                     valueText: String(format: "%.1f", draftTemperature),
                     help: "Lower values are consistent; higher values are more exploratory.",
-                    tint: .orange
+                    tint: .brandAccent
                 ) {
                     Slider(value: $draftTemperature, in: 0.0...1.0)
-                        .tint(.orange)
+                        .tint(.brandAccent)
                 }
 
                 CardDivider(leadingInset: 16)
@@ -936,10 +937,10 @@ struct AIPersonalityView: View {
                     title: "Top-P",
                     valueText: String(format: "%.1f", draftTopP),
                     help: "Narrows sampling to the most likely words before choosing a response.",
-                    tint: .blue
+                    tint: .brandAccent
                 ) {
                     Slider(value: $draftTopP, in: 0.0...1.0)
-                        .tint(.blue)
+                        .tint(.brandAccent)
                 }
 
                 CardDivider(leadingInset: 16)
@@ -952,7 +953,7 @@ struct AIPersonalityView: View {
                     title: "Max Length",
                     valueText: tokenLimitText,
                     help: "Caps the generated response before the visible-character limit is applied.",
-                    tint: .teal
+                    tint: .brandAccent
                 ) {
                     Slider(
                         value: Binding(
@@ -962,7 +963,7 @@ struct AIPersonalityView: View {
                         in: 64...4096,
                         step: 64
                     )
-                    .tint(.teal)
+                    .tint(.brandAccent)
                 }
 
                 CardDivider(leadingInset: 16)
@@ -975,10 +976,10 @@ struct AIPersonalityView: View {
                     title: "Speaking Speed",
                     valueText: String(format: "%.2f×", draftSpeechRate),
                     help: "Pace for spoken replies. 1.00× is the voice's natural speed.",
-                    tint: .pink
+                    tint: .brandAccentDeep
                 ) {
                     Slider(value: $draftSpeechRate, in: UserPersonalityPreset.speechRateRange, step: 0.05)
-                        .tint(.pink)
+                        .tint(.brandAccentDeep)
                 }
             }
             .locked(if: !monetizationManager.canUse(.advancedPersonality), overlay: lockedOverlay)
@@ -1096,7 +1097,7 @@ struct AIPersonalityView: View {
                 VStack(spacing: 10) {
                     Image(systemName: "crown.fill")
                         .font(.title3)
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(.brandAccent)
                     Text(String(localized: "Own AI Pro"))
                         .font(.headline)
                         .foregroundStyle(.primary)
@@ -1109,7 +1110,7 @@ struct AIPersonalityView: View {
                     }
                     .font(.subheadline)
                     .buttonStyle(.borderedProminent)
-                    .tint(.orange)
+                    .tint(.brandAccent)
                 }
                 .padding(20)
             }

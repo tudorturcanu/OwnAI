@@ -10,12 +10,14 @@ import UIKit
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(LLMEngine.self) private var llmEngine
     @Environment(ChatHistoryManager.self) private var historyManager
     @Environment(ModelManager.self) private var modelManager
     @Environment(MonetizationManager.self) private var monetizationManager
     @AppStorage("historyRetentionDays") private var historyRetentionDays = 0
     @AppStorage("downloads.allowCellular") private var allowCellularDownloads = false
+    @AppStorage(ConversationSpotlightIndexer.enabledKey) private var showChatsInSearch = false
     @State private var showClearHistoryConfirmation = false
     @State private var showResetSettingsConfirmation = false
     @State private var showDataPrivacySheet = false
@@ -26,6 +28,10 @@ struct SettingsView: View {
     @State private var isExportShareSheetPresented = false
     @State private var exportError: String?
     @State private var supportFallbackMessage: String?
+
+    /// Observed so the appearance section shows or hides the theme rows the
+    /// moment the colour style changes.
+    private let appTheme = AppTheme.shared
 
     private static let supportAddress = "alice.turcanu91@gmail.com"
 
@@ -149,6 +155,7 @@ struct SettingsView: View {
                     headerSection
                     aiSection
                     preferencesSection
+                    appearanceSection
                     #if DEBUG
                     debugSection
                     #endif
@@ -161,13 +168,14 @@ struct SettingsView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 12)
                 .padding(.bottom, 40)
+                .readableContentWidth()
             }
-            .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+            .background(Color.adaptiveGroupedBackground.ignoresSafeArea())
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Done", action: dismiss.callAsFunction)
+                    SheetCloseButton(action: dismiss.callAsFunction)
                         .fontWeight(.semibold)
                 }
             }
@@ -219,14 +227,7 @@ struct SettingsView: View {
             HStack(spacing: 14) {
                 RoundedRectangle(cornerRadius: 16)
                     .fill(
-                        LinearGradient(
-                            colors: [
-                                Color(red: 0.22, green: 0.27, blue: 0.42),
-                                Color(red: 0.36, green: 0.28, blue: 0.44)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
+                        LinearGradient.brandAccent
                     )
                     .frame(width: 52, height: 52)
                     .overlay {
@@ -235,12 +236,11 @@ struct SettingsView: View {
                             .foregroundStyle(.white.opacity(0.92))
                             .accessibilityHidden(true)
                     }
-                    .shadow(color: Color(red: 0.22, green: 0.27, blue: 0.42).opacity(0.18), radius: 10, y: 5)
+                    .shadow(color: Color.brandAccent.opacity(0.22), radius: 10, y: 5)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Own AI")
-                        .font(.title3)
-                        .bold()
+                        .font(.display(.title3, weight: .bold))
                         .foregroundStyle(.primary)
 
                     let shortVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
@@ -264,11 +264,11 @@ struct SettingsView: View {
                 }
                 .font(.subheadline)
                 .bold()
-                .foregroundStyle(monetizationManager.hasPro ? .green : .orange)
+                .foregroundStyle(monetizationManager.hasPro ? .green : .brandAccent)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(
-                    (monetizationManager.hasPro ? Color.green : Color.orange).opacity(0.12),
+                    (monetizationManager.hasPro ? Color.green : Color.brandAccent).opacity(0.12),
                     in: Capsule()
                 )
             }
@@ -276,7 +276,7 @@ struct SettingsView: View {
             if let freePlanLimitMessage {
                 Label(LocalizedStringKey(freePlanLimitMessage), systemImage: "exclamationmark.circle.fill")
                     .font(.footnote)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.brandAccent)
             } else if !monetizationManager.hasPro {
                 Text("\(monetizationManager.freeMessagesRemainingToday) of \(MonetizationManager.freeDailyMessageLimit) free messages left today")
                     .font(.footnote)
@@ -329,7 +329,7 @@ struct SettingsView: View {
                 } label: {
                     settingsRow(
                         icon: "arrow.down.circle.fill",
-                        tint: modelManager.hasDownloadActivity ? .blue : .orange,
+                        tint: modelManager.hasDownloadActivity ? .brandAccent : .brandAccentDeep,
                         title: "Downloads",
                         subtitle: downloadsSubtitle
                     )
@@ -347,7 +347,7 @@ struct SettingsView: View {
             } label: {
                 settingsRow(
                     icon: "square.stack.3d.up.fill",
-                    tint: .blue,
+                    tint: .brandAccent,
                     title: "Models",
                     subtitle: selectedModelName
                 )
@@ -361,7 +361,7 @@ struct SettingsView: View {
             } label: {
                 settingsRow(
                     icon: "externaldrive.fill",
-                    tint: .orange,
+                    tint: .brandAccent,
                     title: "Model Storage",
                     subtitle: downloadedStorageText
                 )
@@ -378,7 +378,7 @@ struct SettingsView: View {
             } label: {
                 settingsRow(
                     icon: "brain.head.profile",
-                    tint: .pink,
+                    tint: .brandAccentDeep,
                     title: "Memory",
                     subtitle: "What Own AI remembers across chats — stored only on this device"
                 )
@@ -397,7 +397,7 @@ struct SettingsView: View {
                 } label: {
                     settingsRow(
                         icon: "brain.head.profile",
-                        tint: .purple,
+                        tint: .brandAccentDeep,
                         title: "AI Personality",
                         subtitle: "Tone, style, and response tuning"
                     )
@@ -409,11 +409,11 @@ struct SettingsView: View {
                 } label: {
                     settingsRow(
                         icon: "brain.head.profile",
-                        tint: .purple,
+                        tint: .brandAccentDeep,
                         title: "AI Personality",
                         subtitle: "Tone, style, and response tuning",
                         trailingIcon: "crown.fill",
-                        trailingTint: .orange
+                        trailingTint: .brandAccent
                     )
                 }
                 .buttonStyle(.plain)
@@ -428,7 +428,7 @@ struct SettingsView: View {
         settingsSection("Preferences") {
             settingsToggleRow(
                 icon: "antenna.radiowaves.left.and.right",
-                tint: .blue,
+                tint: .brandAccent,
                 title: "Cellular Downloads",
                 subtitle: "Allow downloading models over mobile data",
                 isOn: $allowCellularDownloads
@@ -444,7 +444,7 @@ struct SettingsView: View {
             } label: {
                 settingsRow(
                     icon: "mic.fill",
-                    tint: .purple,
+                    tint: .brandAccentDeep,
                     title: "Siri & Shortcuts",
                     subtitle: "Talk to Own AI models directly using Shortcuts"
                 )
@@ -458,12 +458,29 @@ struct SettingsView: View {
             } label: {
                 settingsRow(
                     icon: "slider.horizontal.3",
-                    tint: .gray,
+                    tint: .brandAccentDeep,
                     title: "Advanced",
                     subtitle: "Document and image quality, PDF OCR, low power mode, and more"
                 )
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    private var appearanceSection: some View {
+        settingsSection("Appearance") {
+            ThemePreviewCard()
+            ColorStylePickerRow()
+            // The accent, paper and icon choices only shape the Modern look, so
+            // they stay hidden while the app wears the Original appearance.
+            if appTheme.style == .modern {
+                sectionDivider
+                AccentThemePickerRow()
+                sectionDivider
+                PaperTonePickerRow()
+                sectionDivider
+                AppIconMatchRow()
+            }
         }
     }
 
@@ -508,7 +525,7 @@ struct SettingsView: View {
         settingsSection("Privacy") {
             // Auto-delete picker row
             HStack(spacing: 14) {
-                rowIcon(systemImage: "clock.arrow.circlepath", tint: .orange)
+                rowIcon(systemImage: "clock.arrow.circlepath", tint: .brandAccent)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Auto-Delete Chats")
@@ -541,10 +558,27 @@ struct SettingsView: View {
 
             sectionDivider
 
+            settingsToggleRow(
+                icon: "magnifyingglass",
+                tint: .brandAccentDeep,
+                title: "Show Chats in Search",
+                subtitle: "Find chat titles from iPhone search. The index stays on this device.",
+                isOn: $showChatsInSearch
+            )
+            .onChange(of: showChatsInSearch) {
+                if showChatsInSearch {
+                    ConversationSpotlightIndexer.reindexAll(historyManager.conversations)
+                } else {
+                    ConversationSpotlightIndexer.removeAll()
+                }
+            }
+
+            sectionDivider
+
             // Back up every chat before anything can remove them
             Button(action: exportAllChats) {
                 HStack(spacing: 14) {
-                    rowIcon(systemImage: "square.and.arrow.up.on.square.fill", tint: .blue)
+                    rowIcon(systemImage: "square.and.arrow.up.on.square.fill", tint: .brandAccent)
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Export All Chats")
@@ -567,7 +601,7 @@ struct SettingsView: View {
                         Image(systemName: "crown.fill")
                             .font(.caption)
                             .fontWeight(.semibold)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(.brandAccent)
                             .accessibilityLabel(String(localized: "Pro"))
                     }
                 }
@@ -632,7 +666,7 @@ struct SettingsView: View {
             } label: {
                 settingsRow(
                     icon: "hand.raised.fill",
-                    tint: .indigo,
+                    tint: .brandAccentDeep,
                     title: "Data & Privacy",
                     subtitle: "What stays on-device and when Apple services may be involved"
                 )
@@ -644,7 +678,7 @@ struct SettingsView: View {
             Link(destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/privacy.html") ?? URL(string: "about:blank")!) {
                 settingsRow(
                     icon: "lock.doc.fill",
-                    tint: .blue,
+                    tint: .brandAccent,
                     title: "Privacy Policy",
                     subtitle: "Open in your browser",
                     trailingIcon: "arrow.up.right"
@@ -657,7 +691,7 @@ struct SettingsView: View {
             Link(destination: URL(string: "https://sudoswisshub.github.io/MetalMind-AI/terms.html") ?? URL(string: "about:blank")!) {
                 settingsRow(
                     icon: "doc.text.fill",
-                    tint: .gray,
+                    tint: .brandAccent,
                     title: "Terms of Service",
                     subtitle: "Review the legal terms",
                     trailingIcon: "arrow.up.right"
@@ -670,7 +704,7 @@ struct SettingsView: View {
             Button(action: { openMail(subject: String(localized: "Support Request")) }) {
                 settingsRow(
                     icon: "questionmark.circle.fill",
-                    tint: .orange,
+                    tint: .brandAccent,
                     title: "Support",
                     subtitle: "Billing, downloads, models, or account help"
                 )
@@ -684,7 +718,7 @@ struct SettingsView: View {
             } label: {
                 settingsRow(
                     icon: "arrow.counterclockwise.circle.fill",
-                    tint: .gray,
+                    tint: .brandAccentDeep,
                     title: "Reset All Settings",
                     subtitle: "Restore defaults. Chats, models, and prompts are kept",
                     trailingIcon: "arrow.counterclockwise"
@@ -730,7 +764,7 @@ struct SettingsView: View {
     // MARK: - Reusable Components
 
     private var sectionDivider: some View {
-        CardDivider(leadingInset: 62)
+        CardDivider(leadingInset: 64)
     }
 
     private func sectionTitle(_ text: LocalizedStringKey) -> some View {
@@ -754,8 +788,7 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             content()
         }
-        .background(Color.adaptiveCard, in: RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.04), radius: 10, y: 5)
+        .paperCard(radius: 16)
     }
 
     private func settingsRow(
@@ -782,6 +815,10 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
+                    // Live subtitles (download %, storage used) roll their
+                    // digits instead of snapping when they update.
+                    .contentTransition(.numericText())
+                    .animation(reduceMotion ? nil : .default, value: subtitle)
             }
 
             Spacer(minLength: 8)
@@ -875,6 +912,294 @@ struct SettingsView: View {
     private func presentUpgradeSheet() {
         showDataPrivacySheet = false
         isUpgradeSheetPresented = true
+    }
+}
+
+/// Swatch row for picking the app's accent theme. Reads and writes the shared
+/// `AppTheme`, so the whole app recolours as soon as a swatch is tapped.
+private struct AccentThemePickerRow: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private let theme = AppTheme.shared
+    private static let selectionHaptic = UISelectionFeedbackGenerator()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 14) {
+                Image(systemName: "paintpalette.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.brandAccent)
+                    .frame(width: 34, height: 34)
+                    .background(Color.brandAccentSoft, in: RoundedRectangle(cornerRadius: 9))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Accent Color")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Text("Used for buttons, highlights, and the sparkle.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 8)
+
+                Text(theme.accent.title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.brandAccent)
+                    .contentTransition(.numericText())
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
+                    ForEach(AppAccentTheme.allCases) { option in
+                        swatch(for: option)
+                    }
+                }
+                .padding(.horizontal, 4)
+                .padding(.vertical, 4)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func swatch(for option: AppAccentTheme) -> some View {
+        let isSelected = theme.accent == option
+        return Button {
+            guard !isSelected else { return }
+            Self.selectionHaptic.selectionChanged()
+            withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.8)) {
+                theme.accent = option
+            }
+        } label: {
+            ZStack {
+                Circle()
+                    .strokeBorder(isSelected ? option.accentColor : Color.clear, lineWidth: 2)
+                    .frame(width: 44, height: 44)
+
+                Circle()
+                    .fill(
+                        LinearGradient(
+                            colors: [option.lightColor, option.accentColor, option.deepColor],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .frame(width: isSelected ? 32 : 34, height: isSelected ? 32 : 34)
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(.white)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .frame(width: 44, height: 44)
+            .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(option.title)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+}
+
+/// A miniature of the chat drawn in the current theme, so a choice can be
+/// judged without leaving Settings.
+private struct ThemePreviewCard: View {
+    private let theme = AppTheme.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Spacer(minLength: 40)
+                Text("Plan my week")
+                    .font(.footnote)
+                    .foregroundStyle(Color.brandInk)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(LinearGradient.userBubble, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+
+            HStack(alignment: .top, spacing: 8) {
+                SparkleView(size: 22)
+                Text("Sure. Let’s start with what matters most.")
+                    .font(.footnote)
+                    .foregroundStyle(Color.brandInk)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+
+            HStack(spacing: 8) {
+                Text("Ask anything")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: 30)
+                    .background(Color.adaptiveCard, in: Capsule())
+                    .overlay(Capsule().strokeBorder(Color.brandHairline, lineWidth: 1))
+                Image(systemName: "arrow.up")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .background(LinearGradient.brandAccent, in: Circle())
+            }
+        }
+        .padding(14)
+        .background(
+            LinearGradient(
+                colors: [Color.brandAccentLight.opacity(0.28), Color.adaptiveBackground],
+                startPoint: .top,
+                endPoint: .bottom
+            ),
+            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.brandHairline, lineWidth: 1))
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 4)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(String(localized: "Theme preview"))
+        .accessibilityValue(
+            theme.style == .original
+                ? theme.style.title
+                : theme.style.title + ", " + theme.accent.title + ", " + theme.paper.title
+        )
+    }
+}
+
+/// Opt-in: swap the Home Screen icon to the accent-tinted variant.
+private struct AppIconMatchRow: View {
+    private let theme = AppTheme.shared
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Image(systemName: "app.badge.checkmark.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.brandAccent)
+                .frame(width: 34, height: 34)
+                .background(Color.brandAccentSoft, in: RoundedRectangle(cornerRadius: 9))
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Match App Icon")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.primary)
+                Text("Tint the Home Screen icon in the accent color.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 8)
+
+            Toggle("Match App Icon", isOn: Binding(
+                get: { theme.matchesAppIcon },
+                set: { theme.matchesAppIcon = $0 }
+            ))
+            .labelsHidden()
+            .tint(.brandAccent)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+    }
+}
+
+/// Top-level choice between the Original system look and the Modern themed
+/// look. The app ships on Original; picking Modern reveals the accent, paper
+/// and icon controls below and recolours the whole app live.
+private struct ColorStylePickerRow: View {
+    private let theme = AppTheme.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 14) {
+                Image(systemName: "circle.lefthalf.filled")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.brandAccent)
+                    .frame(width: 34, height: 34)
+                    .background(Color.brandAccentSoft, in: RoundedRectangle(cornerRadius: 9))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Appearance")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Text(theme.style.subtitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            Picker("Appearance", selection: Binding(
+                get: { theme.style },
+                set: { newValue in
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        theme.style = newValue
+                    }
+                }
+            )) {
+                ForEach(AppColorStyle.allCases) { style in
+                    Text(style.title).tag(style)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+    }
+}
+
+/// Segmented choice of the page tone. Shares `AppTheme` with the accent row.
+private struct PaperTonePickerRow: View {
+    private let theme = AppTheme.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 14) {
+                Image(systemName: "doc.plaintext.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.brandAccent)
+                    .frame(width: 34, height: 34)
+                    .background(Color.brandAccentSoft, in: RoundedRectangle(cornerRadius: 9))
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Paper")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                    Text("The tone of the page behind everything.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
+            }
+
+            Picker("Paper", selection: Binding(
+                get: { theme.paper },
+                set: { newValue in
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        theme.paper = newValue
+                    }
+                }
+            )) {
+                ForEach(AppPaperTone.allCases) { tone in
+                    Text(tone.title).tag(tone)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
     }
 }
 

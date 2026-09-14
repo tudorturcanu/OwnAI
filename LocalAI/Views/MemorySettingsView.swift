@@ -26,6 +26,7 @@ struct MemorySettingsView: View {
             } footer: {
                 Text(String(localized: "Memory is off by default. If you enable it, Own AI stores only your name or details you explicitly ask it to remember. Notes stay on this device and never leave it."))
             }
+            .listRowBackground(Color.adaptiveCard)
 
             if memoryStore.isEnabled || !memoryStore.facts.isEmpty {
                 Section {
@@ -65,6 +66,7 @@ struct MemorySettingsView: View {
                 } footer: {
                     Text(String(localized: "Tap a note to edit it. Swipe to remove it.") + " " + String(format: String(localized: "Own AI keeps the %lld most recent notes; older ones are dropped.", defaultValue: "Own AI keeps the %lld most recent notes; older ones are dropped."), Int64(AssistantMemoryStore.maxFacts)))
                 }
+                .listRowBackground(Color.adaptiveCard)
 
                 if !memoryStore.facts.isEmpty {
                     Section {
@@ -72,9 +74,11 @@ struct MemorySettingsView: View {
                             showClearConfirm = true
                         }
                     }
+                    .listRowBackground(Color.adaptiveCard)
                 }
             }
         }
+        .paperList()
         .navigationTitle(String(localized: "Memory"))
         .navigationBarTitleDisplayMode(.inline)
         .alert(

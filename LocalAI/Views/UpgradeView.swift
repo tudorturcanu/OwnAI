@@ -35,13 +35,14 @@ struct UpgradeView: View {
                     restoreSection
                 }
                 .padding(20)
+                .readableContentWidth()
             }
-            .background(Color.adaptive(white: 0.97))
+            .background(Color.adaptiveBackground)
             .navigationTitle(String(localized: "Upgrade to Pro"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(String(localized: "Close")) {
+                    SheetCloseButton(title: String(localized: "Close")) {
                         dismiss()
                     }
                     .disabled(monetizationManager.isProcessingPurchase)
@@ -68,7 +69,7 @@ struct UpgradeView: View {
                     RoundedRectangle(cornerRadius: 18)
                         .fill(
                             LinearGradient(
-                                colors: [.orange.opacity(0.16), .pink.opacity(0.14)],
+                                colors: [.brandAccent.opacity(0.16), .brandAccentDeep.opacity(0.14)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -79,7 +80,7 @@ struct UpgradeView: View {
                         .font(.title2.weight(.semibold))
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [.orange, .pink],
+                                colors: [.brandAccent, .brandAccentDeep],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -89,7 +90,7 @@ struct UpgradeView: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(LocalizedStringKey(feature.title))
-                        .font(.title3.bold())
+                        .font(.display(.title3, weight: .bold))
                         .foregroundStyle(Color.adaptive(white: 0.1))
                     Text(LocalizedStringKey(feature.subtitle))
                         .font(.subheadline)
@@ -105,7 +106,7 @@ struct UpgradeView: View {
         .padding(18)
         .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 20))
-        .shadow(color: .black.opacity(0.04), radius: 10, y: 4)
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
     }
 
     /// Drops the voice clause while hands-free conversation mode is hidden, so
@@ -175,7 +176,7 @@ struct UpgradeView: View {
             }
             .background(Color.adaptiveCard)
             .clipShape(RoundedRectangle(cornerRadius: 18))
-            .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
         }
     }
 
@@ -217,11 +218,35 @@ struct UpgradeView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 18))
             } else if monetizationManager.products.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(String(localized: "Plans will appear here soon."))
-                        .font(.subheadline.weight(.semibold))
-                    Text(String(localized: "This build does not have live App Store products available yet."))
-                        .font(.caption)
-                        .foregroundStyle(Color.adaptive(white: 0.5))
+                    if monetizationManager.productLoadFailed {
+                        Text(String(localized: "Couldn’t load plans"))
+                            .font(.subheadline.weight(.semibold))
+                        Text(String(localized: "Check your connection and try again."))
+                            .font(.caption)
+                            .foregroundStyle(Color.adaptive(white: 0.5))
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            Task { await monetizationManager.refreshProducts() }
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Text(String(localized: "Try Again"))
+                                    .font(.subheadline.weight(.semibold))
+                                Spacer()
+                            }
+                            .padding(.vertical, 12)
+                        }
+                        .background(Color.brandAccent.opacity(0.12))
+                        .foregroundStyle(.brandAccent)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .padding(.top, 4)
+                    } else {
+                        Text(String(localized: "Plans will appear here soon."))
+                            .font(.subheadline.weight(.semibold))
+                        Text(String(localized: "This build does not have live App Store products available yet."))
+                            .font(.caption)
+                            .foregroundStyle(Color.adaptive(white: 0.5))
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(18)
@@ -263,7 +288,7 @@ struct UpgradeView: View {
                 }
             }
             .font(.subheadline.weight(.semibold))
-            .foregroundStyle(.blue)
+            .foregroundStyle(.brandAccent)
             .disabled(monetizationManager.isProcessingPurchase)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -296,7 +321,7 @@ struct UpgradeView: View {
             .padding(18)
             .background(Color.adaptiveCard)
             .clipShape(RoundedRectangle(cornerRadius: 18))
-            .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+            .overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
         }
     }
 
@@ -331,7 +356,7 @@ struct UpgradeView: View {
         HStack(alignment: .top, spacing: 14) {
             Image(systemName: icon)
                 .font(.body.weight(.semibold))
-                .foregroundStyle(.orange)
+                .foregroundStyle(.brandAccent)
                 .frame(width: 24, height: 24)
                 .padding(.top, 2)
                 .accessibilityHidden(true)
@@ -411,7 +436,7 @@ struct UpgradeView: View {
                     LinearGradient(
                         colors: monetizationManager.hasPro
                             ? [Color.adaptive(white: 0.7), Color.adaptive(white: 0.62)]
-                            : (isRecommended ? [.orange, .pink] : [.blue, .blue.opacity(0.86)]),
+                            : (isRecommended ? [.brandAccent, .brandAccentDeep] : [.brandAccent, .brandAccent.opacity(0.86)]),
                         startPoint: .leading,
                         endPoint: .trailing
                     )
@@ -424,7 +449,7 @@ struct UpgradeView: View {
         .padding(18)
         .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 20))
-        .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
     }
 
     private func subscriptionLength(for product: Product) -> String {

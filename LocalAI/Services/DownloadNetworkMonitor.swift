@@ -20,6 +20,7 @@ final class DownloadNetworkMonitor: @unchecked Sendable {
     private let lock = NSLock()
     private var lastPath: NWPath?
     private var isRestricted = false
+    private var offline = false
 
     private init() {
         monitor.pathUpdateHandler = { [weak self] path in
@@ -29,8 +30,10 @@ final class DownloadNetworkMonitor: @unchecked Sendable {
             
             // Check restriction
             let restricted = path.usesInterfaceType(.cellular) || path.isExpensive || path.isConstrained
-            let changed = self.isRestricted != restricted
+            let offline = path.status != .satisfied
+            let changed = self.isRestricted != restricted || self.offline != offline
             self.isRestricted = restricted
+            self.offline = offline
             self.lock.unlock()
             
             if changed {
@@ -48,6 +51,18 @@ final class DownloadNetworkMonitor: @unchecked Sendable {
 
         let path = lastPath ?? monitor.currentPath
         return path.usesInterfaceType(.cellular) || path.isExpensive || path.isConstrained
+    }
+
+    /// No usable route at all (`path.status != .satisfied`). Metering only
+    /// says *what kind* of network is up; this says whether there is one.
+    /// Until the first path update lands the device is assumed online, so a
+    /// fresh launch never flashes an "Offline" button for a few milliseconds.
+    var isOffline: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard let path = lastPath else { return false }
+        return path.status != .satisfied
     }
 
     /// Whether the *current* restriction is actually cellular, as opposed to

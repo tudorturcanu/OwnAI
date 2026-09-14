@@ -34,17 +34,16 @@ struct PinnedMessagesView: View {
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 16)
+                        .readableContentWidth()
                     }
                 }
             }
-            .background(Color.adaptive(white: 0.96).ignoresSafeArea())
+            .background(Color.adaptiveBackground.ignoresSafeArea())
             .navigationTitle(String(localized: "Pinned Messages"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(String(localized: "Done")) {
-                        dismiss()
-                    }
+                    SheetCloseButton { dismiss() }
                     .fontWeight(.medium)
                 }
             }
@@ -57,7 +56,7 @@ struct PinnedMessagesView: View {
             HStack(spacing: 8) {
                 Image(systemName: "pin.fill")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.brandAccent)
                     .accessibilityHidden(true)
 
                 Text(conversation.title)
@@ -69,11 +68,11 @@ struct PinnedMessagesView: View {
 
                 Text(message.role == .user ? String(localized: "You") : String(localized: "AI"))
                     .font(.caption2.weight(.bold))
-                    .foregroundStyle(message.role == .user ? .blue : .purple)
+                    .foregroundStyle(message.role == .user ? .brandAccent : .brandAccentDeep)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(
-                        (message.role == .user ? Color.blue : Color.purple).opacity(0.1),
+                        (message.role == .user ? Color.brandAccent : Color.brandAccentDeep).opacity(0.1),
                         in: Capsule()
                     )
             }
@@ -112,7 +111,7 @@ struct PinnedMessagesView: View {
                 } label: {
                     Label(String(localized: "Go to Chat"), systemImage: "arrow.right.circle")
                         .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.blue)
+                        .foregroundStyle(.brandAccent)
                 }
                 .buttonStyle(.plain)
                 .frame(minHeight: 44)
@@ -135,7 +134,7 @@ struct PinnedMessagesView: View {
         }
         .padding(16)
         .background(Color.adaptiveCard, in: RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.04), radius: 10, y: 5)
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
     }
 
     private var emptyState: some View {

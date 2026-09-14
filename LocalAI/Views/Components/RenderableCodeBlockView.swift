@@ -219,7 +219,7 @@ private struct ExpandedPreviewSheet: View {
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
-                        Button(String(localized: "Done")) { dismiss() }
+                        SheetCloseButton { dismiss() }
                     }
                     ToolbarItem(placement: .primaryAction) {
                         Button {

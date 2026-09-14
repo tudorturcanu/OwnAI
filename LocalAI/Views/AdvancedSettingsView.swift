@@ -64,7 +64,7 @@ struct AdvancedSettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 ProgressView(value: progress)
                     .progressViewStyle(.linear)
-                    .tint(.orange)
+                    .tint(.brandAccent)
 
                 HStack(spacing: 8) {
                     Text(String(
@@ -83,7 +83,7 @@ struct AdvancedSettingsView: View {
                     }
                     .font(.footnote.weight(.semibold))
                     .buttonStyle(.plain)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.brandAccent)
                 }
             }
             .accessibilityElement(children: .combine)
@@ -102,7 +102,7 @@ struct AdvancedSettingsView: View {
                         .font(.footnote.weight(.semibold))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(.orange)
+                .foregroundStyle(.brandAccent)
                 .frame(minHeight: 44)
             }
 
@@ -120,7 +120,7 @@ struct AdvancedSettingsView: View {
                 .font(.footnote.weight(.semibold))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(.orange)
+            .foregroundStyle(.brandAccent)
             .frame(minHeight: 44)
         }
     }
@@ -156,8 +156,9 @@ struct AdvancedSettingsView: View {
             .padding(.horizontal, 20)
             .padding(.top, 16)
             .padding(.bottom, 40)
+            .readableContentWidth()
         }
-        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+        .background(Color.adaptiveGroupedBackground.ignoresSafeArea())
         .navigationTitle("Advanced")
         .navigationBarTitleDisplayMode(.inline)
         .cellularRestrictionAlert()
@@ -264,62 +265,35 @@ struct AdvancedSettingsView: View {
     }
 
     private var speechOutputRow: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 14) {
-                rowIcon(systemImage: "waveform", tint: .pink)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Voice")
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.primary)
-
-                    Menu {
-                        ForEach(availableSpeechOutputBackends) { backend in
-                            Button {
-                                selectSpeechOutputBackend(backend)
-                            } label: {
-                                if backend == speechManager.speechOutputBackend {
-                                    Label(backend.title, systemImage: "checkmark")
-                                } else {
-                                    Text(backend.title)
-                                }
-                            }
-                        }
+        advancedPickerRow(
+            icon: "waveform",
+            tint: .brandAccentDeep,
+            title: "Voice",
+            subtitle: Text(speechOutputSubtitle)
+        ) {
+            Menu {
+                ForEach(availableSpeechOutputBackends) { backend in
+                    Button {
+                        selectSpeechOutputBackend(backend)
                     } label: {
-                        HStack(spacing: 8) {
-                            Text(speechManager.speechOutputBackend.title)
-                                .font(.subheadline)
-                                .multilineTextAlignment(.leading)
-                                .fixedSize(horizontal: false, vertical: true)
-
-                            Spacer(minLength: 8)
-
-                            if speechManager.isPreparingSpeechOutput {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Image(systemName: "chevron.up.chevron.down")
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .accessibilityHidden(true)
-                            }
+                        if backend == speechManager.speechOutputBackend {
+                            Label(backend.title, systemImage: "checkmark")
+                        } else {
+                            Text(backend.title)
                         }
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 12)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .background(Color.pink.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                     }
-                    .disabled(speechManager.isPreparingSpeechOutput)
-                    .accessibilityLabel("Voice")
-                    .accessibilityValue(speechManager.speechOutputBackend.title)
-
-                    Text(speechOutputSubtitle)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
+            } label: {
+                pickerMenuLabel(
+                    speechManager.speechOutputBackend.title,
+                    tint: .brandAccentDeep,
+                    isBusy: speechManager.isPreparingSpeechOutput
+                )
             }
-
+            .disabled(speechManager.isPreparingSpeechOutput)
+            .accessibilityLabel("Voice")
+            .accessibilityValue(speechManager.speechOutputBackend.title)
+        } footer: {
             if speechManager.speechOutputBackend == .system && kokoroModelPresent && !speechManager.isPreparingSpeechOutput {
                 Button(role: .destructive) {
                     deleteKokoroModel()
@@ -329,11 +303,8 @@ struct AdvancedSettingsView: View {
                         .foregroundStyle(.red)
                 }
                 .buttonStyle(.plain)
-                .padding(.leading, 48)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
     }
 
     private var speechOutputSubtitle: String {
@@ -381,62 +352,35 @@ struct AdvancedSettingsView: View {
     // MARK: - Speech Input (Dictation)
 
     private var speechInputRow: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 14) {
-                rowIcon(systemImage: "mic.fill", tint: .red)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Dictation")
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.primary)
-
-                    Menu {
-                        ForEach(SpeechInputBackend.allCases) { backend in
-                            Button {
-                                selectSpeechInputBackend(backend)
-                            } label: {
-                                if backend == speechManager.speechInputBackend {
-                                    Label(backend.title, systemImage: "checkmark")
-                                } else {
-                                    Text(backend.title)
-                                }
-                            }
-                        }
+        advancedPickerRow(
+            icon: "mic.fill",
+            tint: .red,
+            title: "Dictation",
+            subtitle: Text(speechInputSubtitle)
+        ) {
+            Menu {
+                ForEach(SpeechInputBackend.allCases) { backend in
+                    Button {
+                        selectSpeechInputBackend(backend)
                     } label: {
-                        HStack(spacing: 8) {
-                            Text(speechManager.speechInputBackend.title)
-                                .font(.subheadline)
-                                .multilineTextAlignment(.leading)
-                                .fixedSize(horizontal: false, vertical: true)
-
-                            Spacer(minLength: 8)
-
-                            if speechManager.isPreparingTranscription {
-                                ProgressView().controlSize(.small)
-                            } else {
-                                Image(systemName: "chevron.up.chevron.down")
-                                    .font(.caption2)
-                                    .fontWeight(.semibold)
-                                    .accessibilityHidden(true)
-                            }
+                        if backend == speechManager.speechInputBackend {
+                            Label(backend.title, systemImage: "checkmark")
+                        } else {
+                            Text(backend.title)
                         }
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 12)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                     }
-                    .disabled(speechManager.isPreparingTranscription)
-                    .accessibilityLabel("Dictation Backend")
-                    .accessibilityValue(speechManager.speechInputBackend.title)
-
-                    Text(speechInputSubtitle)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
+            } label: {
+                pickerMenuLabel(
+                    speechManager.speechInputBackend.title,
+                    tint: .red,
+                    isBusy: speechManager.isPreparingTranscription
+                )
             }
-
+            .disabled(speechManager.isPreparingTranscription)
+            .accessibilityLabel("Dictation Backend")
+            .accessibilityValue(speechManager.speechInputBackend.title)
+        } footer: {
             if speechManager.speechInputBackend == .system && whisperModelPresent && !speechManager.isPreparingTranscription {
                 Button(role: .destructive) {
                     deleteWhisperModel()
@@ -446,11 +390,8 @@ struct AdvancedSettingsView: View {
                         .foregroundStyle(.red)
                 }
                 .buttonStyle(.plain)
-                .padding(.leading, 48)
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
     }
 
     private var speechInputSubtitle: String {
@@ -464,220 +405,116 @@ struct AdvancedSettingsView: View {
 
     private var pdfOCRSection: some View {
         advancedSection("Documents") {
-            HStack(spacing: 14) {
-                rowIcon(systemImage: "doc.text.magnifyingglass", tint: .blue)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Document Processing")
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.primary)
-
-                    Menu {
-                        ForEach(DocumentProcessingMode.allCases) { mode in
-                            Button {
-                                documentProcessingModeRaw = mode.rawValue
-                            } label: {
-                                if mode == documentProcessingMode {
-                                    Label(mode.title, systemImage: "checkmark")
-                                } else {
-                                    Text(mode.title)
-                                }
+            advancedPickerRow(
+                icon: "doc.text.magnifyingglass",
+                tint: .brandAccent,
+                title: "Document Processing",
+                subtitle: Text(documentProcessingMode.subtitle)
+            ) {
+                Menu {
+                    ForEach(DocumentProcessingMode.allCases) { mode in
+                        Button {
+                            documentProcessingModeRaw = mode.rawValue
+                        } label: {
+                            if mode == documentProcessingMode {
+                                Label(mode.title, systemImage: "checkmark")
+                            } else {
+                                Text(mode.title)
                             }
                         }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Text(documentProcessingMode.title)
-                                .font(.subheadline)
-                                .multilineTextAlignment(.leading)
-                                .fixedSize(horizontal: false, vertical: true)
-
-                            Spacer(minLength: 8)
-
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .accessibilityHidden(true)
-                        }
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 12)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .background(Color.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                     }
-                    .accessibilityLabel("Document Processing")
-                    .accessibilityValue(documentProcessingMode.title)
-
-                    Text(documentProcessingMode.subtitle)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                } label: {
+                    pickerMenuLabel(documentProcessingMode.title, tint: .brandAccent)
                 }
+                .accessibilityLabel("Document Processing")
+                .accessibilityValue(documentProcessingMode.title)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
 
             sectionDivider
 
-            HStack(spacing: 14) {
-                rowIcon(systemImage: "photo.on.rectangle.angled", tint: .purple)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Image Processing")
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.primary)
-
-                    Menu {
-                        ForEach(ImageProcessingMode.allCases) { mode in
-                            Button {
-                                imageProcessingModeRaw = mode.rawValue
-                            } label: {
-                                if mode == imageProcessingMode {
-                                    Label(mode.title, systemImage: "checkmark")
-                                } else {
-                                    Text(mode.title)
-                                }
+            advancedPickerRow(
+                icon: "photo.on.rectangle.angled",
+                tint: .brandAccentDeep,
+                title: "Image Processing",
+                subtitle: Text(imageProcessingMode.subtitle)
+            ) {
+                Menu {
+                    ForEach(ImageProcessingMode.allCases) { mode in
+                        Button {
+                            imageProcessingModeRaw = mode.rawValue
+                        } label: {
+                            if mode == imageProcessingMode {
+                                Label(mode.title, systemImage: "checkmark")
+                            } else {
+                                Text(mode.title)
                             }
                         }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Text(imageProcessingMode.title)
-                                .font(.subheadline)
-                                .multilineTextAlignment(.leading)
-                                .fixedSize(horizontal: false, vertical: true)
-
-                            Spacer(minLength: 8)
-
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .accessibilityHidden(true)
-                        }
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 12)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .background(Color.purple.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                     }
-                    .accessibilityLabel("Image Processing")
-                    .accessibilityValue(imageProcessingMode.title)
-
-                    Text(imageProcessingMode.subtitle)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                } label: {
+                    pickerMenuLabel(imageProcessingMode.title, tint: .brandAccentDeep)
                 }
+                .accessibilityLabel("Image Processing")
+                .accessibilityValue(imageProcessingMode.title)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
 
             sectionDivider
 
-            HStack(spacing: 14) {
-                rowIcon(systemImage: "doc.text.viewfinder", tint: .teal)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("PDF OCR Mode")
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.primary)
-
-                    Menu {
-                        ForEach(PDFOCRMode.allCases) { mode in
-                            Button {
-                                pdfOCRModeRaw = mode.rawValue
-                            } label: {
-                                if mode == pdfOCRMode {
-                                    Label(mode.title, systemImage: "checkmark")
-                                } else {
-                                    Text(mode.title)
-                                }
+            advancedPickerRow(
+                icon: "doc.text.viewfinder",
+                tint: .brandAccent,
+                title: "PDF OCR Mode",
+                subtitle: Text(pdfOCRMode.subtitle)
+            ) {
+                Menu {
+                    ForEach(PDFOCRMode.allCases) { mode in
+                        Button {
+                            pdfOCRModeRaw = mode.rawValue
+                        } label: {
+                            if mode == pdfOCRMode {
+                                Label(mode.title, systemImage: "checkmark")
+                            } else {
+                                Text(mode.title)
                             }
                         }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Text(pdfOCRMode.title)
-                                .font(.subheadline)
-                                .multilineTextAlignment(.leading)
-                                .fixedSize(horizontal: false, vertical: true)
-
-                            Spacer(minLength: 8)
-
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .accessibilityHidden(true)
-                        }
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 12)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .background(Color.teal.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                     }
-                    .accessibilityLabel("PDF OCR Mode")
-                    .accessibilityValue(pdfOCRMode.title)
-
-                    Text(pdfOCRMode.subtitle)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
+                } label: {
+                    pickerMenuLabel(pdfOCRMode.title, tint: .brandAccent)
                 }
+                .accessibilityLabel("PDF OCR Mode")
+                .accessibilityValue(pdfOCRMode.title)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
 
             sectionDivider
 
-            HStack(spacing: 14) {
-                rowIcon(systemImage: "text.viewfinder", tint: .orange)
-
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("OCR Engine")
-                        .font(.body)
-                        .fontWeight(.medium)
-                        .foregroundStyle(.primary)
-
-                    Menu {
-                        ForEach(DocumentOCRBackend.allCases) { backend in
-                            Button {
-                                documentOCRBackendRaw = backend.rawValue
-                            } label: {
-                                if backend == documentOCRBackend {
-                                    Label(backend.title, systemImage: "checkmark")
-                                } else {
-                                    Text(backend.title)
-                                }
+            advancedPickerRow(
+                icon: "text.viewfinder",
+                tint: .brandAccent,
+                title: "OCR Engine",
+                subtitle: Text(documentOCRBackend.subtitle)
+            ) {
+                Menu {
+                    ForEach(DocumentOCRBackend.allCases) { backend in
+                        Button {
+                            documentOCRBackendRaw = backend.rawValue
+                        } label: {
+                            if backend == documentOCRBackend {
+                                Label(backend.title, systemImage: "checkmark")
+                            } else {
+                                Text(backend.title)
                             }
-                            .disabled(backend == .glmOCR && !isGLMOCRDownloaded)
                         }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Text(documentOCRBackend.title)
-                                .font(.subheadline)
-                            Spacer(minLength: 8)
-                            Image(systemName: "chevron.up.chevron.down")
-                                .font(.caption2)
-                                .fontWeight(.semibold)
-                                .accessibilityHidden(true)
-                        }
-                        .foregroundStyle(.primary)
-                        .padding(.horizontal, 12)
-                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                        .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+                        .disabled(backend == .glmOCR && !isGLMOCRDownloaded)
                     }
-                    .accessibilityLabel("OCR Engine")
-                    .accessibilityValue(documentOCRBackend.title)
-
-                    Text(documentOCRBackend.subtitle)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-
-                    if !isGLMOCRDownloaded {
-                        glmOCRDownloadControl
-                    }
+                } label: {
+                    pickerMenuLabel(documentOCRBackend.title, tint: .brandAccent)
+                }
+                .accessibilityLabel("OCR Engine")
+                .accessibilityValue(documentOCRBackend.title)
+            } footer: {
+                if !isGLMOCRDownloaded {
+                    glmOCRDownloadControl
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
         }
     }
 
@@ -697,7 +534,7 @@ struct AdvancedSettingsView: View {
 
             advancedToggleRow(
                 icon: "speaker.wave.2.fill",
-                tint: .orange,
+                tint: .brandAccent,
                 title: "Read Replies Aloud",
                 subtitle: "Speak control on responses for hands-free playback",
                 isOn: $autoRead
@@ -721,7 +558,7 @@ struct AdvancedSettingsView: View {
 
             advancedToggleRow(
                 icon: "curlybraces",
-                tint: .indigo,
+                tint: .brandAccentDeep,
                 title: "Reply Style",
                 subtitle: "Show quick options under replies",
                 isOn: $smartReplyStylesEnabled
@@ -743,55 +580,30 @@ struct AdvancedSettingsView: View {
     /// The only action in the app that leaves the device, so which site it
     /// goes to is the user's call rather than a hardcoded Google URL.
     private var webSearchRow: some View {
-        HStack(spacing: 14) {
-            rowIcon(systemImage: "globe", tint: .teal)
-
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Web Search")
-                    .font(.body)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.primary)
-
-                Text("Used by \"Search on Web\" in a message's menu. Nothing leaves the device until you tap it.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Menu {
-                    ForEach(WebSearchEngine.allCases) { engine in
-                        Button {
-                            webSearchEngineRaw = engine.rawValue
-                        } label: {
-                            if engine == webSearchEngine {
-                                Label(engine.title, systemImage: "checkmark")
-                            } else {
-                                Text(engine.title)
-                            }
+        advancedPickerRow(
+            icon: "globe",
+            tint: .brandAccent,
+            title: "Web Search",
+            subtitle: Text("Used by \"Search on Web\" in a message's menu. Nothing leaves the device until you tap it.")
+        ) {
+            Menu {
+                ForEach(WebSearchEngine.allCases) { engine in
+                    Button {
+                        webSearchEngineRaw = engine.rawValue
+                    } label: {
+                        if engine == webSearchEngine {
+                            Label(engine.title, systemImage: "checkmark")
+                        } else {
+                            Text(engine.title)
                         }
                     }
-                } label: {
-                    HStack(spacing: 8) {
-                        Text(webSearchEngine.title)
-                            .font(.subheadline)
-
-                        Spacer(minLength: 8)
-
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .accessibilityHidden(true)
-                    }
-                    .foregroundStyle(.primary)
-                    .padding(.horizontal, 12)
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                    .background(Color.teal.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                 }
-                .accessibilityLabel(Text("Web Search"))
-                .accessibilityValue(Text(webSearchEngine.title))
+            } label: {
+                pickerMenuLabel(webSearchEngine.title, tint: .brandAccent)
             }
+            .accessibilityLabel(Text("Web Search"))
+            .accessibilityValue(Text(webSearchEngine.title))
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 14)
     }
 
     // MARK: - Text Size
@@ -800,7 +612,7 @@ struct AdvancedSettingsView: View {
         advancedSection("Display") {
             VStack(spacing: 14) {
                 HStack(spacing: 14) {
-                    rowIcon(systemImage: "textformat.size", tint: .purple)
+                    rowIcon(systemImage: "textformat.size", tint: .brandAccentDeep)
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Message Text Size")
@@ -822,7 +634,7 @@ struct AdvancedSettingsView: View {
                     } label: {
                         Text("Reset")
                             .font(.caption.weight(.semibold))
-                            .foregroundStyle(messageTextScale == 1.0 ? Color.adaptive(white: 0.7) : .blue)
+                            .foregroundStyle(messageTextScale == 1.0 ? Color.adaptive(white: 0.7) : .brandAccent)
                     }
                     .buttonStyle(.plain)
                     .disabled(messageTextScale == 1.0)
@@ -835,7 +647,7 @@ struct AdvancedSettingsView: View {
                         .foregroundStyle(Color.adaptive(white: 0.5))
 
                     Slider(value: $messageTextScale, in: 0.8...1.3, step: 0.05)
-                        .tint(.purple)
+                        .tint(.brandAccentDeep)
 
                     Image(systemName: "textformat.size.larger")
                         .font(.caption)
@@ -876,7 +688,7 @@ struct AdvancedSettingsView: View {
                 content()
             }
             .background(Color.adaptiveCard, in: RoundedRectangle(cornerRadius: 16))
-            .shadow(color: .black.opacity(0.04), radius: 10, y: 5)
+            .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
         }
     }
 
@@ -914,11 +726,84 @@ struct AdvancedSettingsView: View {
         .padding(.vertical, 14)
     }
 
+    /// A row with a menu-style control. The icon sits beside the title and the
+    /// control, description and any footer hang under the title, so the icon
+    /// reads as part of the row instead of floating halfway down a tall stack.
+    private func advancedPickerRow<Control: View, Footer: View>(
+        icon: String,
+        tint: Color,
+        title: LocalizedStringKey,
+        subtitle: Text,
+        @ViewBuilder control: () -> Control,
+        @ViewBuilder footer: () -> Footer
+    ) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            rowIcon(systemImage: icon, tint: tint)
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text(title)
+                    .font(.body)
+                    .fontWeight(.medium)
+                    .foregroundStyle(.primary)
+                    .frame(minHeight: rowIconSize, alignment: .leading)
+
+                control()
+
+                subtitle
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                footer()
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+    }
+
+    private func advancedPickerRow<Control: View>(
+        icon: String,
+        tint: Color,
+        title: LocalizedStringKey,
+        subtitle: Text,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        advancedPickerRow(icon: icon, tint: tint, title: title, subtitle: subtitle, control: control) {
+            EmptyView()
+        }
+    }
+
+    private func pickerMenuLabel(_ title: String, tint: Color, isBusy: Bool = false) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.subheadline)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Spacer(minLength: 8)
+
+            if isBusy {
+                ProgressView().controlSize(.small)
+            } else {
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2)
+                    .fontWeight(.semibold)
+                    .accessibilityHidden(true)
+            }
+        }
+        .foregroundStyle(.primary)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private let rowIconSize: CGFloat = 34
+
     private func rowIcon(systemImage: String, tint: Color) -> some View {
         Image(systemName: systemImage)
-            .font(.system(size: 14, weight: .semibold))
+            .font(.system(size: 15, weight: .semibold))
             .foregroundStyle(tint)
-            .frame(width: 34, height: 34)
+            .frame(width: rowIconSize, height: rowIconSize)
             .background(tint.opacity(0.1), in: RoundedRectangle(cornerRadius: 9))
             .accessibilityHidden(true)
     }

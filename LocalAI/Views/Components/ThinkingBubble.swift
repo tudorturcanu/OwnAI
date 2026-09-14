@@ -10,7 +10,7 @@ struct ThinkingBubble: View {
                 .font(.system(size: 20))
                 .foregroundStyle(
                     LinearGradient(
-                        colors: [.orange, .pink],
+                        colors: [.brandAccent, .brandAccentDeep],
                         startPoint: .topLeading,
                         endPoint: .bottomTrailing
                     )

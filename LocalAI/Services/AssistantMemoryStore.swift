@@ -13,6 +13,9 @@ final class AssistantMemoryStore {
     }
 
     static let maxFacts = 20
+    /// Bounds for a single fact, shared with the "Remember This" editor.
+    static let minFactLength = 6
+    static let maxFactLength = 160
     // Stored facts and injected facts are different budgets: 20 facts of up
     // to 160 chars are worth keeping, but injecting them all costs several
     // hundred tokens of every request against a 4k on-device context window.
@@ -49,7 +52,7 @@ final class AssistantMemoryStore {
     func add(_ newFacts: [String]) {
         let cleaned = newFacts
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { $0.count >= 6 && $0.count <= 160 }
+            .filter { $0.count >= Self.minFactLength && $0.count <= Self.maxFactLength }
         guard !cleaned.isEmpty else { return }
 
         var texts = facts.map(\.text)
@@ -72,7 +75,7 @@ final class AssistantMemoryStore {
     /// one collapses the two.
     func update(_ fact: Fact, to newText: String) {
         let cleaned = newText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard cleaned.count >= 6, cleaned.count <= 160 else { return }
+        guard cleaned.count >= Self.minFactLength, cleaned.count <= Self.maxFactLength else { return }
 
         var texts = facts.map(\.text)
         guard let index = texts.firstIndex(of: fact.text) else { return }

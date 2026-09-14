@@ -74,10 +74,11 @@ struct SavedPromptsView: View {
                     Button {
                         isAddSheetPresented = true
                     } label: {
-                        Image(systemName: "plus")
+                        // Title + symbol: the title shows if a side bar
+                        // (iPhone Duo) moves the item into overflow.
+                        Label(String(localized: "Add prompt"), systemImage: "plus")
                     }
                     .disabled(promptStore.prompts.count >= SavedPromptStore.maxPrompts)
-                    .accessibilityLabel(String(localized: "Add prompt"))
                 }
             }
         }
@@ -176,7 +177,9 @@ struct SavedPromptsView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     }
+                    .listRowBackground(Color.adaptiveCard)
                 }
+                .paperList()
                 .listStyle(.insetGrouped)
                 .searchable(text: $searchText, prompt: Text(String(localized: "Search prompts")))
                 .overlay {
@@ -206,11 +209,11 @@ struct SavedPromptsView: View {
             HStack(spacing: 14) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10)
-                        .fill(isActive ? Color.orange.opacity(0.12) : Color(uiColor: .systemGray5))
+                        .fill(isActive ? Color.brandAccent.opacity(0.12) : Color.adaptive(white: 0.9))
                         .frame(width: 44, height: 44)
                     Image(systemName: isActive ? "checkmark.circle.fill" : "books.vertical.fill")
                         .font(.body.weight(.semibold))
-                        .foregroundStyle(isActive ? .orange : .secondary)
+                        .foregroundStyle(isActive ? .brandAccent : .secondary)
                         .accessibilityHidden(true)
                 }
 
@@ -229,10 +232,10 @@ struct SavedPromptsView: View {
                 if isActive {
                     Text(String(localized: "Active"))
                         .font(.caption.weight(.semibold))
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(.brandAccent)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.orange.opacity(0.1), in: Capsule())
+                        .background(Color.brandAccent.opacity(0.1), in: Capsule())
                 }
             }
         }
@@ -247,14 +250,14 @@ struct SavedPromptsView: View {
             } label: {
                 Label(String(localized: "Edit"), systemImage: "pencil")
             }
-            .tint(.blue)
+            .tint(.brandAccent)
 
             Button {
                 duplicatePrompt(prompt)
             } label: {
                 Label(String(localized: "Duplicate"), systemImage: "plus.square.on.square")
             }
-            .tint(.orange)
+            .tint(.brandAccent)
             .disabled(!canAddPrompt)
         }
         .contextMenu {
@@ -280,7 +283,7 @@ struct SavedPromptsView: View {
 
     private var emptyState: some View {
         VStack(spacing: 20) {
-            AppLottieView(animation: .bookmarkPop, loops: false, tint: .orange)
+            AppLottieView(animation: .bookmarkPop, loops: false, tint: .brandAccent)
                 .frame(width: 48, height: 48)
 
             VStack(spacing: 8) {
@@ -299,7 +302,7 @@ struct SavedPromptsView: View {
                     .font(.headline)
                     .padding(.horizontal, 24)
                     .padding(.vertical, 14)
-                    .background(Color.orange)
+                    .background(Color.brandAccent)
                     .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
             }
@@ -315,13 +318,13 @@ struct SavedPromptsView: View {
             Image(systemName: "books.vertical.fill")
                 .font(.system(size: 52))
                 .foregroundStyle(
-                    LinearGradient(colors: [.orange, .pink], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    LinearGradient(colors: [.brandAccent, .brandAccentDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
                 )
                 .accessibilityHidden(true)
 
             VStack(spacing: 10) {
                 Text(String(localized: "Prompt Library"))
-                    .font(.title2.bold())
+                    .font(.display(.title2, weight: .bold))
                 Text(String(localized: "Save up to 20 named AI personalities and switch between them instantly. Available with Own AI Pro."))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -336,7 +339,7 @@ struct SavedPromptsView: View {
                     .padding(.horizontal, 32)
                     .padding(.vertical, 14)
                     .background(
-                        LinearGradient(colors: [.orange, .pink], startPoint: .leading, endPoint: .trailing)
+                        LinearGradient(colors: [.brandAccent, .brandAccentDeep], startPoint: .leading, endPoint: .trailing)
                     )
                     .foregroundStyle(.white)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -376,6 +379,7 @@ struct PromptEditorSheet: View {
                 } header: {
                     Text(String(localized: "Name"))
                 }
+                .listRowBackground(Color.adaptiveCard)
 
                 Section {
                     TextEditor(text: $prompt)
@@ -397,7 +401,9 @@ struct PromptEditorSheet: View {
                 } footer: {
                     Text(String(localized: "This text will be sent as the AI's instructions at the start of each conversation."))
                 }
+                .listRowBackground(Color.adaptiveCard)
             }
+            .paperList()
             .navigationTitle(isEditing ? String(localized: "Edit Prompt") : String(localized: "New Prompt"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

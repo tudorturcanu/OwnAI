@@ -18,7 +18,7 @@ struct SuggestionCard: View {
                     .font(.title3.weight(.semibold))
                     .foregroundStyle(
                         LinearGradient(
-                            colors: [.orange, .pink],
+                            colors: [.brandAccent, .brandAccentDeep],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -28,7 +28,7 @@ struct SuggestionCard: View {
                         Circle()
                             .fill(
                                 LinearGradient(
-                                    colors: [.orange.opacity(0.12), .pink.opacity(0.12)],
+                                    colors: [.brandAccent.opacity(0.12), .brandAccentDeep.opacity(0.12)],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -38,7 +38,7 @@ struct SuggestionCard: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(.headline)
+                        .font(.display(.headline))
                         .foregroundStyle(Color.adaptive(white: 0.1))
                         .fixedSize(horizontal: false, vertical: true)
                     
@@ -46,22 +46,14 @@ struct SuggestionCard: View {
                         .font(.subheadline)
                         .foregroundStyle(Color.adaptive(white: 0.4))
                         .fixedSize(horizontal: false, vertical: true)
-                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 8 : 2, reservesSpace: !dynamicTypeSize.isAccessibilitySize)
                 }
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)
             .frame(width: cardWidth, alignment: .topLeading)
             .frame(minHeight: 110)
-            .background(
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(Color.adaptiveCard.opacity(0.7))
-                    .shadow(color: .black.opacity(0.05), radius: 10, x: 0, y: 5)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 20)
-                    .stroke(Color.adaptiveBorder(opacity: 0.5), lineWidth: 1)
-            )
+            .paperCard(radius: 20)
         }
         .buttonStyle(PressedScaleButtonStyle())
         .accessibilityElement(children: .combine)

@@ -81,22 +81,25 @@ struct DownloadsView: View {
             .animation(.easeInOut(duration: 0.25), value: active.map(\.id))
             .animation(.easeInOut(duration: 0.25), value: queued.map(\.id))
             .animation(.easeInOut(duration: 0.25), value: failed.map(\.id))
+            .readableContentWidth()
         }
-        .background(Color.adaptive(white: 0.96))
+        .background(Color.adaptiveGroupedBackground)
         .navigationTitle(String(localized: "Downloads"))
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
+            // Semantic placements instead of fixed top-bar edges, so a side
+            // bar (iPhone Duo) orders them close-first, then actions.
             if isPresentedAsSheet {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button(String(localized: "Done")) { dismiss() }
+                ToolbarItem(placement: .cancellationAction) {
+                    SheetCloseButton { dismiss() }
                 }
             }
             if modelManager.hasDownloadActivity {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .primaryAction) {
                     Button(role: .destructive) {
                         showCancelAllConfirmation = true
                     } label: {
-                        Text(String(localized: "Stop All"))
+                        Label(String(localized: "Stop All"), systemImage: "stop.circle")
                     }
                 }
             }
@@ -131,11 +134,11 @@ struct DownloadsView: View {
                     if let progress = modelManager.aggregateDownloadProgress {
                         Text(DownloadProgressFormat.percent(progress))
                             .font(.subheadline.weight(.bold).monospacedDigit())
-                            .foregroundStyle(Color.blue)
+                            .foregroundStyle(Color.brandAccent)
                     } else {
                         Image(systemName: "arrow.down")
                             .font(.headline.weight(.bold))
-                            .foregroundStyle(Color.blue)
+                            .foregroundStyle(Color.brandAccent)
                     }
                 }
 
@@ -158,7 +161,7 @@ struct DownloadsView: View {
         .padding(18)
         .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(summaryHeadline)
         .accessibilityValue(summaryDetail ?? "")
@@ -227,7 +230,7 @@ struct DownloadsView: View {
         .padding(.horizontal, 16)
         .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
     }
 
     // MARK: - Layout Helpers
@@ -316,7 +319,7 @@ struct ActiveDownloadRow: View {
                 if let progress {
                     Text(DownloadProgressFormat.percent(progress))
                         .font(.subheadline.weight(.bold).monospacedDigit())
-                        .foregroundStyle(Color.blue)
+                        .foregroundStyle(Color.brandAccent)
                 }
 
                 // Pause/resume is the non-destructive control, so it sits
@@ -347,7 +350,7 @@ struct ActiveDownloadRow: View {
                 ])
             }
 
-            DownloadProgressBar(progress: progress, tint: isValidating ? .green : .blue)
+            DownloadProgressBar(progress: progress, tint: isValidating ? .green : .brandAccent)
 
             Text(statusLine)
                 .font(.caption)
@@ -358,7 +361,7 @@ struct ActiveDownloadRow: View {
         .padding(16)
         .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(model.name)
         .accessibilityValue(accessibilityValue)
@@ -380,9 +383,9 @@ struct DownloadPauseResumeButton: View {
         } label: {
             Image(systemName: isPaused ? "play.fill" : "pause.fill")
                 .font(.caption.bold())
-                .foregroundStyle(isPaused ? Color.blue : Color.adaptive(white: 0.45))
+                .foregroundStyle(isPaused ? Color.brandAccent : Color.adaptive(white: 0.45))
                 .frame(width: buttonSize, height: buttonSize)
-                .background(isPaused ? Color.blue.opacity(0.1) : Color.black.opacity(0.04))
+                .background(isPaused ? Color.brandAccent.opacity(0.1) : Color.black.opacity(0.04))
                 .clipShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
@@ -443,7 +446,7 @@ struct QueuedDownloadRow: View {
         .padding(14)
         .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
     }
 }
 
@@ -452,8 +455,8 @@ struct QueuedDownloadRow: View {
 struct FailedDownloadRow: View {
     let model: ModelInfo
     @Environment(ModelManager.self) private var modelManager
-    @Environment(\.openURL) private var openURL
-    @Environment(\.dismiss) private var dismiss
+    @State private var showStorageSheet = false
+    @State private var showAllowCellularAlert = false
 
     private var message: String {
         if case .error(let message) = model.downloadState { return message }
@@ -494,10 +497,10 @@ struct FailedDownloadRow: View {
                             .fontWeight(.medium)
                     }
                     .font(.subheadline)
-                    .foregroundStyle(.blue)
+                    .foregroundStyle(.brandAccent)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 11)
-                    .background(Color.blue.opacity(0.08))
+                    .background(Color.brandAccent.opacity(0.08))
                     .clipShape(RoundedRectangle(cornerRadius: 10))
                 }
                 .buttonStyle(ActionButtonStyle())
@@ -519,7 +522,13 @@ struct FailedDownloadRow: View {
         .padding(16)
         .background(Color.adaptiveCard)
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.03), radius: 6, y: 3)
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
+        .sheet(isPresented: $showStorageSheet) {
+            ModelStorageSheet()
+        }
+        .allowCellularDownloadsAlert(isPresented: $showAllowCellularAlert) {
+            modelManager.downloadModel(model.id, selectWhenFinished: true)
+        }
     }
 
     private func perform(_ action: DownloadErrorAction) {
@@ -529,13 +538,13 @@ struct FailedDownloadRow: View {
         case .repair:
             modelManager.repairModel(model.id, selectWhenFinished: true)
         case .freeSpace:
-            if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
-                openURL(settingsURL)
-            }
-        case .cellularRestricted, .unsupported:
-            // Both are resolved somewhere else (Settings, or a different model),
-            // so there is nothing to do here but get out of the way.
-            dismiss()
+            showStorageSheet = true
+        case .cellularRestricted:
+            showAllowCellularAlert = true
+        case .unsupported:
+            // Nothing can fix this model; just clear its banner and leave the
+            // rest of the downloads screen where it is.
+            modelManager.dismissDownloadFailure(for: model.id)
         }
     }
 }
@@ -546,7 +555,7 @@ struct FailedDownloadRow: View {
 /// is unknown, rather than showing a zero-width bar that reads as stalled.
 struct DownloadProgressBar: View {
     let progress: Double?
-    var tint: Color = .blue
+    var tint: Color = .brandAccent
     var height: CGFloat = 8
 
     @State private var slidePhase: CGFloat = -0.4

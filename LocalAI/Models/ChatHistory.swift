@@ -402,6 +402,12 @@ final class ChatHistoryManager {
                         deletedConversationIDs: deletedConversationIDs
                     )
                 }
+                // Spotlight mirrors the same delta the store just wrote, so
+                // search never advertises a chat that failed to persist.
+                ConversationSpotlightIndexer.update(
+                    changed: fullSnapshot ?? changedConversations,
+                    deletedIDs: deletedConversationIDs
+                )
                 Task { @MainActor [weak self] in
                     self?.recordPersistenceSuccess()
                 }

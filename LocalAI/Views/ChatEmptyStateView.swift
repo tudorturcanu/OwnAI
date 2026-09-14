@@ -20,11 +20,13 @@ struct ChatEmptyStateView: View {
 
     @State private var suggestions: [ChatSuggestion] = ChatSuggestions.pool.shuffled().prefix(7).map { $0 }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var appeared = false
 
     var body: some View {
         VStack(spacing: 32) {
             modelStatusView
                 .padding(.top, isInputFocused ? 10 : 20)
+                .staggeredEntrance(index: 0, appeared: appeared, reduceMotion: reduceMotion)
 
             if !isInputFocused {
                 Spacer()
@@ -33,12 +35,14 @@ struct ChatEmptyStateView: View {
             VStack(spacing: isInputFocused ? 12 : 24) {
                 if !isInputFocused {
                     SparkleView(size: 140)
+                        .staggeredEntrance(index: 1, appeared: appeared, reduceMotion: reduceMotion)
                 }
 
                 VStack(spacing: 4) {
                     Text(String(localized: "Start a Conversation"))
-                        .font(isInputFocused ? .headline : .title2.bold())
+                        .font(isInputFocused ? .display(.headline) : .display(.title2, weight: .bold))
                         .foregroundStyle(Color.adaptive(white: 0.15))
+                        .staggeredEntrance(index: 2, appeared: appeared, reduceMotion: reduceMotion)
 
                     if let selectedModelName {
                         Text(String(format: String(localized: "Using %@"), selectedModelName))
@@ -54,13 +58,13 @@ struct ChatEmptyStateView: View {
 
                                 Text(downloadStatusText(for: downloadingModelName))
                                     .font(.caption.weight(.medium))
-                                    .foregroundStyle(.blue)
+                                    .foregroundStyle(.brandAccent)
                             }
 
                             if let downloadProgress {
                                 ProgressView(value: downloadProgress)
                                     .progressViewStyle(.linear)
-                                    .tint(.blue)
+                                    .tint(.brandAccent)
                                     .frame(maxWidth: 220)
                             }
 
@@ -80,7 +84,7 @@ struct ChatEmptyStateView: View {
                         }
                         .padding(.horizontal, 20)
                         .padding(.vertical, 14)
-                        .background(Color.blue.opacity(0.08))
+                        .background(Color.brandAccent.opacity(0.08))
                         .clipShape(RoundedRectangle(cornerRadius: 16))
                         .accessibilityElement(children: .combine)
                     } else if !isAppleIntelligenceAvailable {
@@ -91,30 +95,40 @@ struct ChatEmptyStateView: View {
                                 Text(String(localized: "Download a Model"))
                             }
                             .font(.subheadline.bold())
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(.brandAccent)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .background(Color.blue.opacity(0.1))
+                            .background(Color.brandAccent.opacity(0.1))
                             .clipShape(Capsule())
                         }
                     } else {
-                        Text(String(localized: "Select or download a model in Settings"))
-                            .font(.caption)
-                            .foregroundStyle(.orange)
+                        Button(action: onDownloadModel) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "square.stack.3d.up")
+                                    .accessibilityHidden(true)
+                                Text(String(localized: "Select or download a model in Settings"))
+                            }
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.brandAccent)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(Color.brandAccent.opacity(0.1))
+                            .clipShape(Capsule())
+                        }
                     }
 
                     if selectedModelName != nil, let onVoiceConversation {
                         Button(action: onVoiceConversation) {
                             HStack(spacing: 8) {
-                                AppLottieView(animation: .voiceWave, tint: .blue)
+                                AppLottieView(animation: .voiceWave, tint: .brandAccent)
                                     .frame(width: 21, height: 14)
                                 Text(String(localized: "Try a Voice Conversation"))
                             }
                             .font(.subheadline.bold())
-                            .foregroundStyle(.blue)
+                            .foregroundStyle(.brandAccent)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .background(Color.blue.opacity(0.1))
+                            .background(Color.brandAccent.opacity(0.1))
                             .clipShape(Capsule())
                         }
                         .padding(.top, 6)
@@ -138,10 +152,11 @@ struct ChatEmptyStateView: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 12) {
-                    ForEach(suggestions) { suggestion in
+                    ForEach(Array(suggestions.enumerated()), id: \.element.id) { offset, suggestion in
                         SuggestionCard(icon: suggestion.icon, title: suggestion.title, subtitle: suggestion.subtitle) {
                             onSuggestion(suggestion)
                         }
+                        .staggeredEntrance(index: 3 + min(offset, 3), appeared: appeared, reduceMotion: reduceMotion)
                     }
                 }
                 .padding(.horizontal, 20)
@@ -152,7 +167,8 @@ struct ChatEmptyStateView: View {
         }
         .frame(maxWidth: .infinity)
         .onAppear {
-            suggestions = ChatSuggestions.pool.shuffled().prefix(7).map { $0 }
+            guard !appeared else { return }
+            appeared = true
         }
     }
 
@@ -180,15 +196,15 @@ struct ChatEmptyStateView: View {
 
     private var statusColor: Color {
         if isWarmingUp {
-            return .blue
+            return .brandAccent
         }
         if selectedModelName != nil {
             return .green
         }
         if downloadingModelName != nil {
-            return .blue
+            return .brandAccent
         }
-        return .orange
+        return .brandAccent
     }
 
     private var statusTitle: String {

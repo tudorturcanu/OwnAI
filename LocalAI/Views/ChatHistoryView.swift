@@ -12,8 +12,9 @@ struct ChatHistoryView: View {
     @Environment(ChatHistoryManager.self) private var historyManager
     @Environment(MonetizationManager.self) private var monetizationManager
 
-    /// True when shown as the persistent sidebar of an iPad split layout:
-    /// no own NavigationStack, no Done button, and selection must not dismiss.
+    /// True when shown as the persistent sidebar of the regular-width split
+    /// layout (iPad, Pro Max landscape, iPhone Duo's inner display): no own
+    /// NavigationStack, no close button, and selection must not dismiss.
     var isEmbedded: Bool = false
 
     @State private var showDeleteAllConfirmation = false
@@ -26,6 +27,7 @@ struct ChatHistoryView: View {
     @State private var exportConversation: ChatConversation?
     @State private var exportShareItems: [Any] = []
     @State private var isShareSheetPresented = false
+    @State private var exportErrorMessage: String?
     @State private var upgradeFeature: PremiumFeature?
     @State private var isNewFolderPresented = false
     @State private var newFolderName = ""
@@ -174,9 +176,13 @@ struct ChatHistoryView: View {
             if let pending = historyManager.pendingDeletion {
                 undoDeleteBar(for: pending)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if let folderPending = folderStore.pendingFolderDeletion {
+                undoFolderDeleteBar(for: folderPending)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: historyManager.pendingDeletion?.conversation.id)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: folderStore.pendingFolderDeletion?.folder.id)
         // Export share sheet
         .sheet(isPresented: $isShareSheetPresented, onDismiss: { discardExportedConversation() }) {
             ShareSheet(items: exportShareItems)
@@ -268,6 +274,17 @@ struct ChatHistoryView: View {
                 Button(String(localized: "Cancel"), role: .cancel) { }
             }
         }
+        .alert(
+            String(localized: "Export Failed"),
+            isPresented: Binding(
+                get: { exportErrorMessage != nil },
+                set: { if !$0 { exportErrorMessage = nil } }
+            )
+        ) {
+            Button(String(localized: "OK"), role: .cancel) { exportErrorMessage = nil }
+        } message: {
+            Text(exportErrorMessage ?? "")
+        }
         // Rename conversation alert
         .alert(String(localized: "Rename Conversation"), isPresented: $isRenamePresented) {
             TextField(String(localized: "Conversation name"), text: $renameText)
@@ -346,81 +363,71 @@ struct ChatHistoryView: View {
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
-        .background(Color.adaptive(white: 0.96))
+        .background(Color.adaptiveBackground)
         .navigationTitle(String(localized: "History"))
         .navigationBarTitleDisplayMode(.large)
         .toolbar {
             if !isEmbedded {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(String(localized: "Done")) {
-                        dismiss()
-                    }
+                    SheetCloseButton { dismiss() }
                     .fontWeight(.medium)
                 }
             }
 
-            ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: 12) {
-                    if totalPinnedCount > 0 {
-                        Button {
-                            showPinnedMessages = true
-                        } label: {
-                            Image(systemName: "pin.fill")
-                                .accessibilityLabel(String(localized: "Pinned Messages"))
-                                .font(.body)
-                                .foregroundStyle(.orange)
-                        }
+            // Separate system items grouped by purpose instead of one HStack,
+            // so iPhone Duo's side bar can stack and overflow them. New Chat is
+            // the prominent action and comes first. Every item has a title for
+            // the overflow menu.
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    historyManager.newConversation()
+                    if !isEmbedded {
+                        dismiss()
                     }
+                } label: {
+                    Label(String(localized: "New Chat"), systemImage: "plus.circle.fill")
+                }
+                .tint(.brandAccent)
+            }
 
+            ToolbarItemGroup(placement: .primaryAction) {
+                if totalPinnedCount > 0 {
                     Button {
-                        if monetizationManager.canUse(.chatFolders) {
-                            presentNewFolderAlert()
-                        } else {
-                            pendingUpgradeAction = .createFolder
-                            upgradeFeature = .chatFolders
-                        }
+                        showPinnedMessages = true
                     } label: {
-                        Image(systemName: monetizationManager.canUse(.chatFolders) ? "folder.badge.plus" : "crown.fill")
-                            .accessibilityLabel(monetizationManager.canUse(.chatFolders)
-                                ? String(localized: "New Folder")
-                                : String(localized: "New Folder (Pro)"))
-                            .font(.body)
-                            .foregroundStyle(monetizationManager.canUse(.chatFolders) ? Color.secondary : Color.orange)
+                        Label(String(localized: "Pinned Messages"), systemImage: "pin.fill")
                     }
+                    .tint(.brandAccent)
+                }
 
-                    Button {
-                        historyManager.newConversation()
-                        if !isEmbedded {
-                            dismiss()
-                        }
+                Button {
+                    if monetizationManager.canUse(.chatFolders) {
+                        presentNewFolderAlert()
+                    } else {
+                        pendingUpgradeAction = .createFolder
+                        upgradeFeature = .chatFolders
+                    }
+                } label: {
+                    Label(
+                        monetizationManager.canUse(.chatFolders)
+                            ? String(localized: "New Folder")
+                            : String(localized: "New Folder (Pro)"),
+                        systemImage: monetizationManager.canUse(.chatFolders) ? "folder.badge.plus" : "crown.fill"
+                    )
+                }
+                .tint(monetizationManager.canUse(.chatFolders) ? Color.secondary : Color.brandAccent)
+            }
+
+            // Bulk cleanup used to live only in Settings, two screens away
+            // from the list the user is looking at. It sits in the system
+            // overflow menu, not a homemade "…" menu, so on iPhone Duo it
+            // shares one overflow button with items the side bar pushes out.
+            if historyManager.conversations.contains(where: { !$0.messages.isEmpty }) {
+                ToolbarItem(placement: .secondaryAction) {
+                    Button(role: .destructive) {
+                        showDeleteAllConfirmation = true
                     } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .accessibilityLabel(String(localized: "New Chat"))
-                            .font(.title3)
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [.orange, .pink],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                    }
-
-                    // Bulk cleanup used to live only in Settings, two screens
-                    // away from the list the user is looking at.
-                    if historyManager.conversations.contains(where: { !$0.messages.isEmpty }) {
-                        Menu {
-                            Button(role: .destructive) {
-                                showDeleteAllConfirmation = true
-                            } label: {
-                                Label(String(localized: "Delete All Chats"), systemImage: "trash")
-                            }
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
-                                .font(.body)
-                                .foregroundStyle(Color.secondary)
-                        }
-                        .accessibilityLabel(String(localized: "More"))
+                        Label(String(localized: "Delete All Chats"), systemImage: "trash")
                     }
                 }
             }
@@ -477,7 +484,50 @@ struct ChatHistoryView: View {
                 }
             }
             .font(.subheadline.weight(.bold))
-            .foregroundStyle(.orange)
+            .foregroundStyle(.brandAccent)
+            .buttonStyle(.plain)
+            .frame(minHeight: 44)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color(white: 0, opacity: 0.85))
+        )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+        .accessibilityElement(children: .contain)
+    }
+
+    private func undoFolderDeleteBar(for pending: ChatFolderStore.PendingFolderDeletion) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: "trash")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.white.opacity(0.7))
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(String(localized: "Folder deleted"))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.white)
+                Text("\(pending.folder.emoji) \(pending.folder.name)")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.65))
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            Button(String(localized: "Undo")) {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                withAnimation(.spring(response: 0.3)) {
+                    if let restored = folderStore.undoFolderDeletion() {
+                        selectedFolderID = restored.id
+                    }
+                }
+            }
+            .font(.subheadline.weight(.bold))
+            .foregroundStyle(.brandAccent)
             .buttonStyle(.plain)
             .frame(minHeight: 44)
         }
@@ -502,7 +552,7 @@ struct ChatHistoryView: View {
             } else {
                 Image(systemName: "text.magnifyingglass")
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(.brandAccent)
                     .accessibilityHidden(true)
             }
 
@@ -559,14 +609,14 @@ struct ChatHistoryView: View {
                 value: "\(totalConversations)",
                 label: totalConversations == 1 ? String(localized: "Chat") : String(localized: "Chats"),
                 icon: "bubble.left.and.bubble.right.fill",
-                tint: .blue
+                tint: .brandAccent
             )
             statDivider
             statItem(
                 value: "\(totalMessages)",
                 label: totalMessages == 1 ? String(localized: "Message") : String(localized: "Messages"),
                 icon: "text.bubble.fill",
-                tint: .purple
+                tint: .brandAccentDeep
             )
             statDivider
             statItem(
@@ -575,12 +625,12 @@ struct ChatHistoryView: View {
                 // one can render a singular label here.
                 label: exactWordCount == 1 ? String(localized: "Word") : String(localized: "Words"),
                 icon: "textformat.abc",
-                tint: .orange
+                tint: .brandAccent
             )
         }
         .padding(.vertical, 16)
         .background(Color.adaptiveCard, in: RoundedRectangle(cornerRadius: 16))
-        .shadow(color: .black.opacity(0.04), radius: 10, y: 5)
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(Color.brandHairline, lineWidth: AppDesign.hairlineWidth))
         .padding(.bottom, 4)
         .task(id: totalMessages) {
             await fetchAbbreviatedWordCount(for: conversations)
@@ -662,6 +712,7 @@ struct ChatHistoryView: View {
                         }
 
                         Button(role: .destructive) {
+                            UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
                             if selectedFolderID == folder.id { selectedFolderID = nil }
                             folderStore.deleteFolder(id: folder.id)
                         } label: {
@@ -700,7 +751,7 @@ struct ChatHistoryView: View {
             }
             .padding(.horizontal, 14)
             .frame(minHeight: 44)
-            .background(isSelected ? Color.orange : Color.adaptiveCard)
+            .background(isSelected ? Color.brandAccent : Color.adaptiveCard)
             .foregroundStyle(isSelected ? .white : .primary)
             .clipShape(Capsule())
             .shadow(color: .black.opacity(0.05), radius: 4, y: 2)
@@ -774,7 +825,7 @@ struct ChatHistoryView: View {
                 systemImage: monetizationManager.canUse(.conversationExport) ? "square.and.arrow.up" : "crown.fill"
             )
         }
-        .tint(.blue)
+        .tint(.brandAccent)
 
         Button {
             handleMoveToFolder(conversation)
@@ -784,7 +835,7 @@ struct ChatHistoryView: View {
                 systemImage: monetizationManager.canUse(.chatFolders) ? "folder" : "crown.fill"
             )
         }
-        .tint(.orange)
+        .tint(.brandAccent)
     }
 
     @ViewBuilder
@@ -853,6 +904,7 @@ struct ChatHistoryView: View {
     // MARK: - Actions
 
     private func togglePinned(_ conversation: ChatConversation) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
         withAnimation(.spring(response: 0.3)) {
             historyManager.togglePinned(conversationID: conversation.id)
         }
@@ -907,6 +959,7 @@ struct ChatHistoryView: View {
             exportShareItems = [tempURL]
             isShareSheetPresented = true
         } catch {
+            exportErrorMessage = String(localized: "The export could not be saved. Free up some space and try again.")
         }
     }
 
@@ -1004,7 +1057,7 @@ struct ConversationRow: View {
                     Circle()
                         .fill(
                             isSelected ?
-                            LinearGradient(colors: [.orange.opacity(0.2), .pink.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing) :
+                            LinearGradient(colors: [.brandAccent.opacity(0.2), .brandAccentDeep.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing) :
                             LinearGradient(colors: [Color.adaptive(white: 0.92)], startPoint: .top, endPoint: .bottom)
                         )
                         .frame(width: 44, height: 44)
@@ -1013,7 +1066,7 @@ struct ConversationRow: View {
                         .font(.body)
                         .foregroundStyle(
                             isSelected ?
-                            LinearGradient(colors: [.orange, .pink], startPoint: .topLeading, endPoint: .bottomTrailing) :
+                            LinearGradient(colors: [.brandAccent, .brandAccentDeep], startPoint: .topLeading, endPoint: .bottomTrailing) :
                             LinearGradient(colors: [Color.adaptive(white: 0.5)], startPoint: .top, endPoint: .bottom)
                         )
                 }
@@ -1036,10 +1089,10 @@ struct ConversationRow: View {
                         if let folderLabel {
                             Text(folderLabel)
                                 .font(.caption2.weight(.medium))
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(.brandAccent)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
-                                .background(Color.orange.opacity(0.1), in: Capsule())
+                                .background(Color.brandAccent.opacity(0.1), in: Capsule())
                                 .lineLimit(1)
                         }
                     }
@@ -1067,10 +1120,10 @@ struct ConversationRow: View {
                 if let searchHit, searchHit.matchCount > 0 {
                     Text("\(searchHit.matchCount)")
                         .font(.caption.bold())
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(.brandAccent)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .background(Color.orange.opacity(0.12))
+                        .background(Color.brandAccent.opacity(0.12))
                         .clipShape(Capsule())
                 } else if !conversation.messages.isEmpty {
                     Text("\(conversation.messages.count)")
@@ -1093,9 +1146,9 @@ struct ConversationRow: View {
                 RoundedRectangle(cornerRadius: 16)
                     .stroke(
                         isSelected ?
-                        LinearGradient(colors: [.orange.opacity(0.4), .pink.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing) :
-                        LinearGradient(colors: [.clear], startPoint: .top, endPoint: .bottom),
-                        lineWidth: isSelected ? 1.5 : 0
+                        LinearGradient(colors: [.brandAccent.opacity(0.4), .brandAccentDeep.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing) :
+                        LinearGradient(colors: [Color.brandHairline], startPoint: .top, endPoint: .bottom),
+                        lineWidth: isSelected ? 1.5 : 1
                     )
             )
             .shadow(color: .black.opacity(isHovered ? 0.06 : 0.03), radius: isHovered ? 8 : 4, y: isHovered ? 4 : 2)
@@ -1132,7 +1185,7 @@ struct ConversationRow: View {
                 result += AttributedString(String(characters[cursor..<lower]))
             }
             var highlighted = AttributedString(String(characters[lower..<upper]))
-            highlighted.foregroundColor = .orange
+            highlighted.foregroundColor = .brandAccent
             highlighted.font = .caption.weight(.bold)
             result += highlighted
             cursor = upper
@@ -1246,11 +1299,60 @@ final class ChatFolderStore {
         persist()
     }
 
+    // MARK: - Undo Delete
+
+    struct PendingFolderDeletion {
+        let folder: ChatFolder
+        /// Position the folder occupied, so undo restores the original order.
+        let index: Int
+        /// The conversation→folder assignments removed with it, restored on undo.
+        let assignments: [String: String]
+    }
+
+    /// The most recent folder deletion, while it can still be undone.
+    private(set) var pendingFolderDeletion: PendingFolderDeletion?
+
+    @ObservationIgnored private var pendingFolderDeletionTask: Task<Void, Never>?
+    @ObservationIgnored private let undoDeleteWindow: Duration = .seconds(6)
+
     func deleteFolder(id: UUID) {
-        folders.removeAll { $0.id == id }
-        // Remove all assignments for this folder
+        guard let index = folders.firstIndex(where: { $0.id == id }) else { return }
+        let removed = folders[index]
+        let removedAssignments = assignments.filter { $0.value == id.uuidString }
+
+        folders.remove(at: index)
         assignments = assignments.filter { $0.value != id.uuidString }
+        pendingFolderDeletion = PendingFolderDeletion(
+            folder: removed,
+            index: index,
+            assignments: removedAssignments
+        )
         persist()
+
+        pendingFolderDeletionTask?.cancel()
+        let window = undoDeleteWindow
+        pendingFolderDeletionTask = Task { [weak self] in
+            try? await Task.sleep(for: window)
+            guard !Task.isCancelled else { return }
+            self?.pendingFolderDeletion = nil
+        }
+    }
+
+    /// Restores the last deleted folder, including its conversation assignments.
+    @discardableResult
+    func undoFolderDeletion() -> ChatFolder? {
+        guard let pending = pendingFolderDeletion else { return nil }
+        pendingFolderDeletionTask?.cancel()
+        pendingFolderDeletionTask = nil
+        pendingFolderDeletion = nil
+
+        let insertIndex = min(pending.index, folders.count)
+        folders.insert(pending.folder, at: insertIndex)
+        for (conversation, folder) in pending.assignments {
+            assignments[conversation] = folder
+        }
+        persist()
+        return pending.folder
     }
 
     func moveFolders(fromOffsets: IndexSet, toOffset: Int) {

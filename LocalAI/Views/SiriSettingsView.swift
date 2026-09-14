@@ -23,8 +23,9 @@ struct SiriSettingsView: View {
             .padding(.horizontal, 20)
             .padding(.top, 20)
             .padding(.bottom, 40)
+            .readableContentWidth()
         }
-        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
+        .background(Color.adaptiveGroupedBackground.ignoresSafeArea())
         .navigationTitle("Siri & Shortcuts")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -38,8 +39,7 @@ struct SiriSettingsView: View {
                     .fill(
                         LinearGradient(
                             colors: [
-                                Color(red: 0.22, green: 0.27, blue: 0.55),
-                                Color(red: 0.45, green: 0.28, blue: 0.60),
+                                Color.brandAccent, Color.brandAccentDeep,
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -47,7 +47,7 @@ struct SiriSettingsView: View {
                     )
                     .frame(width: 80, height: 80)
                     .shadow(
-                        color: Color(red: 0.3, green: 0.2, blue: 0.5).opacity(0.35),
+                        color: Color.brandAccent.opacity(0.3),
                         radius: 18,
                         y: 8
                     )
@@ -60,8 +60,7 @@ struct SiriSettingsView: View {
 
             VStack(spacing: 8) {
                 Text("Talk to Own AI with Siri")
-                    .font(.title2)
-                    .fontWeight(.bold)
+                    .font(.display(.title2, weight: .bold))
                     .multilineTextAlignment(.center)
 
                 Text("Ask questions, start conversations, and get instant AI responses — all hands-free using your voice.")
@@ -94,7 +93,7 @@ struct SiriSettingsView: View {
                             .frame(width: 30, height: 30)
                             .background(
                                 LinearGradient(
-                                    colors: [.purple, .blue],
+                                    colors: [.brandAccentDeep, .brandAccent],
                                     startPoint: .topLeading,
                                     endPoint: .bottomTrailing
                                 )
@@ -102,7 +101,9 @@ struct SiriSettingsView: View {
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                             .accessibilityHidden(true)
 
-                        Text("\"\(siriPhrases[index])\"")
+                        // Concatenate so the phrase itself goes through the
+                        // localization lookup; the quotes are literal.
+                        (Text(verbatim: "\u{201C}") + Text(siriPhrases[index]) + Text(verbatim: "\u{201D}"))
                             .font(.body)
                             .foregroundStyle(.primary)
                             .italic()
@@ -117,17 +118,26 @@ struct SiriSettingsView: View {
                     }
                 }
             }
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .background(Color.adaptiveCard)
             .clipShape(RoundedRectangle(cornerRadius: 14))
+
+            Text("Every phrase follows \"Hey Siri\". iOS has no custom wake words, so Own AI cannot be activated by voice on its own.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 4)
+                .padding(.top, 8)
         }
     }
 
-    private let siriPhrases = [
+    /// Mirrors the phrases registered in `OwnAIShortcuts`. "Hey Own AI" is
+    /// registered too, but it is only a phrase spoken after "Hey Siri", not a
+    /// wake word, so it is left out here to avoid suggesting otherwise.
+    private let siriPhrases: [LocalizedStringKey] = [
         "Ask Own AI [your question]",
         "Get an answer from Own AI",
         "Chat with Own AI",
         "Talk to Own AI",
-        "Hey Own AI",
     ]
 
     // MARK: - How It Works
@@ -141,11 +151,11 @@ struct SiriSettingsView: View {
                     HStack(alignment: .top, spacing: 14) {
                         ZStack {
                             Circle()
-                                .fill(Color.accentColor.opacity(0.12))
+                                .fill(Color.brandAccent.opacity(0.12))
                                 .frame(width: 30, height: 30)
                             Text("\(index + 1)")
                                 .font(.subheadline.bold())
-                                .foregroundStyle(Color.accentColor)
+                                .foregroundStyle(Color.brandAccent)
                         }
 
                         VStack(alignment: .leading, spacing: 3) {
@@ -169,12 +179,13 @@ struct SiriSettingsView: View {
                     }
                 }
             }
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .background(Color.adaptiveCard)
             .clipShape(RoundedRectangle(cornerRadius: 14))
         }
     }
 
-    private let steps: [(title: String, description: String)] = [
+    // `LocalizedStringKey` so `Text` looks the copy up in the strings table.
+    private let steps: [(title: LocalizedStringKey, description: LocalizedStringKey)] = [
         (
             title: "Activate Siri",
             description: "Say \"Hey Siri\" or press the side button to open Siri."
@@ -205,7 +216,7 @@ struct SiriSettingsView: View {
                         .font(.system(size: 14))
                         .foregroundStyle(.white)
                         .frame(width: 30, height: 30)
-                        .background(Color.indigo)
+                        .background(Color.brandAccentDeep)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .accessibilityHidden(true)
 
@@ -252,7 +263,7 @@ struct SiriSettingsView: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 13)
             }
-            .background(Color(uiColor: .secondarySystemGroupedBackground))
+            .background(Color.adaptiveCard)
             .clipShape(RoundedRectangle(cornerRadius: 14))
         }
     }

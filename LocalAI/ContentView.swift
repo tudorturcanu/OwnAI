@@ -5,6 +5,7 @@
 //  Created by Tudor on 29.01.2026.
 //
 
+import CoreSpotlight
 import SwiftUI
 
 struct ContentView: View {
@@ -31,30 +32,43 @@ struct ContentView: View {
     /// never silently marked finished just to reveal the chat underneath it.
     @State private var postOnboardingSiriQuery: String?
 
-    /// True on iPad-width layouts, where chat history lives in a persistent
-    /// sidebar instead of a sheet. Restricted to iPad: large iPhones also
-    /// report a regular width in landscape, and swapping the view structure
-    /// on rotation would throw away in-progress chat state.
+    /// Which column a collapsed split view shows. Pinned to the chat: on
+    /// compact widths history keeps opening as a sheet.
+    @State private var preferredCompactColumn: NavigationSplitViewColumn = .detail
+
+    /// True whenever there is room for history as a persistent sidebar: iPad,
+    /// large iPhones in landscape, and iPhone Duo's inner display. Driven by
+    /// size class, never device idiom, because iPhone Duo is a phone that
+    /// switches between compact (outer) and regular (inner) displays.
     private var usesSplitLayout: Bool {
-        UIDevice.current.userInterfaceIdiom == .pad && horizontalSizeClass == .regular
+        horizontalSizeClass == .regular
     }
 
     var body: some View {
-        Group {
-            if usesSplitLayout {
-                NavigationSplitView {
-                    ChatHistoryView(isEmbedded: true)
-                        .navigationSplitViewColumnWidth(min: 300, ideal: 340, max: 420)
-                } detail: {
-                    NavigationStack {
-                        chatContent
-                    }
-                }
-            } else {
-                NavigationStack {
-                    chatContent
-                }
+        // One NavigationSplitView for every width. It collapses to the chat
+        // on compact widths and expands to sidebar + chat on regular ones.
+        // Keeping a single view structure means unfolding or folding an
+        // iPhone Duo, or rotating a Pro Max, keeps the draft, scroll position,
+        // and in-chat search. Swapping between a split view and a plain stack
+        // would rebuild ChatView and lose all of that.
+        NavigationSplitView(preferredCompactColumn: $preferredCompactColumn) {
+            ChatHistoryView(isEmbedded: true)
+                .navigationSplitViewColumnWidth(min: 300, ideal: 340, max: 420)
+        } detail: {
+            NavigationStack {
+                chatContent
             }
+        }
+        .onChange(of: horizontalSizeClass) { _, sizeClass in
+            // Unfolding to the inner display shows history in the sidebar, so
+            // a history sheet left open on the outer display is redundant.
+            if sizeClass == .regular {
+                showHistory = false
+            }
+            preferredCompactColumn = .detail
+        }
+        .onChange(of: historyManager.currentConversationID) {
+            preferredCompactColumn = .detail
         }
     }
 
@@ -62,17 +76,19 @@ struct ContentView: View {
         ChatView(siriPendingQuery: $siriPendingQuery, pendingImportFileURL: $pendingImportFileURL)
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
+            // A collapsed split view adds a back button to the sidebar. On
+            // compact widths history opens from the History button instead.
+            .navigationBarBackButtonHidden(true)
             .toolbar {
-                    // Left: History & Settings Grouped
-                    if #available(iOS 26.0, *) {
-                        ToolbarItemGroup(placement: .topBarLeading) {
-                            leadingToolbarButtons
-                        }
-                        .sharedBackgroundVisibility(.hidden)
-                    } else {
-                        ToolbarItemGroup(placement: .topBarLeading) {
-                            leadingToolbarButtons
-                        }
+                    // Left: Settings & History as one system group. Separate
+                    // items (not a hand-drawn capsule) let iPhone Duo stack
+                    // them in its side bar and overflow them one at a time.
+                    // TODO(iPhone Duo): give this group a lower
+                    // ToolbarItemVisibilityPriority than New Chat once the
+                    // modifier is public. SDK 26.5 has the symbol but doesn't
+                    // declare it in the SwiftUI interface.
+                    ToolbarItemGroup(placement: .topBarLeading) {
+                        leadingToolbarButtons
                     }
 
                     // Center: Model Selection & Export
@@ -231,6 +247,13 @@ struct ContentView: View {
         .onOpenURL { url in
             handleIncomingURL(url)
         }
+        .onContinueUserActivity(CSSearchableItemActionType) { activity in
+            guard let conversationID = ConversationSpotlightIndexer.conversationID(from: activity),
+                  let url = URL(string: "ownai://conversation?id=\(conversationID.uuidString)") else {
+                return
+            }
+            handleIncomingURL(url)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .ownAISiriQuery)) { notification in
             guard let query = notification.userInfo?[OwnAISiriQueryKey.query] as? String,
                   !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -297,51 +320,34 @@ struct ContentView: View {
         return String(format: String(localized: "Selected model %@", defaultValue: "Selected model %@"), modelName)
     }
 
+    /// Title + symbol on every item: the symbol shows in the bar, and the
+    /// title shows when iPhone Duo's side bar moves the item into overflow.
+    @ViewBuilder
     private var leadingToolbarButtons: some View {
-        HStack(spacing: 0) {
+        Button {
+            speechManager.stopSpeaking()
+            showSettings = true
+        } label: {
+            Label(String(localized: "Settings"), systemImage: "gearshape")
+        }
+        .tint(Color.adaptive(white: 0.3))
+        .keyboardShortcut(",", modifiers: .command)
+
+        // In the split layout the sidebar already shows history.
+        if !usesSplitLayout {
             Button {
                 speechManager.stopSpeaking()
-                showSettings = true
+                showHistory = true
             } label: {
-                Image(systemName: "gearshape")
-                    .accessibilityLabel(String(localized: "Settings"))
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(Color.adaptive(white: 0.3))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+                Label(String(localized: "Chat History"), systemImage: "bubble.left")
             }
-            .buttonStyle(.plain)
-            .keyboardShortcut(",", modifiers: .command)
-
-            // In the split layout the sidebar already shows history.
-            if !usesSplitLayout {
-                Divider()
-                    .frame(height: 16)
-                    .padding(.horizontal, 4)
-
-                Button {
-                    speechManager.stopSpeaking()
-                    showHistory = true
-                } label: {
-                    Image(systemName: "bubble.left")
-                        .accessibilityLabel(String(localized: "Chat History"))
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(Color.adaptive(white: 0.3))
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut("h", modifiers: [.command, .shift])
-            }
+            .tint(Color.adaptive(white: 0.3))
+            .keyboardShortcut("h", modifiers: [.command, .shift])
         }
-        .fixedSize()
-        .background(Color.adaptive(white: 0.95))
-        .clipShape(Capsule())
     }
 
-    /// New Chat and in-chat Search live in `ChatView`'s own trailing group so
-    /// the two can share one capsule that mirrors `leadingToolbarButtons`.
-    /// Split across two views they rendered as two loose circles.
+    /// New Chat and in-chat Search live in `ChatView`'s own trailing group,
+    /// next to the chat they act on.
     private var trailingToolbarButtons: some View {
         // Renders nothing when no download is running, so it costs no
         // toolbar width in the common case.

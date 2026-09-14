@@ -28,6 +28,7 @@ struct ModelStorageView: View {
                     value: String(format: String(localized: "%.1f GB", defaultValue: "%.1f GB"), DiskSpace.availableGB())
                 )
             }
+            .listRowBackground(Color.adaptiveCard)
 
             Section {
                 ModelImportControl { start, progress in
@@ -42,7 +43,7 @@ struct ModelStorageView: View {
                                 if !monetizationManager.canUse(.importedModels) {
                                     Spacer(minLength: 8)
                                     Image(systemName: "crown.fill")
-                                        .foregroundStyle(.orange)
+                                        .foregroundStyle(.brandAccent)
                                         .accessibilityLabel(String(localized: "Pro"))
                                 }
                             }
@@ -74,6 +75,7 @@ struct ModelStorageView: View {
             } footer: {
                 Text(ModelImportCopy.requirements)
             }
+            .listRowBackground(Color.adaptiveCard)
 
             if let recommendation = reclaimRecommendation {
                 Section(String(localized: "Suggestion")) {
@@ -88,11 +90,12 @@ struct ModelStorageView: View {
                             .foregroundStyle(.primary)
                         } icon: {
                             Image(systemName: "externaldrive.badge.minus")
-                                .foregroundStyle(.orange)
+                                .foregroundStyle(.brandAccent)
                         }
                     }
                     .accessibilityHint(String(localized: "Asks before removing the model files."))
                 }
+                .listRowBackground(Color.adaptiveCard)
             }
 
             if !partialEntries.isEmpty {
@@ -118,6 +121,7 @@ struct ModelStorageView: View {
                             defaultValue: "%lld downloads were started but never finished. Clearing them means those models start from zero next time."
                         ), Int64(partialEntries.count)))
                 }
+                .listRowBackground(Color.adaptiveCard)
             }
 
             Section(String(localized: "On This Device")) {
@@ -131,7 +135,7 @@ struct ModelStorageView: View {
                     ForEach(entries) { entry in
                         HStack(spacing: 12) {
                             Image(systemName: entry.isPartial ? "arrow.down.circle.dotted" : "cube.fill")
-                                .foregroundStyle(entry.isPartial ? .orange : .blue)
+                                .foregroundStyle(entry.isPartial ? .brandAccent : .brandAccent)
                                 .frame(width: 28)
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(entry.model.name)
@@ -175,7 +179,7 @@ struct ModelStorageView: View {
                                 } label: {
                                     Label(String(localized: "Rename"), systemImage: "pencil")
                                 }
-                                .tint(.blue)
+                                .tint(.brandAccent)
                             }
                         }
                         .contextMenu {
@@ -190,13 +194,16 @@ struct ModelStorageView: View {
                     }
                 }
             }
+            .listRowBackground(Color.adaptiveCard)
 
             Section {
                 Text(String(localized: "Own AI never removes models automatically. Partial downloads are kept so a later download can resume."))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
+            .listRowBackground(Color.adaptiveCard)
         }
+        .paperList()
         .navigationTitle(String(localized: "Model Storage"))
         .navigationBarTitleDisplayMode(.inline)
         .task { reload() }

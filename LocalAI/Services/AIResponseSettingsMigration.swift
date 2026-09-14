@@ -8,6 +8,7 @@ enum AIResponseSettingsMigration {
     private static let naturalProsePromptMigrationKey = "didMigrateDefaultSystemPromptNaturalProse"
     private static let tableFormatPromptMigrationKey = "didMigrateDefaultSystemPromptTableFormat"
     private static let deliverAnswerPromptMigrationKey = "didMigrateDefaultSystemPromptDeliverAnswer"
+    private static let replyLanguagePromptMigrationKey = "didMigrateSystemPromptReplyLanguage"
 
     static func migrateIfNeeded(defaults: UserDefaults = .standard) {
         migrateMaxTokensIfNeeded(defaults: defaults)
@@ -16,6 +17,7 @@ enum AIResponseSettingsMigration {
         migrateNaturalProsePromptIfNeeded(defaults: defaults)
         migrateTableFormatPromptIfNeeded(defaults: defaults)
         migrateDeliverAnswerPromptIfNeeded(defaults: defaults)
+        migrateReplyLanguagePromptIfNeeded(defaults: defaults)
 
         // Keep the legacy marker set for older app versions, but do not use it
         // to block newer one-time migrations.
@@ -95,5 +97,23 @@ enum AIResponseSettingsMigration {
         }
 
         defaults.set(true, forKey: deliverAnswerPromptMigrationKey)
+    }
+
+    /// Adds the "reply in the user's language" line (September 2026). Covers
+    /// both the default prompt and the built-in personality presets, since
+    /// choosing a preset stores its prompt verbatim. Exact matches of past
+    /// wordings only, so user-customized prompts are untouched.
+    private static func migrateReplyLanguagePromptIfNeeded(defaults: UserDefaults) {
+        guard !defaults.bool(forKey: replyLanguagePromptMigrationKey) else { return }
+
+        if let stored = defaults.string(forKey: "systemPrompt") {
+            if AIResponseDefaults.allSupersededSystemPrompts.contains(stored) {
+                defaults.set(AIResponseDefaults.defaultSystemPrompt, forKey: "systemPrompt")
+            } else if let presetPrompt = PersonalityPreset.currentPrompt(replacingLegacyPrompt: stored) {
+                defaults.set(presetPrompt, forKey: "systemPrompt")
+            }
+        }
+
+        defaults.set(true, forKey: replyLanguagePromptMigrationKey)
     }
 }

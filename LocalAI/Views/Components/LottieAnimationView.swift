@@ -4,8 +4,6 @@ import Lottie
 /// The bundled Lottie compositions in `LocalAI/Animations`. Keeping them as
 /// an enum means a typo is a compile error rather than a silently empty view.
 enum AppAnimation: String {
-    /// Gradient four-point star with twinkles and orbiting dots. Loops.
-    case sparkleHero = "sparkle-hero"
     /// Green circle pops in, then a tick draws itself. Plays once.
     case successCheck = "success-check"
     /// Five pulsing bars, tinted via `.tint`. Loops.
@@ -19,7 +17,6 @@ enum AppAnimation: String {
     /// each composition, never a mid-transition frame.
     var stillProgress: AnimationProgressTime {
         switch self {
-        case .sparkleHero: return 0
         case .successCheck: return 1
         case .voiceWave: return 0.25
         case .bookmarkPop: return 1
@@ -31,7 +28,6 @@ enum AppAnimation: String {
     /// with baked-in gradients or multi-colour palettes leave this empty.
     var tintableKeypaths: [String] {
         switch self {
-        case .sparkleHero: return []
         case .successCheck: return ["Circle.**.Circle Fill.Color"]
         case .voiceWave: return ["**.Bar Fill.Color"]
         case .bookmarkPop: return ["Bookmark.**.Bookmark Fill.Color"]
@@ -79,7 +75,7 @@ struct AppLottieView: View {
 
     private var resolvedTint: LottieColor? {
         guard !animation.tintableKeypaths.isEmpty else { return nil }
-        let color = (tint ?? .accentColor).resolve(in: environment)
+        let color = (tint ?? .brandAccent).resolve(in: environment)
         return LottieColor(
             r: Double(color.red),
             g: Double(color.green),
@@ -91,15 +87,13 @@ struct AppLottieView: View {
 
 #Preview("Animations") {
     VStack(spacing: 32) {
-        AppLottieView(animation: .sparkleHero)
-            .frame(width: 140, height: 140)
         AppLottieView(animation: .successCheck, loops: false, tint: .green)
             .frame(width: 60, height: 60)
-        AppLottieView(animation: .voiceWave, tint: .blue)
+        AppLottieView(animation: .voiceWave, tint: .brandAccent)
             .frame(width: 30, height: 20)
-        AppLottieView(animation: .bookmarkPop, loops: false, tint: .orange)
+        AppLottieView(animation: .bookmarkPop, loops: false, tint: .brandAccent)
             .frame(width: 48, height: 48)
-        AppLottieView(animation: .downloadIdle, tint: .blue)
+        AppLottieView(animation: .downloadIdle, tint: .brandAccent)
             .frame(width: 64, height: 64)
     }
     .padding()

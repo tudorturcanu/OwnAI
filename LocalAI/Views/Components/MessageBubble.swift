@@ -207,7 +207,7 @@ struct AssistantMarkdownView: View, Equatable {
             isStreaming ? Self.hideStreamingTableHeader(content) : content
         )))
             .markdownTextStyle(\.link) {
-                ForegroundColor(.accentColor)
+                ForegroundColor(Color.brandAccent)
                 FontWeight(.semibold)
             }
             .markdownTextStyle {
@@ -427,6 +427,9 @@ struct MessageBubble: View {
     /// Removes this message from the conversation. Optional so callers that
     /// show messages read-only simply omit the menu entry.
     let onDelete: ((ChatMessage) -> Void)?
+    /// Saves this message (edited by the user first) as a cross-chat memory
+    /// note. Nil hides the menu entry.
+    let onRemember: ((ChatMessage) -> Void)?
     @AppStorage("codeTheme") private var codeThemeRaw = CodeTheme.defaultTheme.rawValue
     @AppStorage("messageTextScale") private var messageTextScale: Double = 1.0
     @ScaledMetric(relativeTo: .body) private var baseMessageFontSize: CGFloat = 17
@@ -439,6 +442,11 @@ struct MessageBubble: View {
     @State private var showCopied = false
     @State private var showStats = false
     @State private var showTextSelection = false
+    @State private var showAttachmentViewer = false
+    /// The user's photo attachment, decoded once off the main thread. The
+    /// body re-evaluates per streamed token, so reading the file inside a
+    /// computed property meant a disk read and JPEG decode on every pass.
+    @State private var userAttachmentImage: UIImage?
     @State private var reportErrorMessage: String?
     /// The `[Source n]` citation the reader last tapped, used to briefly pulse the
     /// matching chip so they can connect an inline citation to its document.
@@ -468,7 +476,8 @@ struct MessageBubble: View {
         onShowSources: ((ChatMessage) -> Void)? = nil,
         showsQuickActions: Bool = false,
         streamingState: ChatStreamingState? = nil,
-        onDelete: ((ChatMessage) -> Void)? = nil
+        onDelete: ((ChatMessage) -> Void)? = nil,
+        onRemember: ((ChatMessage) -> Void)? = nil
     ) {
         self.message = message
         self.showsContinue = showsContinue
@@ -491,6 +500,7 @@ struct MessageBubble: View {
         self.showsQuickActions = showsQuickActions
         self.streamingState = streamingState
         self.onDelete = onDelete
+        self.onRemember = onRemember
     }
 
     /// The message split into reasoning and answer. While the engine is
@@ -594,6 +604,7 @@ struct MessageBubble: View {
                 // Quick Actions Bar for last assistant message
                 if showsQuickActions && message.role == .assistant && !message.isStreaming {
                     quickActionsBar
+                        .transition(.opacity.combined(with: .move(edge: .top)).combined(with: .scale(scale: 0.96, anchor: .topLeading)))
                 }
             }
             .frame(maxWidth: message.role == .assistant ? .infinity : nil, alignment: .leading)
@@ -613,6 +624,9 @@ struct MessageBubble: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
                     .offset(y: 28)
             }
+        }
+        .task(id: userAttachmentFileName) {
+            await loadUserAttachmentImage()
         }
         .onAppear {
             withAnimation(reduceMotion ? nil : .spring(response: 0.45, dampingFraction: 0.8)) {
@@ -645,7 +659,7 @@ struct MessageBubble: View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.blue)
+                .foregroundStyle(.brandAccent)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(Color.adaptiveCard.opacity(0.85))
@@ -818,7 +832,49 @@ struct MessageBubble: View {
     }
 
     private var messageCard: some View {
-        messageCardChrome
+        VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 6) {
+            // The photo lives outside the context-menu host: an overlay across
+            // the whole card would sit above the thumbnail's button and eat
+            // the tap that opens the full-screen viewer.
+            if let attachment = userAttachmentImage {
+                userAttachmentView(attachment)
+            }
+            if showsMessageBubble {
+                messageBubbleWithContextMenu
+            }
+        }
+        .contentTransition(.interpolate)
+        // No animation on the content swap WHILE streaming: animating the
+        // per-token MarkdownUI re-render cross-fades old vs new and reads as
+        // flicker. Stream the text in instantly; only the finalized reply gets
+        // a gentle settling spring.
+        .animation(
+            message.isStreaming || reduceMotion
+                ? nil
+                : .spring(response: 0.4, dampingFraction: 0.9),
+            value: displayedContent
+        )
+        .sheet(isPresented: $showTextSelection) {
+            MessageTextSelectionSheet(text: message.content)
+        }
+        .alert(String(localized: "Message Info"), isPresented: $showStats) {
+            Button(String(localized: "OK"), role: .cancel) { }
+        } message: {
+            let stats = messageStats(for: message.content)
+            let base = String(
+                format: String(localized: "%1$lld words · %2$lld characters\n~%3$lld min read"),
+                Int64(stats.words), Int64(stats.characters), Int64(stats.readingTime)
+            )
+            if let generationTokensPerSecond {
+                Text(base + "\n" + String(format: String(localized: "About %.0f tokens per second", defaultValue: "About %.0f tokens per second"), generationTokensPerSecond))
+            } else {
+                Text(base)
+            }
+        }
+    }
+
+    private var messageBubbleWithContextMenu: some View {
+        messageBubbleChrome
             // Keep the menu host free of content animations. Attaching
             // `.contextMenu` to the same view as `.animation` makes iOS lay out
             // every row at once (the stacked/overlapping menu you see on long press).
@@ -859,26 +915,85 @@ struct MessageBubble: View {
                         }
                 }
             }
-            .sheet(isPresented: $showTextSelection) {
-                MessageTextSelectionSheet(text: message.content)
-            }
-            .alert(String(localized: "Message Info"), isPresented: $showStats) {
-                Button(String(localized: "OK"), role: .cancel) { }
-            } message: {
-                let stats = messageStats(for: message.content)
-                let base = String(
-                    format: String(localized: "%1$lld words · %2$lld characters\n~%3$lld min read"),
-                    Int64(stats.words), Int64(stats.characters), Int64(stats.readingTime)
-                )
-                if let generationTokensPerSecond {
-                    Text(base + "\n" + String(format: String(localized: "About %.0f tokens per second", defaultValue: "About %.0f tokens per second"), generationTokensPerSecond))
-                } else {
-                    Text(base)
-                }
-            }
     }
 
+    /// Static snapshot of the whole card, used for the assistant context-menu
+    /// preview so the lifted platter matches what's on screen.
     private var messageCardChrome: some View {
+        VStack(alignment: message.role == .user ? .trailing : .leading, spacing: 6) {
+            if let attachment = userAttachmentImage {
+                userAttachmentThumbnail(attachment)
+            }
+            if showsMessageBubble {
+                messageBubbleChrome
+            }
+        }
+    }
+
+    /// A photo-only user message has nothing to put in a bubble; the
+    /// attachment stands on its own like a shared photo would.
+    private var showsMessageBubble: Bool {
+        message.role != .user
+            || message.isPinned
+            || !message.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// File name of the photo this bubble should show, if any.
+    private var userAttachmentFileName: String? {
+        guard message.role == .user else { return nil }
+        return message.imageFileName
+    }
+
+    private func loadUserAttachmentImage() async {
+        guard let fileName = userAttachmentFileName else {
+            userAttachmentImage = nil
+            return
+        }
+        let image = await Task.detached(priority: .userInitiated) {
+            ImageAttachmentManager.shared.loadImage(named: fileName)
+        }.value
+        guard !Task.isCancelled else { return }
+        userAttachmentImage = image
+    }
+
+    /// Photos render at their own aspect ratio (no square crop) as a standalone
+    /// rounded card sitting above the text bubble, the way Messages and Photos
+    /// present them. Capped so a full-height screenshot doesn't dominate the
+    /// transcript, and never upscaled past the source's own point size.
+    private func userAttachmentThumbnail(_ uiImage: UIImage) -> some View {
+        let maxWidth: CGFloat = 240
+        let maxHeight: CGFloat = 300
+        let size = uiImage.size
+        let scale = min(maxWidth / max(size.width, 1), maxHeight / max(size.height, 1), 1)
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+
+        return Image(uiImage: uiImage)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: size.width * scale, height: size.height * scale)
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.10), radius: 8, y: 3)
+    }
+
+    /// Tapping the thumbnail opens the photo full screen.
+    private func userAttachmentView(_ uiImage: UIImage) -> some View {
+        Button {
+            showAttachmentViewer = true
+        } label: {
+            userAttachmentThumbnail(uiImage)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text("Attached image"))
+        .accessibilityHint(Text("Opens the image full screen"))
+        .fullScreenCover(isPresented: $showAttachmentViewer) {
+            ImageAttachmentViewer(image: uiImage) {
+                showAttachmentViewer = false
+            }
+        }
+    }
+
+    private var messageBubbleChrome: some View {
         VStack(alignment: .leading, spacing: 8) {
             if message.isPinned {
                 HStack(spacing: 6) {
@@ -906,50 +1021,38 @@ struct MessageBubble: View {
         .padding(.vertical, message.role == .user ? 12 : 4)
         .background {
             if message.role == .user {
-                LinearGradient(
-                    colors: [Color(red: 0.2, green: 0.5, blue: 0.9), Color(red: 0.15, green: 0.45, blue: 0.85)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+                LinearGradient.userBubble
             }
         }
         .clipShape(message.role == .user ? AnyShape(MessageShape(isUser: true)) : AnyShape(Rectangle()))
         .shadow(
-            color: message.role == .user ? .black.opacity(0.12) : .clear,
+            color: message.role == .user ? .black.opacity(0.05) : .clear,
             radius: message.role == .user ? 8 : 0,
             y: message.role == .user ? 3 : 0
-        )
-        .contentTransition(.interpolate)
-        // No animation on the content swap WHILE streaming: animating the
-        // per-token MarkdownUI re-render cross-fades old vs new and reads as
-        // flicker. Stream the text in instantly; only the finalized reply gets
-        // a gentle settling spring.
-        .animation(
-            message.isStreaming || reduceMotion
-                ? nil
-                : .spring(response: 0.4, dampingFraction: 0.9),
-            value: displayedContent
         )
     }
 
     /// Bubble preview for user-message long press. Assistant replies skip the
     /// lift preview entirely to avoid ghosting over MarkdownUI content.
     private var messageContextMenuPreview: some View {
-        Text(displayedContent)
-            .font(.system(size: baseMessageFontSize * messageTextScale))
-            .foregroundStyle(.white)
-            .multilineTextAlignment(.trailing)
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .background {
-                LinearGradient(
-                    colors: [Color(red: 0.2, green: 0.5, blue: 0.9), Color(red: 0.15, green: 0.45, blue: 0.85)],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
+        VStack(alignment: .trailing, spacing: 6) {
+            if let attachment = userAttachmentImage {
+                userAttachmentThumbnail(attachment)
             }
-            .clipShape(AnyShape(MessageShape(isUser: true)))
+            if showsMessageBubble {
+                Text(displayedContent)
+                    .font(.system(size: baseMessageFontSize * messageTextScale))
+                    .foregroundStyle(Color.brandInk)
+                    .multilineTextAlignment(.trailing)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .background {
+                        LinearGradient.userBubble
+                    }
+                    .clipShape(AnyShape(MessageShape(isUser: true)))
+            }
+        }
     }
 
     @ViewBuilder
@@ -995,6 +1098,14 @@ struct MessageBubble: View {
                 onTogglePin(message)
             } label: {
                 Label(message.isPinned ? "Unpin" : "Pin", systemImage: message.isPinned ? "pin.slash" : "pin")
+            }
+        }
+
+        if let onRemember, !message.isStreaming {
+            Button {
+                onRemember(message)
+            } label: {
+                Label("Remember This", systemImage: "brain")
             }
         }
 
@@ -1112,19 +1223,9 @@ struct MessageBubble: View {
     @ViewBuilder
     private var messageContent: some View {
         if message.role == .user {
-            VStack(alignment: .trailing, spacing: 8) {
-                if let imageFileName = message.imageFileName,
-                   let uiImage = ImageAttachmentManager.shared.loadImage(named: imageFileName) {
-                    Image(uiImage: uiImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(maxWidth: 200, maxHeight: 200)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                }
-                Text(message.content)
-                    .font(.system(size: baseMessageFontSize * messageTextScale))
-                    .foregroundStyle(.white)
-            }
+            Text(message.content)
+                .font(.system(size: baseMessageFontSize * messageTextScale))
+                .foregroundStyle(Color.brandInk)
         } else if !displayedContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             // Only render the markdown body when there's actual text. An empty
             // Markdown("") block expands to full width, which made the initial
@@ -1147,8 +1248,8 @@ struct MessageBubble: View {
             TypingDots(
                 gradient: LinearGradient(
                     colors: [
-                        message.role == .user ? .white.opacity(0.8) : .blue.opacity(0.6),
-                        message.role == .user ? .white.opacity(0.6) : .purple.opacity(0.6)
+                        message.role == .user ? Color.brandInk.opacity(0.5) : .brandAccent.opacity(0.6),
+                        message.role == .user ? Color.brandInk.opacity(0.3) : .brandAccentDeep.opacity(0.6)
                     ],
                     startPoint: .leading,
                     endPoint: .trailing
@@ -1298,13 +1399,7 @@ struct MessageBubble: View {
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 16)
-        .background(.ultraThinMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 28))
-        .overlay(
-            RoundedRectangle(cornerRadius: 28)
-                .stroke(Color.adaptiveBorder(opacity: 0.4), lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.04), radius: 10, y: 5)
+        .paperCard(radius: 24)
         .padding(.trailing, 4)
     }
 

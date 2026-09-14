@@ -1203,14 +1203,77 @@ final class LLMEngine {
         assistantResponse: String,
         model: ModelInfo
     ) async throws -> String {
-        guard model.engine == .appleFoundation else {
-            throw LLMError.modelNotAvailable("Structured titles require Apple Intelligence.")
+        switch model.engine {
+        case .appleFoundation:
+            return try await appleFoundationBridge.generateConversationTitle(
+                userMessage: userMessage,
+                assistantResponse: assistantResponse
+            )
+        case .mlx:
+            // Local models get a plain one-shot prompt on a fresh session.
+            // The system prompt is deliberately not the default so the user's
+            // personality prompt is not substituted in for a labeling task.
+            let raw: String
+            let stateBeforeLabeling = state
+            do {
+                raw = try await generateIsolatedReply(
+                    prompt: Self.localTitlePrompt(userMessage: userMessage, assistantResponse: assistantResponse),
+                    systemPrompt: Self.localTitleSystemPrompt,
+                    model: model,
+                    overrides: GenerationOverrides(temperature: 0.2, topP: 0.8, maxTokens: 24)
+                )
+            } catch {
+                // A failed background label must not leave the chat showing
+                // an engine error the user never asked for. An error that was
+                // already showing before the label ran is the user's, and
+                // stays.
+                if case .error = state, state != stateBeforeLabeling { state = .ready }
+                throw error
+            }
+            guard let title = Self.cleanedLocalTitle(from: raw) else {
+                throw LLMError.generationFailed("The model did not return a usable title.")
+            }
+            return title
         }
+    }
 
-        return try await appleFoundationBridge.generateConversationTitle(
-            userMessage: userMessage,
-            assistantResponse: assistantResponse
-        )
+    private static let localTitleSystemPrompt = """
+        You label conversations. Reply with only a short title of two to five words \
+        that names the topic. No quotes, no punctuation at the end, no explanation.
+        """
+
+    private static func localTitlePrompt(userMessage: String, assistantResponse: String) -> String {
+        // Small windows: a long first turn plus a long reply would otherwise
+        // crowd out the instruction that matters.
+        let user = String(userMessage.prefix(600))
+        let assistant = String(assistantResponse.prefix(400))
+        return """
+        Conversation:
+        User: \(user)
+        Assistant: \(assistant)
+
+        Title:
+        """
+    }
+
+    /// Turns whatever a small model said into a title, or nil when the
+    /// answer is not one (a sentence, a refusal, a recap of the prompt).
+    nonisolated static func cleanedLocalTitle(from raw: String) -> String? {
+        var text = AssistantOutputSanitizer.sanitize(raw)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        // Keep the first line only; some models add a second-guess line.
+        if let newline = text.firstIndex(where: \.isNewline) {
+            text = String(text[..<newline])
+        }
+        for prefix in ["**Title:**", "Title:", "title:", "Title -"] where text.hasPrefix(prefix) {
+            text = String(text.dropFirst(prefix.count))
+        }
+        text = text.trimmingCharacters(in: CharacterSet(charactersIn: " \"'“”‘’*#`.:-–—"))
+        guard !text.isEmpty else { return nil }
+
+        let words = text.split(whereSeparator: \.isWhitespace)
+        guard (1...8).contains(words.count), text.count <= 48 else { return nil }
+        return words.joined(separator: " ")
     }
 
     func generateConversationInsights(

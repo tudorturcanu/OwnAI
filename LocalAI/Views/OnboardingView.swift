@@ -15,6 +15,9 @@ struct OnboardingView: View {
     @Environment(MonetizationManager.self) private var monetizationManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var currentPage = 0
+    // Tracks which way the last page change went, so pages slide in from the
+    // correct edge (forward pushes left, Back pushes right).
+    @State private var slideBack = false
     @State private var isApplyingRecommendation = false
     @State private var showModelPicker = false
     @State private var pickerInitialModelID: String?
@@ -36,6 +39,14 @@ struct OnboardingView: View {
 
     private var pageCount: Int {
         hasRecommendationPage ? 3 : 2
+    }
+
+    private var pageTransition: AnyTransition {
+        guard !reduceMotion else { return .opacity }
+        return .asymmetric(
+            insertion: .move(edge: slideBack ? .leading : .trailing).combined(with: .opacity),
+            removal: .move(edge: slideBack ? .trailing : .leading).combined(with: .opacity)
+        )
     }
 
 
@@ -134,12 +145,12 @@ struct OnboardingView: View {
                 }
             }
             .id(currentPage)
-            .transition(.opacity)
+            .transition(pageTransition)
         }
         .safeAreaInset(edge: .top, spacing: 0) {
             progressHeader
         }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: currentPage)
+        .animation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.9), value: currentPage)
         .onAppear {
             DispatchQueue.main.async {
                 focusedPage = currentPage
@@ -157,6 +168,13 @@ struct OnboardingView: View {
         }
         .sheet(isPresented: $showModelPicker, onDismiss: {
             pickerInitialModelID = nil
+            // Starting a download in the picker doesn't change the selection
+            // until it finishes, so the onChange above never sees it; without
+            // this the primary button would queue a second model on top.
+            if let inFlight = (modelManager.activeDownloadModels + modelManager.queuedDownloadModels).first,
+               inFlight.id != customModelID {
+                customModelID = inFlight.id
+            }
         }) {
             NavigationStack {
                 ModelDownloadView()
@@ -182,7 +200,8 @@ struct OnboardingView: View {
             Group {
                 if currentPage > 0 {
                     Button {
-                        withAnimation(reduceMotion ? nil : .default) {
+                        slideBack = true
+                        withAnimation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.9)) {
                             currentPage = max(0, currentPage - 1)
                         }
                     } label: {
@@ -218,7 +237,7 @@ struct OnboardingView: View {
                 .accessibilityHidden(true)
         }
         .padding(.horizontal, 12)
-        .background(.ultraThinMaterial)
+        .background(Color.adaptiveBackground.opacity(0.94))
     }
     
     // MARK: - Page 1: Welcome
@@ -230,7 +249,7 @@ struct OnboardingView: View {
                     Circle()
                         .fill(
                             LinearGradient(
-                                colors: [.orange.opacity(0.1), .pink.opacity(0.1)],
+                                colors: [.brandAccent.opacity(0.1), .brandAccentDeep.opacity(0.1)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
@@ -242,7 +261,7 @@ struct OnboardingView: View {
 
                 VStack(spacing: 12) {
                     Text(String(localized: "Welcome to Own AI"))
-                        .font(.largeTitle.bold())
+                        .font(.display(.largeTitle, weight: .bold))
                         .multilineTextAlignment(.center)
                         .foregroundStyle(Color.adaptive(white: 0.1))
                         .accessibilityAddTraits(.isHeader)
@@ -269,15 +288,29 @@ struct OnboardingView: View {
 
                     featureRow(
                         icon: "wifi.slash",
-                        color: .orange,
+                        color: .brandAccent,
                         title: String(localized: "Works Offline"),
                         subtitle: String(localized: "Downloaded local models keep working without an internet connection.")
+                    )
+
+                    featureRow(
+                        icon: "crown.fill",
+                        color: .brandAccentDeep,
+                        title: String(localized: "Free to Start"),
+                        subtitle: String(
+                            format: String(
+                                localized: "Free plan: %lld messages a day and %lld free models. Pro unlocks everything.",
+                                defaultValue: "Free plan: %lld messages a day and %lld free models. Pro unlocks everything."
+                            ),
+                            Int64(MonetizationManager.freeDailyMessageLimit),
+                            Int64(MonetizationManager.freeModelIDs.count)
+                        )
                     )
 
                     if SpeechManager.isVoiceConversationEnabled {
                         featureRow(
                             icon: "waveform",
-                            color: .blue,
+                            color: .brandAccent,
                             title: String(localized: "Voice Conversations"),
                             subtitle: String(localized: "Talk hands-free, hear replies aloud, and interrupt naturally.")
                         )
@@ -285,7 +318,8 @@ struct OnboardingView: View {
                 }
 
                 Button {
-                    withAnimation(reduceMotion ? nil : .default) {
+                    slideBack = false
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.9)) {
                         currentPage = privacyPageIndex
                     }
                 } label: {
@@ -296,18 +330,19 @@ struct OnboardingView: View {
                         .frame(minHeight: 56)
                         .background(
                             LinearGradient(
-                                colors: [.orange, .pink],
+                                colors: [.brandAccent, .brandAccentDeep],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .shadow(color: .pink.opacity(0.3), radius: 10, y: 5)
+                        .shadow(color: .brandAccentDeep.opacity(0.3), radius: 10, y: 5)
                 }
             }
             .padding(.horizontal, 32)
             .padding(.top, 24)
             .padding(.bottom, 24)
+            .readableContentWidth()
         }
     }
 
@@ -322,14 +357,14 @@ struct OnboardingView: View {
                         .accessibilityHidden(true)
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [.orange, .pink],
+                                colors: [.brandAccent, .brandAccentDeep],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
 
                     Text(recommendationPageTitle)
-                        .font(.title.bold())
+                        .font(.display(.title, weight: .bold))
                         .foregroundStyle(Color.adaptive(white: 0.1))
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityFocused($focusedPage, equals: recommendationPageIndex)
@@ -383,13 +418,13 @@ struct OnboardingView: View {
                         .padding(.horizontal, 16)
                         .background(
                             LinearGradient(
-                                colors: [.orange, .pink],
+                                colors: [.brandAccent, .brandAccentDeep],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 16))
-                        .shadow(color: .pink.opacity(0.25), radius: 10, y: 5)
+                        .shadow(color: .brandAccentDeep.opacity(0.25), radius: 10, y: 5)
                     }
                     .disabled(isApplyingRecommendation)
                     .opacity(isApplyingRecommendation ? 0.85 : 1)
@@ -400,14 +435,14 @@ struct OnboardingView: View {
                     } label: {
                         Text(LocalizedStringKey(secondaryActionTitle))
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(.brandAccent)
                             .frame(maxWidth: .infinity)
                             .frame(height: 48)
                             .background(Color.adaptiveCard)
                             .clipShape(RoundedRectangle(cornerRadius: 14))
                             .overlay(
                                 RoundedRectangle(cornerRadius: 14)
-                                    .stroke(Color.orange.opacity(0.18), lineWidth: 1)
+                                    .stroke(Color.brandAccent.opacity(0.18), lineWidth: 1)
                             )
                     }
                     .disabled(isApplyingRecommendation)
@@ -431,6 +466,7 @@ struct OnboardingView: View {
                 .padding(.top, 24)
                 .padding(.bottom, 24)
             }
+            .readableContentWidth()
         }
     }
     
@@ -446,14 +482,14 @@ struct OnboardingView: View {
                         .accessibilityHidden(true)
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [.blue, .purple],
+                                colors: [.brandAccent, .brandAccentDeep],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
                     
                     Text(String(localized: "Data & Privacy"))
-                        .font(.title.bold())
+                        .font(.display(.title, weight: .bold))
                         .foregroundStyle(Color.adaptive(white: 0.1))
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityFocused($focusedPage, equals: privacyPageIndex)
@@ -471,7 +507,7 @@ struct OnboardingView: View {
                     // Data the app processes
                     privacyCard(
                         icon: "doc.text.fill",
-                        iconColor: .blue,
+                        iconColor: .brandAccent,
                         title: String(localized: "Data the App Processes"),
                         items: [
                             String(localized: "Chat messages and prompts you type"),
@@ -511,7 +547,7 @@ struct OnboardingView: View {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(spacing: 8) {
                                 Image(systemName: "apple.intelligence")
-                                    .foregroundStyle(.orange)
+                                    .foregroundStyle(.brandAccent)
                                     .accessibilityHidden(true)
                                 Text(String(localized: "Apple Intelligence"))
                                     .font(.subheadline.bold())
@@ -524,11 +560,11 @@ struct OnboardingView: View {
                         }
                         .padding(14)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.orange.opacity(0.04))
+                        .background(Color.brandAccent.opacity(0.04))
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.orange.opacity(0.15), lineWidth: 1)
+                                .stroke(Color.brandAccent.opacity(0.15), lineWidth: 1)
                         )
                     }
                     
@@ -536,7 +572,7 @@ struct OnboardingView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 8) {
                             Image(systemName: "arrow.down.circle.fill")
-                                .foregroundStyle(.blue)
+                                .foregroundStyle(.brandAccent)
                                 .accessibilityHidden(true)
                             Text("Model Downloads")
                                 .font(.subheadline.bold())
@@ -549,7 +585,7 @@ struct OnboardingView: View {
                     }
                     .padding(14)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.adaptive(white: 0.96))
+                    .background(Color.adaptiveCard)
                     .clipShape(RoundedRectangle(cornerRadius: 12))
                 }
                 .padding(.horizontal, 24)
@@ -557,7 +593,8 @@ struct OnboardingView: View {
                 // Accept button
                 VStack(spacing: 12) {
                     Button {
-                        withAnimation(reduceMotion ? nil : .default) {
+                        slideBack = false
+                        withAnimation(reduceMotion ? nil : .spring(response: 0.42, dampingFraction: 0.9)) {
                             if hasRecommendationPage {
                                 currentPage = recommendationPageIndex
                             } else {
@@ -572,20 +609,20 @@ struct OnboardingView: View {
                             .frame(height: 56)
                             .background(
                                 LinearGradient(
-                                    colors: [.blue, .purple],
+                                    colors: [.brandAccent, .brandAccentDeep],
                                     startPoint: .leading,
                                     endPoint: .trailing
                                 )
                             )
                             .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .shadow(color: .purple.opacity(0.3), radius: 10, y: 5)
+                            .shadow(color: .brandAccentDeep.opacity(0.3), radius: 10, y: 5)
                     }
                     .disabled(isApplyingRecommendation)
                     .opacity(isApplyingRecommendation ? 0.7 : 1)
 
                     Text("By tapping above, you agree to our [Terms of Service](https://sudoswisshub.github.io/MetalMind-AI/terms.html) and [Privacy Policy](https://sudoswisshub.github.io/MetalMind-AI/privacy.html).")
                         .font(.caption)
-                        .tint(.blue)
+                        .tint(.brandAccent)
                         .foregroundStyle(Color.adaptive(white: 0.6))
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 24)
@@ -594,6 +631,7 @@ struct OnboardingView: View {
                 .padding(.top, 28)
                 .padding(.bottom, 24)
             }
+            .readableContentWidth()
         }
     }
 
@@ -668,8 +706,8 @@ struct OnboardingView: View {
         case .downloading:
             return String(
                 format: String(
-                    localized: "%@ is downloading now. You can continue and let the download finish in the app.",
-                    defaultValue: "%@ is downloading now. You can continue and let the download finish in the app."
+                    localized: "%@ is downloading now. You can continue, but keep Own AI open — downloads pause about 30 seconds after you leave the app.",
+                    defaultValue: "%@ is downloading now. You can continue, but keep Own AI open — downloads pause about 30 seconds after you leave the app."
                 ),
                 activeModel.name
             )
@@ -774,7 +812,7 @@ struct OnboardingView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.adaptive(white: 0.96))
+        .background(Color.adaptiveBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .accessibilityElement(children: .combine)
     }
@@ -787,7 +825,7 @@ struct OnboardingView: View {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: model.engine == .appleFoundation ? "sparkles.rectangle.stack.fill" : "iphone.gen3")
                     .font(.title3)
-                    .foregroundStyle(model.engine == .appleFoundation ? .orange : .blue)
+                    .foregroundStyle(model.engine == .appleFoundation ? .brandAccent : .brandAccent)
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -803,10 +841,10 @@ struct OnboardingView: View {
 
                 Text(model.sizeLabel)
                     .font(.caption.weight(.semibold))
-                    .foregroundStyle(model.engine == .appleFoundation ? .orange : .blue)
+                    .foregroundStyle(model.engine == .appleFoundation ? .brandAccent : .brandAccent)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background((model.engine == .appleFoundation ? Color.orange : Color.blue).opacity(0.1))
+                    .background((model.engine == .appleFoundation ? Color.brandAccent : Color.brandAccent).opacity(0.1))
                     .clipShape(Capsule())
             }
 
@@ -838,7 +876,7 @@ struct OnboardingView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.adaptive(white: 0.96))
+        .background(Color.adaptiveBackground)
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .overlay(
             RoundedRectangle(cornerRadius: 14)

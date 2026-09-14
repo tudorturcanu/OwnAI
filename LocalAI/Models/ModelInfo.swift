@@ -523,7 +523,8 @@ struct ModelInfo: Identifiable, Equatable {
         if lowercasedID.contains("minicpm") {
             return "OpenBMB (MiniCPM)"
         }
-        if lowercasedID.contains("devstral") || lowercasedID.contains("mistral") {
+        if lowercasedID.contains("devstral") || lowercasedID.contains("mistral")
+            || lowercasedID.contains("ministral") {
             return "Mistral AI"
         }
         if lowercasedID.contains("tinyllama") {
@@ -627,6 +628,7 @@ struct ModelInfo: Identifiable, Equatable {
         "Hcompany/Holo-3.1-4B",
         "mlx-community/GLM-OCR-4bit",
         "mlx-community/OvisOCR2-4bit",
+        "mlx-community/Ministral-3-3B-Instruct-2512-4bit",
         "mlx-community/Qwen3.8-27B-4bit",
         "mlx-community/mistralai_Devstral-Small-2-24B-Instruct-2512-MLX-4Bit"
     ]
@@ -665,7 +667,8 @@ struct ModelInfo: Identifiable, Equatable {
         "mlx-community/DeepSeek-R1-Distill-Qwen-1.5B-4bit",
         "mlx-community/DeepSeek-R1-Distill-Qwen-7B-4bit",
         "mlx-community/DeepSeek-R1-Distill-Qwen-14B-4bit",
-        "mlx-community/LFM2.5-2.6B-4bit"
+        "mlx-community/LFM2.5-2.6B-4bit",
+        "mlx-community/LFM2.5-2.6B-OptiQ-4bit"
     ]
 
     static func opensResponseInsideReasoningBlock(modelID: String, thinkingEnabled: Bool) -> Bool {
@@ -938,6 +941,22 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// LFM2.5 230M OptiQ (4-bit MLX)
+    static let lfm25_230m_optiq_4bit = ModelInfo(
+        id: "mlx-community/LFM2.5-230M-OptiQ-4bit",
+        name: "LFM 2.5 230M OptiQ",
+        description: "The smallest LFM 2.5 chat model requantized with OptiQ mixed precision, keeping the tiny download while recovering quality the plain 4-bit conversion gives up.",
+        family: .lfm,
+        sizeGB: 0.19,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/LFM2.5-230M-OptiQ-4bit"),
+        privacyURL: nil,
+        shortDescription: "Tiny LFM model with modern OptiQ quantization.",
+        recommendedFor: "Best when you want the smallest LFM download without the usual 4-bit quality loss.",
+        badges: [.fastest, .smallDownload, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// LFM2.5 350M MLX (4-bit)
     static let lfm25_350m_4bit = ModelInfo(
         id: "LiquidAI/LFM2.5-350M-MLX-4bit",
@@ -954,6 +973,22 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// LFM2.5 350M OptiQ (4-bit MLX)
+    static let lfm25_350m_optiq_4bit = ModelInfo(
+        id: "mlx-community/LFM2.5-350M-OptiQ-4bit",
+        name: "LFM 2.5 350M OptiQ",
+        description: "Liquid AI's ultra-light LFM 2.5 model requantized with OptiQ mixed precision, for slightly richer answers than the 230M tier at a still very small download.",
+        family: .lfm,
+        sizeGB: 0.29,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/LFM2.5-350M-OptiQ-4bit"),
+        privacyURL: nil,
+        shortDescription: "Very small LFM model with modern OptiQ quantization.",
+        recommendedFor: "Best when you want a tiny local assistant that holds up better on longer prompts.",
+        badges: [.fastest, .smallDownload, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// LFM2.5 1.2B Instruct MLX (4-bit)
     static let lfm25_1_2b_instruct_4bit = ModelInfo(
         id: "LiquidAI/LFM2.5-1.2B-Instruct-MLX-4bit",
@@ -966,6 +1001,22 @@ extension ModelInfo {
         privacyURL: nil,
         shortDescription: "Balanced compact model for everyday local use.",
         recommendedFor: "Best when you want the main everyday LFM 2.5 model on iPhone.",
+        badges: [.recommended, .everydayChat, .higherQuality, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// LFM2.5 1.2B Instruct OptiQ (4-bit MLX)
+    static let lfm25_1_2b_instruct_optiq_4bit = ModelInfo(
+        id: "mlx-community/LFM2.5-1.2B-Instruct-OptiQ-4bit",
+        name: "LFM 2.5 1.2B OptiQ",
+        description: "Liquid AI's everyday LFM 2.5 model requantized with OptiQ mixed precision, giving stronger chat, extraction, and writing quality than the plain 4-bit build at a similar footprint.",
+        family: .lfm,
+        sizeGB: 0.86,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/LFM2.5-1.2B-Instruct-OptiQ-4bit"),
+        privacyURL: nil,
+        shortDescription: "Everyday LFM 2.5 model with modern OptiQ quantization.",
+        recommendedFor: "Best when you want the main everyday LFM 2.5 model at its highest compact quality.",
         badges: [.recommended, .everydayChat, .higherQuality, .fullyOnDevice],
         downloadState: .notDownloaded
     )
@@ -1002,6 +1053,22 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// LFM2.5 1.2B Thinking OptiQ (4-bit MLX)
+    static let lfm25_1_2b_thinking_optiq_4bit = ModelInfo(
+        id: "mlx-community/LFM2.5-1.2B-Thinking-OptiQ-4bit",
+        name: "LFM 2.5 Thinking OptiQ",
+        description: "Liquid AI's reasoning-focused LFM 2.5 model requantized with OptiQ mixed precision, which matters most here because step-by-step answers compound small quantization errors.",
+        family: .lfm,
+        sizeGB: 0.86,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/LFM2.5-1.2B-Thinking-OptiQ-4bit"),
+        privacyURL: nil,
+        shortDescription: "Reasoning-first LFM 2.5 model with modern OptiQ quantization.",
+        recommendedFor: "Best when you want the LFM 2.5 reasoning variant to hold together on longer derivations.",
+        badges: [.bestForCoding, .reasoning, .higherQuality, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// LFM2.5 2.6B MLX (4-bit)
     static let lfm25_2_6b_4bit = ModelInfo(
         id: "mlx-community/LFM2.5-2.6B-4bit",
@@ -1018,6 +1085,22 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// LFM2.5 2.6B OptiQ (4-bit MLX)
+    static let lfm25_2_6b_optiq_4bit = ModelInfo(
+        id: "mlx-community/LFM2.5-2.6B-OptiQ-4bit",
+        name: "LFM 2.5 2.6B OptiQ",
+        description: "Liquid AI's mid-size LFM 2.5 model requantized with OptiQ mixed precision, for stronger multilingual chat, reasoning, coding, and instruction following on newer iPhones and iPads.",
+        family: .lfm,
+        sizeGB: 2.01,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/LFM2.5-2.6B-OptiQ-4bit"),
+        privacyURL: nil,
+        shortDescription: "Mid-size LFM model with modern OptiQ quantization.",
+        recommendedFor: "Best when you want the strongest LFM 2.5 text model that still fits on a newer iPhone.",
+        badges: [.recommended, .everydayChat, .multilingual, .reasoning, .higherQuality, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// LFM2.5 8B-A1B MLX (4-bit)
     static let lfm25_8b_a1b_4bit = ModelInfo(
         id: "LiquidAI/LFM2.5-8B-A1B-MLX-4bit",
@@ -1030,6 +1113,22 @@ extension ModelInfo {
         privacyURL: nil,
         shortDescription: "High-end LFM 2.5 MoE model for larger devices.",
         recommendedFor: "Best when you want stronger LFM 2.5 output and have iPad Pro or Mac headroom.",
+        badges: [.higherQuality, .reasoning, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
+    /// LFM2.5 8B-A1B OptiQ (4-bit MLX)
+    static let lfm25_8b_a1b_optiq_4bit = ModelInfo(
+        id: "mlx-community/LFM2.5-8B-A1B-OptiQ-4bit",
+        name: "LFM 2.5 8B-A1B OptiQ",
+        description: "Liquid AI's mixture-of-experts LFM 2.5 model requantized with OptiQ mixed precision, aimed at the strongest local LFM output on iPad Pro and Mac-class Apple Silicon.",
+        family: .lfm,
+        sizeGB: 5.47,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mlx-community/LFM2.5-8B-A1B-OptiQ-4bit"),
+        privacyURL: nil,
+        shortDescription: "High-end LFM 2.5 MoE model with modern OptiQ quantization.",
+        recommendedFor: "Best when you want the strongest LFM 2.5 quality and have iPad Pro or Mac headroom.",
         badges: [.higherQuality, .reasoning, .newerDevices, .fullyOnDevice],
         downloadState: .notDownloaded
     )
@@ -1802,6 +1901,22 @@ extension ModelInfo {
         downloadState: .notDownloaded
     )
 
+    /// Ministral 3 3B Instruct 2512 (4-bit MLX)
+    static let ministral3_3b_instruct_4bit = ModelInfo(
+        id: "mlx-community/Ministral-3-3B-Instruct-2512-4bit",
+        name: "Ministral 3 3B",
+        description: "Mistral AI's compact multimodal instruction model, tuned for multilingual chat, long documents, and image understanding while staying inside an iPhone-sized download.",
+        family: .mistral,
+        sizeGB: 2.78,
+        engine: .mlx,
+        termsURL: URL(string: "https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512"),
+        privacyURL: nil,
+        shortDescription: "Compact Mistral model that also reads images.",
+        recommendedFor: "Best when you want a current Mistral assistant with image input that still fits on a newer iPhone.",
+        badges: [.images, .vision, .everydayChat, .multilingual, .higherQuality, .newerDevices, .fullyOnDevice],
+        downloadState: .notDownloaded
+    )
+
     /// Devstral Small 2 24B Instruct (4-bit MLX)
     static let devstralSmall2_24b_4bit = ModelInfo(
         id: "mlx-community/mistralai_Devstral-Small-2-24B-Instruct-2512-MLX-4Bit",
@@ -1966,7 +2081,9 @@ extension ModelInfo {
         .appleFoundation,  // Default - first in list
         // Ultra-light and compact (0.1–1.1 GB)
         .lfm25_230m_4bit,
+        .lfm25_230m_optiq_4bit,
         .lfm25_350m_4bit,
+        .lfm25_350m_optiq_4bit,
         .qwen3_0_6b_4bit,
         .lfm25_1_2b_jp_202606_4bit,
         .qwen35_0_8b_4bit,
@@ -1993,6 +2110,7 @@ extension ModelInfo {
         .qwen3VL_2b_4bit,
         .lfm25_vl_1_6b_4bit,
         .lfm25_vl_3b_4bit,
+        .ministral3_3b_instruct_4bit,
         .qwen25VL_3b_3bit,
         .qwen3VL_4b_4bit,
         .qwen25VL_7b_4bit,
@@ -2004,8 +2122,11 @@ extension ModelInfo {
         .granite4_0_h_tiny_4bit,
         .smolLM3_3b_4bit,
         .lfm25_1_2b_instruct_4bit,
+        .lfm25_1_2b_instruct_optiq_4bit,
         .lfm25_1_2b_thinking_4bit,
+        .lfm25_1_2b_thinking_optiq_4bit,
         .lfm25_2_6b_4bit,
+        .lfm25_2_6b_optiq_4bit,
         .qwen35_2b_4bit,
         .qwen35_2b_optiq_4bit,
         .qwen35_4b_4bit,
@@ -2029,6 +2150,7 @@ extension ModelInfo {
         .deepseek_r1_distill_qwen_7b_4bit,
         .deepseek_r1_distill_qwen_14b_4bit,
         .lfm25_8b_a1b_4bit,
+        .lfm25_8b_a1b_optiq_4bit,
         .qwen3_coder_next_4bit,
         .qwen25_7b_instruct_4bit,
         .llama31_8b_4bit,

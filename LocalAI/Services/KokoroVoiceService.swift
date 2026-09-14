@@ -84,6 +84,22 @@ enum KokoroModelStore {
         snapshotFolder.appendingPathComponent(weightsFileName)
     }
 
+    /// Direct Hugging Face resolve URL for the weights file, used by the
+    /// background `URLSession` download so the ~315 MB transfer survives the
+    /// app being suspended or terminated. The repo is public, so no auth
+    /// header is needed; URLSession follows the CDN redirect automatically.
+    nonisolated static var weightsRemoteURL: URL {
+        URL(string: "https://huggingface.co/\(repoID)/resolve/main/\(weightsFileName)?download=true")!
+    }
+
+    /// True when the file at `url` is large enough to be the real weights
+    /// rather than a truncated transfer or an error-page body.
+    nonisolated static func isPlausibleWeightsFile(at url: URL) -> Bool {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attributes[.size] as? UInt64 else { return false }
+        return size >= minimumPlausibleWeightsBytes
+    }
+
     nonisolated static func voiceURL(_ voice: KokoroVoice) -> URL {
         snapshotFolder.appendingPathComponent(voice.repoFileName)
     }
@@ -107,6 +123,8 @@ enum KokoroModelStore {
     /// dominate it, the voice file is a rounding error.
     nonisolated static func download(
         voice: KokoroVoice,
+        allowsCellular: Bool,
+        isCellularRestricted: Bool,
         progress: @escaping @Sendable (Double) -> Void
     ) async throws {
         let base = downloadBase
@@ -120,11 +138,16 @@ enum KokoroModelStore {
         }
 
         if !isWeightsDownloaded {
-            // A stale partial file would otherwise be reported as present by
-            // the size check on the next launch.
-            try? FileManager.default.removeItem(at: weightsURL)
-            try await hub.snapshot(from: repoID, matching: [weightsFileName]) { fileProgress in
-                progress(min(0.98, fileProgress.fractionCompleted * 0.98))
+            // The weights are the only large file here, and a background
+            // URLSession is the one transfer type iOS keeps running while the
+            // app is suspended or even terminated — so the download survives
+            // the user leaving the app. The tiny voice tensor below stays on
+            // HubApi. (Stale-partial cleanup happens inside the downloader.)
+            try await KokoroWeightsDownloader.shared.downloadWeights(
+                allowsCellular: allowsCellular,
+                isCellularRestricted: isCellularRestricted
+            ) { fraction in
+                progress(min(0.98, fraction * 0.98))
             }
             try Task.checkCancellation()
             guard isWeightsDownloaded else {
@@ -140,6 +163,9 @@ enum KokoroModelStore {
     }
 
     nonisolated static func deleteAll() {
+        // Stop any background transfer first, or it would re-land the weights
+        // file (and its resume data) right after this delete.
+        KokoroWeightsDownloader.shared.cancelAndReset()
         try? FileManager.default.removeItem(at: downloadBase)
     }
 }
@@ -147,6 +173,7 @@ enum KokoroModelStore {
 enum KokoroError: LocalizedError {
     case unsupportedDevice
     case incompleteDownload
+    case cellularRestricted
     case missingFiles
     case voiceTensorMissing
     case textTooLong
@@ -157,6 +184,8 @@ enum KokoroError: LocalizedError {
             return String(localized: "Kokoro voices need an A14 or newer device.")
         case .incompleteDownload:
             return String(localized: "The Kokoro voice download did not complete.")
+        case .cellularRestricted:
+            return String(localized: "Connect to Wi-Fi, or enable Cellular Downloads in Settings, to download this voice.")
         case .missingFiles:
             return String(localized: "Kokoro voice files are missing. Download the voice again in Settings.")
         case .voiceTensorMissing:

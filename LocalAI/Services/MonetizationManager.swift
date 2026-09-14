@@ -135,6 +135,10 @@ final class MonetizationManager {
     var isLoadingProducts = false
     var isProcessingPurchase = false
     var purchaseErrorMessage: String?
+    /// True when the last product fetch threw (network/StoreKit), as opposed to
+    /// simply returning no products. Lets the paywall offer a Retry instead of a
+    /// dead-end "no plans" message.
+    var productLoadFailed = false
     var freeInstallMessageCount = 0
     var didWarnAtThreeLeftOnInstall = false
     /// Start of the day the current count belongs to; nil before the first
@@ -196,8 +200,10 @@ final class MonetizationManager {
             let fetchedProducts = try await Product.products(for: Self.productIDs)
             products = fetchedProducts.sorted(by: productSortOrder)
             purchaseErrorMessage = nil
+            productLoadFailed = false
         } catch {
             purchaseErrorMessage = String(localized: "Could not load upgrade options right now.")
+            productLoadFailed = true
         }
     }
 
