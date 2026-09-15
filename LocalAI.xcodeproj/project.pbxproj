@@ -556,8 +556,10 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LocalAI/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Own Ai";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Own Ai may use the camera to allow you to take photos and attach them to your chat.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Own Ai needs microphone access to transcribe your voice into text for chat interactions.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Own Ai may access your photo library to let you attach images to your chat.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Own Ai uses speech recognition to convert your voice input into text locally on your device.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -597,8 +599,10 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = LocalAI/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Own Ai";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = NO;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Own Ai may use the camera to allow you to take photos and attach them to your chat.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Own Ai needs microphone access to transcribe your voice into text for chat interactions.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Own Ai may access your photo library to let you attach images to your chat.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Own Ai uses speech recognition to convert your voice input into text locally on your device.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

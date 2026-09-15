@@ -806,7 +806,8 @@ final class LLMEngine {
                         temperature: effectiveTemperature,
                         maxTokens: effectiveMaxTokens,
                         image: image,
-                        conversationID: conversationID
+                        conversationID: conversationID,
+                        thinkingEnabled: ModelInfo.resolvedThinkingEnabled(modelID: model.id)
                     ) { [weak self] content in
                         guard let self else { return true }
                         self.postStreamingUpdate(content)

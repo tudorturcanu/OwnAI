@@ -546,6 +546,11 @@ struct ModelInfo: Identifiable, Equatable {
     /// models whose chat template reads `enable_thinking` — flipping it has to
     /// actually change the rendered prompt.
     static func supportsThinkingToggle(modelID: String) -> Bool {
+        // Apple's third-generation models (iOS 27) take a reasoning level; the
+        // iOS 26 model does not. Decided at runtime from the served variant.
+        if modelID == appleFoundationModelID {
+            return AppleFoundationModelBridge.currentProfile().supportsReasoning
+        }
         if optionalReasoningPrefixMLXModelIDs.contains(modelID) { return true }
         let lowercasedID = modelID.lowercased()
         if lowercasedID.contains("qwen3") || lowercasedID.contains("gemma-4") || lowercasedID.contains("bonsai") {
@@ -798,8 +803,10 @@ struct ModelInfo: Identifiable, Equatable {
 // MARK: - Available Models
 extension ModelInfo {
     /// Apple's on-device Foundation Model (built into iOS 26+)
+    static let appleFoundationModelID = "apple-foundation"
+
     static let appleFoundation = ModelInfo(
-        id: "apple-foundation",
+        id: appleFoundationModelID,
         name: String(localized: "Apple Intelligence"),
         description: String(localized: "Apple's on-device model. Fast, private, and built right into your device. No download required."),
         family: .appleIntelligence,

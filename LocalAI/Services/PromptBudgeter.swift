@@ -16,11 +16,15 @@ enum PromptBudgeter {
             var baseBudget: Int
             switch model.engine {
             case .appleFoundation:
-                // Apple's on-device model has a hard 4,096-token context window
-                // shared by the instructions, the session transcript, the prompt,
-                // and the response. Budgeting above it aborts generation
-                // mid-response with exceededContextWindowSize.
-                baseBudget = model.supportsVision ? 3_500 : 4_096
+                // Apple's system model has a hard context window shared by the
+                // instructions, the session transcript, the prompt, and the
+                // response. Budgeting above it aborts generation mid-response
+                // with a context-size error. The window is read from the model
+                // the OS serves: 4,096 tokens on iOS 26 and AFM 3 Core, larger
+                // on AFM 3 Core Advanced. The image reserve keeps the tuned
+                // 3,500-token budget on a 4,096 window.
+                let contextWindow = AppleFoundationModelBridge.currentProfile().contextSize
+                baseBudget = model.supportsVision ? contextWindow - 596 : contextWindow
             case .mlx:
                 baseBudget = PromptBudgeter.mlxContextWindow(for: model)
                 if !lowPowerMode {

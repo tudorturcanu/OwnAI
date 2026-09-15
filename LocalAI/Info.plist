@@ -2,19 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeRole</key>
-			<string>Editor</string>
-			<key>CFBundleURLName</key>
-			<string>alice.turcanu.LocalAI</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>ownai</string>
-			</array>
-		</dict>
-	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -39,19 +26,22 @@
 			</array>
 		</dict>
 	</array>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<false/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>alice.turcanu.LocalAI</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>ownai</string>
+			</array>
+		</dict>
+	</array>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
 	</array>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Own Ai needs microphone access to transcribe your voice into text for chat interactions.</string>
-	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Own Ai uses speech recognition to convert your voice input into text locally on your device.</string>
-	<key>NSCameraUsageDescription</key>
-	<string>Own Ai may use the camera to allow you to take photos and attach them to your chat.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Own Ai may access your photo library to let you attach images to your chat.</string>
 </dict>
 </plist>

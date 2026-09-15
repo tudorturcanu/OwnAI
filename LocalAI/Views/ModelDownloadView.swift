@@ -670,6 +670,7 @@ struct ImportedModelsSection: View {
 /// reads identically wherever a reasoning model appears.
 private struct ImportedThinkingRow: View {
     let model: ModelInfo
+    var leadingInset: CGFloat = 48
 
     @Environment(ModelManager.self) private var modelManager
     @Environment(LLMEngine.self) private var llmEngine
@@ -707,18 +708,22 @@ private struct ImportedThinkingRow: View {
             .accessibilityLabel(String(localized: "Thinking mode"))
             .accessibilityValue(isOn ? String(localized: "On") : String(localized: "Off"))
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, leadingInset > 0 ? 14 : 0)
         .padding(.vertical, 10)
-        .padding(.leading, 48)
+        .padding(.leading, leadingInset)
         .onAppear { isOn = modelManager.isThinkingEnabled(for: model) }
     }
 
     private func toggle() {
         isOn.toggle()
         modelManager.setThinkingEnabled(isOn, for: model)
-        // The mode is baked into the chat template when the session is built,
-        // so an open session would keep the old one until the next switch.
-        llmEngine.resetSession()
+        // An MLX model bakes the mode into its chat template when the session
+        // is built, so an open session would keep the old one until the next
+        // switch. Apple Intelligence takes the reasoning level per request, so
+        // its conversation context is kept.
+        if !model.isAppleFoundation {
+            llmEngine.resetSession()
+        }
     }
 }
 
@@ -792,6 +797,13 @@ struct SimpleModelChoiceCard: View {
 
     private var isAppleUnavailable: Bool {
         model.isAppleFoundation && !modelManager.isAppleIntelligenceAvailable
+    }
+
+    /// The Apple Foundation Model variant the OS is serving (for example
+    /// AFM 3 Core Advanced). iOS 27 and later only; the OS picks it per device.
+    private var appleVariantName: String? {
+        guard model.isAppleFoundation, !isAppleUnavailable else { return nil }
+        return AppleFoundationModelBridge.currentProfile().variantName
     }
 
     private var compatibilityMessage: String? {
@@ -909,6 +921,20 @@ struct SimpleModelChoiceCard: View {
                         InfoTag(icon: "photo", text: LocalizedStringKey(String(localized: "Images")))
                     }
                 }
+            }
+
+            if let appleVariantName {
+                Label(
+                    String(localized: "Running \(appleVariantName)"),
+                    systemImage: "apple.intelligence"
+                )
+                .font(.caption)
+                .foregroundStyle(Color.adaptive(white: 0.46))
+                .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if model.isAppleFoundation, !isAppleUnavailable, model.supportsThinkingToggle {
+                ImportedThinkingRow(model: model, leadingInset: 0)
             }
 
             if let compatibilityMessage, !model.isAppleFoundation {

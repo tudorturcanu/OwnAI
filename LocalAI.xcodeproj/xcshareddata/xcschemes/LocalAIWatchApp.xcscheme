@@ -46,7 +46,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "C25D6C91C8ADB8E23A69AE3C"
             BuildableName = "LocalAIWatchApp.app"
-            BlueprintName = "LocalAIWatchApp"
             ReferencedContainer = "container:LocalAI.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -63,7 +62,6 @@
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "C25D6C91C8ADB8E23A69AE3C"
             BuildableName = "LocalAIWatchApp.app"
-            BlueprintName = "LocalAIWatchApp"
             ReferencedContainer = "container:LocalAI.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
